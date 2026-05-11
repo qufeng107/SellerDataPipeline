@@ -7,6 +7,8 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+DEFAULT_AZURE_SQL_DRIVER = "ODBC Driver 18 for SQL Server"
+
 
 def _env(name: str, default: str | None = None) -> str | None:
     value = os.getenv(name)
@@ -22,7 +24,9 @@ class Settings:
     azure_sql_database: str | None = _env("AZURE_SQL_DATABASE")
     azure_sql_username: str | None = _env("AZURE_SQL_USERNAME")
     azure_sql_password: str | None = _env("AZURE_SQL_PASSWORD")
-    azure_sql_driver: str = _env("AZURE_SQL_DRIVER", "ODBC Driver 18 for SQL Server") or "ODBC Driver 18 for SQL Server"
+    azure_sql_driver: str = _env("AZURE_SQL_DRIVER", DEFAULT_AZURE_SQL_DRIVER) or (
+        DEFAULT_AZURE_SQL_DRIVER
+    )
 
     amazon_region: str = _env("AMAZON_REGION", "NA") or "NA"
     amazon_marketplace_id: str | None = _env("AMAZON_MARKETPLACE_ID")

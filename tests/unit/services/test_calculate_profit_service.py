@@ -1,6 +1,9 @@
 from decimal import Decimal
 
-from seller_data_pipeline.services.calculate_profit_service import CalculateProfitService, ProfitInput
+from seller_data_pipeline.services.calculate_profit_service import (
+    CalculateProfitService,
+    ProfitInput,
+)
 
 
 def test_estimate_profit() -> None:

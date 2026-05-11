@@ -1,12 +1,12 @@
 from __future__ import annotations
 
+from collections.abc import Iterator
 from contextlib import contextmanager
-from typing import Iterator
 
 import pyodbc
 
-from seller_data_pipeline.config.settings import Settings, get_settings
 from seller_data_pipeline.common.exceptions import ConfigurationError
+from seller_data_pipeline.config.settings import Settings, get_settings
 
 
 def build_connection_string(settings: Settings | None = None) -> str:
