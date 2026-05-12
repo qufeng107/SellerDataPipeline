@@ -4,7 +4,11 @@ import json
 from typing import Any
 
 import pytest
-from seller_data_pipeline.common.exceptions import ConfigurationError, ExternalServiceError
+
+from seller_data_pipeline.common.exceptions import (
+    ConfigurationError,
+    ExternalServiceError,
+)
 from seller_data_pipeline.config.settings import Settings
 from seller_data_pipeline.integrations.amazon.sp_api_client import AmazonSpApiClient
 
