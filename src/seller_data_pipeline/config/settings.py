@@ -8,11 +8,25 @@ from dotenv import load_dotenv
 load_dotenv()
 
 DEFAULT_AZURE_SQL_DRIVER = "ODBC Driver 18 for SQL Server"
+DEFAULT_AMAZON_SP_API_ENDPOINTS = {
+    "NA": "https://sellingpartnerapi-na.amazon.com",
+    "EU": "https://sellingpartnerapi-eu.amazon.com",
+    "FE": "https://sellingpartnerapi-fe.amazon.com",
+}
+DEFAULT_LWA_TOKEN_URL = "https://api.amazon.com/auth/o2/token"
+DEFAULT_USER_AGENT = "SellerDataPipeline/0.1.0 (Language=Python/3.11)"
 
 
 def _env(name: str, default: str | None = None) -> str | None:
     value = os.getenv(name)
     return value if value not in (None, "") else default
+
+
+def _default_sp_api_endpoint(region: str) -> str:
+    return DEFAULT_AMAZON_SP_API_ENDPOINTS.get(
+        region.upper(),
+        DEFAULT_AMAZON_SP_API_ENDPOINTS["NA"],
+    )
 
 
 @dataclass(frozen=True)
@@ -33,6 +47,19 @@ class Settings:
     amazon_lwa_client_id: str | None = _env("AMAZON_LWA_CLIENT_ID")
     amazon_lwa_client_secret: str | None = _env("AMAZON_LWA_CLIENT_SECRET")
     amazon_sp_api_refresh_token: str | None = _env("AMAZON_SP_API_REFRESH_TOKEN")
+    amazon_sp_api_endpoint: str = (
+        _env(
+            "AMAZON_SP_API_ENDPOINT",
+            _default_sp_api_endpoint(_env("AMAZON_REGION", "NA") or "NA"),
+        )
+        or DEFAULT_AMAZON_SP_API_ENDPOINTS["NA"]
+    )
+    amazon_lwa_token_url: str = _env("AMAZON_LWA_TOKEN_URL", DEFAULT_LWA_TOKEN_URL) or (
+        DEFAULT_LWA_TOKEN_URL
+    )
+    amazon_sp_api_user_agent: str = _env("AMAZON_SP_API_USER_AGENT", DEFAULT_USER_AGENT) or (
+        DEFAULT_USER_AGENT
+    )
     amazon_ads_refresh_token: str | None = _env("AMAZON_ADS_REFRESH_TOKEN")
 
     report_receiver_email: str | None = _env("REPORT_RECEIVER_EMAIL")
