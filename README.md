@@ -259,3 +259,64 @@ Azure 上建议配置三个 Container Apps Job：
 6. 实现三类 Job。
 7. 实现 Excel 周报/月报/季报。
 8. 接入 Docker、Azure Container Apps Job 和 GitHub Actions 部署。
+
+---
+
+## 九、当前开发阶段：SP-API 连通性测试
+
+在已经创建 SP-API Production Private Application，并完成 self-authorization 后，先不要直接开发完整报表流程。当前第一步目标是验证本地凭证能成功调用 SP-API。
+
+### 1. 配置本地 `.env`
+
+复制模板：
+
+```bash
+cp .env.example .env
+```
+
+在 `.env` 中填入你从 Amazon Solution Provider Portal 获取的三个核心值：
+
+```env
+AMAZON_REGION=NA
+AMAZON_MARKETPLACE_ID=ATVPDKIKX0DER
+AMAZON_SP_API_ENDPOINT=https://sellingpartnerapi-na.amazon.com
+AMAZON_LWA_TOKEN_URL=https://api.amazon.com/auth/o2/token
+AMAZON_SP_API_USER_AGENT=SellerDataPipeline/0.1.0 (Language=Python/3.11)
+
+AMAZON_LWA_CLIENT_ID=your_lwa_client_id
+AMAZON_LWA_CLIENT_SECRET=your_lwa_client_secret
+AMAZON_SP_API_REFRESH_TOKEN=your_refresh_token
+```
+
+`.env` 只用于本地开发，不能提交到 GitHub。
+
+### 2. 运行 SP-API 连接测试
+
+```bash
+python scripts/test_sp_api_connection.py
+```
+
+成功后会输出类似：
+
+```text
+SP-API connection test succeeded.
+Marketplace participations:
+- ATVPDKIKX0DER | Amazon.com | US | USD
+```
+
+需要查看原始响应时可加：
+
+```bash
+python scripts/test_sp_api_connection.py --show-raw
+```
+
+### 3. 当前验收标准
+
+这一阶段只验证认证链路和基础访问权限：
+
+1. 能用 refresh token 换取 LWA access token。
+2. 能调用 `GET /sellers/v1/marketplaceParticipations`。
+3. 能看到授权账号参与的 marketplace 信息。
+4. 不在日志或 GitHub 中输出任何 client secret、refresh token 或 access token。
+
+通过后再进入下一步：实现 Reports API 的 `createReport -> getReport -> getReportDocument -> download -> parse` 异步流程。
