@@ -853,3 +853,37 @@ createReport → getReport → getReportDocument → download report → record 
 ```
 
 这个闭环跑通后，整个系统的后续开发都会围绕同一模式扩展。
+
+---
+
+## 11. 2026-05-13 数据库设计阶段更新
+
+已新增并冻结第一版数据库唯一事实文档：
+
+```text
+requirements/database_spec.md
+```
+
+本阶段进一步明确：数据库尚未建表，因此当前 `sql/migrations/001_create_core_tables.sql` 和 `002_create_indexes.sql` 暂不应直接执行。后续数据库结构必须先更新 `requirements/database_spec.md`，再更新 SQL。
+
+新的开发策略为：
+
+```text
+先 raw，后 normalized。
+先样例，后字段。
+先 spec，后 SQL。
+先采集闭环，后分析报表。
+控制表先稳定，业务表边取样边确认。
+```
+
+下一步不急于创建所有业务表，而是优先实现本地 Sampling Mode 和 Amazon Reports API 最小下载闭环：
+
+1. 提交 Listing 类 report request。
+2. 记录本地 request manifest。
+3. 轮询 report 状态。
+4. 下载 raw report 文件。
+5. 保存 sha256、encoding、row_count、column_count 等 manifest 信息。
+6. 提取 header 和样例行。
+7. 用真实字段反向更新 `database_spec.md`。
+
+待第一批真实字段确认后，再重写并执行数据库 SQL migration。

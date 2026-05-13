@@ -216,3 +216,9 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# SellerDataPipeline local sampling and raw report artifacts
+# These may contain Amazon business data and must not be committed.
+data/
+reports/raw/
+runtime/
