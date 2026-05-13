@@ -381,3 +381,27 @@ PYTHONPATH=src python scripts/submit_report_requests.py \
 ### 4. 安全注意
 
 `runtime/` 和 `reports/raw/` 已被 `.gitignore` 忽略，里面可能包含真实经营数据，不得提交 GitHub。
+
+### 5. 分析已下载 raw report 字段结构
+
+下载成功后，先不要急着入库。应先用 analyzer 生成脱敏字段取样文档：
+
+```bash
+PYTHONPATH=src python scripts/analyze_raw_report.py \
+  --raw-file reports/raw/amazon/ATVPDKIKX0DER/GET_MERCHANT_LISTINGS_ALL_DATA/2026-05-13/112285020586.txt \
+  --report-type GET_MERCHANT_LISTINGS_ALL_DATA \
+  --marketplace-id ATVPDKIKX0DER \
+  --output-md requirements/data_samples/GET_MERCHANT_LISTINGS_ALL_DATA.md
+```
+
+默认会脱敏 SKU、ASIN、Listing ID、产品标题、描述等样例值，适合提交到仓库。不要使用 `--show-raw-sample-values` 生成要提交的文档。
+
+### 6. 当前 Listing parser
+
+已新增：
+
+```text
+src/seller_data_pipeline/parsers/amazon/listings_all_data_parser.py
+```
+
+它会把 `GET_MERCHANT_LISTINGS_ALL_DATA` 转为内存中的 Listing snapshot records，但当前不写数据库。等 `requirements/database_spec.md` 里的 `amazon_listing_snapshot` 从 `sampling` 升级为 `confirmed` 后，再实现 repository 和 SQL upsert。

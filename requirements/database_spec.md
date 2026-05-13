@@ -1,15 +1,17 @@
 # SellerDataPipeline 数据库唯一事实设计 Spec
 
-> 文档版本：v0.2  
+> 文档版本：v0.3  
 > 更新日期：2026-05-13  
 > 当前状态：Azure SQL Database 已开通，但尚未建表；`sql/migrations/` 里的 SQL 暂视为草稿，执行前必须重新对齐本文档。  
 > 适用范围：Amazon SP-API Reports / Amazon Ads Reporting / Finances API / 原始数据归档 / 字段取样 / 周报、月报、季度会计数据包。
 
 ---
 
-## 0. 本次 v0.2 核心决策
+## 0. 本次 v0.3 核心决策
 
 本项目当前处于 **接口取样和数据模型探索阶段**。不要在没有真实 Amazon 样例数据前，把所有业务表和字段一次性建死。
+
+v0.3 已基于第一份真实 `GET_MERCHANT_LISTINGS_ALL_DATA` 样例更新 Listing 字段设计，并新增 `amazon_listing_snapshot` 的 normalized 表草案。当前仍不执行 SQL 建表。
 
 v0.2 的核心设计决策是：
 
@@ -66,9 +68,9 @@ sql/migrations/002_create_indexes.sql
 | Azure SQL Database | 已开通 |
 | Azure SQL 表 | 尚未创建 |
 | Amazon SP-API 连接测试 | 已成功 |
-| Reports API 采集闭环 | 尚未实现 |
+| Reports API 采集闭环 | 本地 Sampling Mode 已实现并完成首个 Listing 报告下载 |
 | 当前 SQL migration | 初始草稿，尚未执行 |
-| 当前数据库 spec | 本文件 v0.2 |
+| 当前数据库 spec | 本文件 v0.3 |
 
 ---
 
@@ -565,6 +567,107 @@ source_row_hash NVARCHAR(100)
 ```
 
 用于从原始行生成 SHA256，避免重复写入。
+
+
+### 9.3 `amazon_listing_snapshot`
+
+**表状态：`sampling`**  
+**第一数据来源：** `GET_MERCHANT_LISTINGS_ALL_DATA`  
+**样例记录：** `requirements/data_samples/GET_MERCHANT_LISTINGS_ALL_DATA.md`  
+**用途：** 保存每次 Listing 报告解析后的 SKU / ASIN / Listing / 价格 / 状态快照。
+
+第一份真实样例结论：
+
+| 项目 | 结论 |
+|---|---|
+| report_type | `GET_MERCHANT_LISTINGS_ALL_DATA` |
+| marketplace_id | `ATVPDKIKX0DER` |
+| 文件格式 | tab-delimited flat file |
+| 样例行数 | 6 行数据 |
+| 样例字段数 | 29 个字段 |
+| 适合进入本表 | Listing 基础信息、SKU、ASIN、价格、状态、履约渠道 |
+| 不适合作为库存唯一来源 | `quantity`、`pending-quantity` 在本次 FBA 样例中均为空 |
+
+#### 9.3.1 字段设计草案
+
+| 字段 | 类型 | 必填 | 默认值 | 字段状态 | 来源字段 / 说明 |
+|---|---|---:|---|---|---|
+| `id` | `BIGINT IDENTITY(1,1)` | 是 | - | `required_core` | 主键 |
+| `marketplace_id` | `NVARCHAR(50)` | 是 | - | `required_core` | Marketplace ID |
+| `snapshot_date` | `DATE` | 是 | - | `derived` | 本次下载/解析日期；后续可改为报告业务日期 |
+| `listing_id` | `NVARCHAR(100)` | 是 | - | `observed` | `listing-id` |
+| `seller_sku` | `NVARCHAR(200)` | 是 | - | `observed` | `seller-sku` |
+| `asin` | `NVARCHAR(50)` | 否 | `NULL` | `observed` | 优先取 `asin1` |
+| `product_id` | `NVARCHAR(100)` | 否 | `NULL` | `observed` | `product-id` |
+| `product_id_type` | `NVARCHAR(50)` | 否 | `NULL` | `observed` | `product-id-type`，Amazon 原始枚举码 |
+| `item_name` | `NVARCHAR(1000)` | 否 | `NULL` | `observed` | `item-name` |
+| `item_description` | `NVARCHAR(MAX)` | 否 | `NULL` | `observed` | `item-description` |
+| `price` | `DECIMAL(18,4)` | 否 | `NULL` | `observed` | `price` |
+| `currency` | `NVARCHAR(10)` | 否 | `NULL` | `derived` | 第一阶段美国站默认为 `USD` |
+| `quantity` | `INT` | 否 | `NULL` | `observed` | `quantity`；FBA 样例为空，不作为库存主口径 |
+| `pending_quantity` | `INT` | 否 | `NULL` | `observed` | `pending-quantity`；FBA 样例为空 |
+| `open_date_raw` | `NVARCHAR(100)` | 否 | `NULL` | `observed` | `open-date` 原始字符串，含时区缩写 |
+| `open_date_utc` | `DATETIME2` | 否 | `NULL` | `derived` | 后续确认时区解析规则后再填充 |
+| `item_is_marketplace` | `BIT` | 否 | `NULL` | `observed` | `item-is-marketplace`，`y/n` 转换 |
+| `item_condition` | `NVARCHAR(50)` | 否 | `NULL` | `observed` | `item-condition`，Amazon 原始枚举码 |
+| `fulfillment_channel` | `NVARCHAR(100)` | 否 | `NULL` | `observed` | `fulfillment-channel`，如 `AMAZON_NA` |
+| `merchant_shipping_group` | `NVARCHAR(200)` | 否 | `NULL` | `observed` | `merchant-shipping-group` |
+| `status` | `NVARCHAR(50)` | 否 | `NULL` | `observed` | `status`，如 `Active` / `Inactive` / `Incomplete` |
+| `source_system` | `NVARCHAR(50)` | 是 | `sp_api_reports` | `required_core` | 数据来源 |
+| `source_report_type` | `NVARCHAR(200)` | 是 | - | `required_core` | `GET_MERCHANT_LISTINGS_ALL_DATA` |
+| `source_report_id` | `NVARCHAR(300)` | 否 | `NULL` | `required_core` | Amazon report ID |
+| `source_report_request_id` | `BIGINT` | 否 | `NULL` | `optional` | 对应 `amazon_report_request.id` |
+| `source_raw_file_id` | `BIGINT` | 否 | `NULL` | `optional` | 对应 `amazon_raw_report_file.id` |
+| `source_run_id` | `BIGINT` | 否 | `NULL` | `optional` | 对应 `amazon_sync_run_log.id` |
+| `source_row_hash` | `NVARCHAR(100)` | 是 | - | `required_core` | 原始行 JSON 的 SHA256，用于回刷去重 |
+| `raw_data` | `NVARCHAR(MAX)` | 是 | - | `required_core` | 单行原始 JSON |
+| `created_at` | `DATETIME2` | 是 | `SYSUTCDATETIME()` | `required_core` | 创建时间 |
+| `updated_at` | `DATETIME2` | 是 | `SYSUTCDATETIME()` | `required_core` | 更新时间 |
+
+#### 9.3.2 暂缓进入正式列的字段
+
+以下字段在第一份样例中为空或暂时价值不高，先保留在 `raw_data` 和 raw file 中：
+
+```text
+image-url
+zshop-shipping-fee
+item-note
+zshop-category1
+zshop-browse-path
+zshop-storefront-feature
+asin2
+asin3
+will-ship-internationally
+expedited-shipping
+zshop-boldface
+bid-for-featured-placement
+add-delete
+```
+
+#### 9.3.3 唯一键草案
+
+推荐唯一键：
+
+```text
+marketplace_id + source_report_type + listing_id + seller_sku + snapshot_date
+```
+
+说明：
+
+1. `listing-id` 是本报告中观察到的 Listing 维度标识。
+2. `seller_sku` 仍保留在唯一键中，便于与后续库存、销售、成本表关联。
+3. `snapshot_date` 保证同一 Listing 可以保留多日快照。
+4. 如果未来发现 `listing-id` 在某些报告中不稳定，则用 `source_row_hash` 辅助去重。
+
+#### 9.3.4 Parser 实现状态
+
+当前已新增本地 parser 草案：
+
+```text
+src/seller_data_pipeline/parsers/amazon/listings_all_data_parser.py
+```
+
+Parser 当前只做标准化内存记录，不写数据库。等本表字段从 `sampling` 升级为 `confirmed` 后，再实现 repository / upsert SQL。
 
 ---
 

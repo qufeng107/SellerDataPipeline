@@ -953,3 +953,61 @@ PYTHONPATH=src python scripts/submit_report_requests.py \
 3. 查看 raw file manifest 里的 header 和 sample_rows。
 4. 基于真实字段更新 `requirements/database_spec.md` 中 Listing/SKU 相关表设计。
 5. 再决定是否开始把第一批控制表 SQL 对齐并执行。
+
+---
+
+## 13. 2026-05-13 Listing 报告字段取样与 parser 初版
+
+用户已在本地成功完成首个真实 Amazon report 下载：
+
+```text
+report_type = GET_MERCHANT_LISTINGS_ALL_DATA
+marketplace_id = ATVPDKIKX0DER
+processing_status = DONE
+download_status = DOWNLOADED
+```
+
+本阶段在不建表、不写数据库的前提下，完成了第一份 Listing 报告的字段分析和 parser 草案。
+
+新增/更新内容：
+
+```text
+requirements/database_spec.md
+requirements/data_samples/GET_MERCHANT_LISTINGS_ALL_DATA.md
+scripts/analyze_raw_report.py
+src/seller_data_pipeline/sampling/report_analyzer.py
+src/seller_data_pipeline/parsers/amazon/listings_all_data_parser.py
+tests/unit/sampling/test_report_analyzer.py
+tests/unit/parsers/amazon/test_listings_all_data_parser.py
+```
+
+本次真实样例结论：
+
+```text
+文件格式：tab-delimited flat file
+数据行数：6
+字段数：29
+适合生成：amazon_listing_snapshot
+不适合直接作为 FBA 可用库存来源：quantity / pending-quantity 在样例中为空
+```
+
+`database_spec.md` 已升级到 v0.3，并新增 `amazon_listing_snapshot` 表草案。当前表状态仍为 `sampling`，暂不生成 SQL、暂不执行建表。
+
+新增 analyzer 用法：
+
+```bash
+PYTHONPATH=src python scripts/analyze_raw_report.py \
+  --raw-file reports/raw/amazon/ATVPDKIKX0DER/GET_MERCHANT_LISTINGS_ALL_DATA/2026-05-13/112285020586.txt \
+  --report-type GET_MERCHANT_LISTINGS_ALL_DATA \
+  --marketplace-id ATVPDKIKX0DER \
+  --output-md requirements/data_samples/GET_MERCHANT_LISTINGS_ALL_DATA.md
+```
+
+说明：默认输出 markdown 会脱敏样例值，适合提交到仓库。真实 raw report 和 runtime manifest 仍然不应提交。
+
+下一步建议：
+
+1. 继续取样 FBA 库存相关报告，确认真实库存字段来源。
+2. 将库存字段样例写入 `requirements/data_samples/`。
+3. 根据库存样例更新 `amazon_inventory_daily` 表设计。
+4. 当 Listing + Inventory 两个基础数据域确认后，再考虑重写第一批 SQL migration。

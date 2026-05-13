@@ -65,8 +65,8 @@ class RawReportFileStore:
 
 
 def preview_report_bytes(content: bytes, *, sample_row_limit: int = 5) -> RawReportPreview:
-    text, encoding = _decode_report_content(content)
-    delimiter = _detect_delimiter(text)
+    text, encoding = decode_report_content(content)
+    delimiter = detect_report_delimiter(text)
     if delimiter is None:
         first_line = text.splitlines()[0] if text.splitlines() else ""
         header = [first_line] if first_line else []
@@ -102,7 +102,7 @@ def preview_report_bytes(content: bytes, *, sample_row_limit: int = 5) -> RawRep
     )
 
 
-def _decode_report_content(content: bytes) -> tuple[str, str]:
+def decode_report_content(content: bytes) -> tuple[str, str]:
     for encoding in ("utf-8-sig", "utf-8", "cp1252", "latin-1"):
         try:
             return content.decode(encoding), encoding
@@ -111,7 +111,7 @@ def _decode_report_content(content: bytes) -> tuple[str, str]:
     return content.decode("utf-8", errors="replace"), "utf-8-replace"
 
 
-def _detect_delimiter(text: str) -> str | None:
+def detect_report_delimiter(text: str) -> str | None:
     first_non_empty_line = next((line for line in text.splitlines() if line.strip()), "")
     if not first_non_empty_line:
         return None
