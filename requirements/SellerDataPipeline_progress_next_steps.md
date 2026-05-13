@@ -887,3 +887,69 @@ requirements/database_spec.md
 7. 用真实字段反向更新 `database_spec.md`。
 
 待第一批真实字段确认后，再重写并执行数据库 SQL migration。
+
+---
+
+## 12. 2026-05-13 Local Sampling Mode 初步实现
+
+本阶段已开始实现 Amazon Reports API 最小闭环，仍然不依赖 Azure SQL 建表。
+
+新增/更新内容：
+
+```text
+src/seller_data_pipeline/integrations/amazon/sp_api_client.py
+src/seller_data_pipeline/sampling/local_manifest_store.py
+src/seller_data_pipeline/sampling/raw_report_files.py
+src/seller_data_pipeline/services/submit_report_requests_service.py
+src/seller_data_pipeline/services/collect_ready_reports_service.py
+scripts/submit_report_requests.py
+scripts/collect_ready_reports.py
+```
+
+当前支持的本地流程：
+
+```text
+submit_report_requests.py
+  -> createReport
+  -> runtime/sampling/report_requests/{report_id}.json
+
+collect_ready_reports.py
+  -> getReport
+  -> getReportDocument
+  -> download presigned URL
+  -> reports/raw/amazon/{marketplace_id}/{report_type}/{date}/{report_id}.txt
+  -> runtime/sampling/raw_files/{report_id}.json
+```
+
+第一份样例报告默认使用：
+
+```text
+GET_MERCHANT_LISTINGS_ALL_DATA
+```
+
+本地测试命令：
+
+```bash
+PYTHONPATH=src python scripts/submit_report_requests.py \
+  --report-type GET_MERCHANT_LISTINGS_ALL_DATA
+
+PYTHONPATH=src python scripts/collect_ready_reports.py --limit 10
+```
+
+如果某个 report type 需要时间窗口，可以显式传入：
+
+```bash
+PYTHONPATH=src python scripts/submit_report_requests.py \
+  --report-type GET_SALES_AND_TRAFFIC_REPORT \
+  --days 7
+```
+
+注意：`reports/raw/` 和 `runtime/` 已被 `.gitignore` 忽略，不能提交真实 Amazon 原始经营数据。
+
+下一步建议：
+
+1. 在本地用真实 SP-API 凭证提交第一份 Listing report。
+2. 多次运行 `collect_ready_reports.py`，直到状态变为 `DONE` 并下载成功。
+3. 查看 raw file manifest 里的 header 和 sample_rows。
+4. 基于真实字段更新 `requirements/database_spec.md` 中 Listing/SKU 相关表设计。
+5. 再决定是否开始把第一批控制表 SQL 对齐并执行。

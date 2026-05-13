@@ -15,6 +15,8 @@ DEFAULT_AMAZON_SP_API_ENDPOINTS = {
 }
 DEFAULT_LWA_TOKEN_URL = "https://api.amazon.com/auth/o2/token"
 DEFAULT_USER_AGENT = "SellerDataPipeline/0.1.0 (Language=Python/3.11)"
+DEFAULT_LOCAL_SAMPLING_ROOT = "runtime/sampling"
+DEFAULT_RAW_REPORTS_ROOT = "reports/raw"
 
 
 def _env(name: str, default: str | None = None) -> str | None:
@@ -61,6 +63,13 @@ class Settings:
         DEFAULT_USER_AGENT
     )
     amazon_ads_refresh_token: str | None = _env("AMAZON_ADS_REFRESH_TOKEN")
+
+    local_sampling_root: str = _env("LOCAL_SAMPLING_ROOT", DEFAULT_LOCAL_SAMPLING_ROOT) or (
+        DEFAULT_LOCAL_SAMPLING_ROOT
+    )
+    raw_reports_root: str = _env("RAW_REPORTS_ROOT", DEFAULT_RAW_REPORTS_ROOT) or (
+        DEFAULT_RAW_REPORTS_ROOT
+    )
 
     report_receiver_email: str | None = _env("REPORT_RECEIVER_EMAIL")
 

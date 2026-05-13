@@ -320,3 +320,64 @@ python scripts/test_sp_api_connection.py --show-raw
 4. 不在日志或 GitHub 中输出任何 client secret、refresh token 或 access token。
 
 通过后再进入下一步：实现 Reports API 的 `createReport -> getReport -> getReportDocument -> download -> parse` 异步流程。
+
+---
+
+## 十、当前开发阶段：Local Sampling Mode + Reports API 最小闭环
+
+数据库目前尚未建表。为了避免一开始把业务表字段设计死，当前阶段采用本地 Sampling Mode：先请求真实 Amazon report，下载原始文件，生成本地 manifest，再根据真实字段更新 `requirements/database_spec.md`。
+
+### 1. 提交第一份 Listing report 请求
+
+`GET_MERCHANT_LISTINGS_ALL_DATA` 默认不传日期窗口：
+
+```bash
+PYTHONPATH=src python scripts/submit_report_requests.py \
+  --report-type GET_MERCHANT_LISTINGS_ALL_DATA
+```
+
+成功后会生成：
+
+```text
+runtime/sampling/report_requests/{report_id}.json
+```
+
+### 2. 轮询并下载已完成报告
+
+Amazon report 是异步生成的，可能需要隔几分钟重复运行：
+
+```bash
+PYTHONPATH=src python scripts/collect_ready_reports.py --limit 10
+```
+
+如果状态变为 `DONE`，会下载到：
+
+```text
+reports/raw/amazon/{marketplace_id}/{report_type}/{date}/{report_id}.txt
+runtime/sampling/raw_files/{report_id}.json
+```
+
+raw file manifest 会保存：
+
+```text
+checksum_sha256
+size_bytes
+encoding
+delimiter
+header
+sample_rows
+```
+
+### 3. 带日期窗口的报告
+
+某些 report type 需要日期窗口，可以传 `--days`：
+
+```bash
+PYTHONPATH=src python scripts/submit_report_requests.py \
+  --report-type GET_SALES_AND_TRAFFIC_REPORT \
+  --days 7
+```
+
+### 4. 安全注意
+
+`runtime/` 和 `reports/raw/` 已被 `.gitignore` 忽略，里面可能包含真实经营数据，不得提交 GitHub。
