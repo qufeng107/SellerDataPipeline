@@ -7,7 +7,6 @@ import pytest
 
 from seller_data_pipeline.parsers.amazon.fba_inventory_parser import FbaInventoryParser
 
-
 INVENTORY_CONTENT = (
     "sku\tfnsku\tasin\tproduct-name\tcondition\tyour-price\tmfn-listing-exists\t"
     "mfn-fulfillable-quantity\tafn-listing-exists\tafn-warehouse-quantity\t"

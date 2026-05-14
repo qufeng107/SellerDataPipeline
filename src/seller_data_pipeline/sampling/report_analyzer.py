@@ -778,7 +778,7 @@ def render_report_analysis_markdown(analysis: ReportAnalysis) -> str:
         "",
         "| 项目 | 值 |",
         "|---|---|",
-        f"| source_system | `sp_api_reports` |",
+        "| source_system | `sp_api_reports` |",
         f"| report_type | `{analysis.report_type}` |",
         f"| marketplace_id | `{analysis.marketplace_id or 'unknown'}` |",
         f"| raw_file_path | `{analysis.raw_file_path}` |",

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from seller_data_pipeline.parsers.amazon.settlement_report_parser import SettlementReportParser
 
-
 HEADER = "\t".join(
     [
         "settlement-id",

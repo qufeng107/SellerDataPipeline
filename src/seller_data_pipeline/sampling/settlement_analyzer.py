@@ -117,7 +117,7 @@ def render_settlement_aggregate_markdown(analysis: SettlementAggregateAnalysis) 
         "",
         "| 项目 | 值 |",
         "|---|---|",
-        f"| source_system | `sp_api_reports` |",
+        "| source_system | `sp_api_reports` |",
         f"| report_type | `{analysis.report_type}` |",
         f"| marketplace_id | `{analysis.marketplace_id}` |",
         f"| raw_file_count | `{analysis.raw_file_count}` |",
@@ -217,7 +217,10 @@ def render_settlement_aggregate_markdown(analysis: SettlementAggregateAnalysis) 
                 "| `amazon_settlement_transaction` | `sampling` | "
                 "已有多份真实样例，可保存逐行 settlement 明细和第一版分类字段 |"
             ),
-            "| `amazon_finance_event` | `draft` | 后续从 settlement 明细聚合/归类而来，需等分类规则稳定后确认 |",
+            (
+                "| `amazon_finance_event` | `draft` | "
+                "后续从 settlement 明细聚合/归类而来，需等分类规则稳定后确认 |"
+            ),
         ]
     )
     return "\n".join(lines) + "\n"

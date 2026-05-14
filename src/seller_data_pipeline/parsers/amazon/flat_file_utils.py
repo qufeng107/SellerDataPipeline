@@ -3,10 +3,11 @@ from __future__ import annotations
 import csv
 import hashlib
 import json
+from collections.abc import Iterable
 from dataclasses import asdict, dataclass
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 from seller_data_pipeline.sampling.raw_report_files import (
     decode_report_content,

@@ -33,7 +33,12 @@ RETURNS_REQUIRED_FIELDS = {
     "Order Item ID",
 }
 
-_DECIMAL_FIELDS = {"label_cost", "order_amount", "safe_t_claim_reimbursement_amount", "refunded_amount"}
+_DECIMAL_FIELDS = {
+    "label_cost",
+    "order_amount",
+    "safe_t_claim_reimbursement_amount",
+    "refunded_amount",
+}
 
 
 @dataclass(frozen=True)

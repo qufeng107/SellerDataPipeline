@@ -10,8 +10,8 @@ from pathlib import Path
 from typing import Any
 
 from seller_data_pipeline.sampling.raw_report_files import (
-    detect_report_delimiter,
     decode_report_content,
+    detect_report_delimiter,
 )
 
 LISTINGS_ALL_DATA_REQUIRED_FIELDS = {

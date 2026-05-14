@@ -4,7 +4,6 @@ from decimal import Decimal
 
 from seller_data_pipeline.parsers.amazon.sales_report_parser import SalesReportParser
 
-
 SALES_REPORT_JSON = """
 {
   "reportSpecification": {

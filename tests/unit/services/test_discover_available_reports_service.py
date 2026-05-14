@@ -3,10 +3,10 @@ from __future__ import annotations
 from datetime import date, timedelta
 
 from seller_data_pipeline.config.settings import Settings
+from seller_data_pipeline.sampling.local_manifest_store import LocalManifestStore
 from seller_data_pipeline.services.discover_available_reports_service import (
     DiscoverAvailableReportsService,
 )
-from seller_data_pipeline.sampling.local_manifest_store import LocalManifestStore
 
 
 class FakeReportsClient:

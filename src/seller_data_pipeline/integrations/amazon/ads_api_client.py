@@ -4,7 +4,7 @@ import gzip
 import json
 import logging
 from dataclasses import dataclass
-from datetime import UTC, date, datetime
+from datetime import date
 from time import monotonic
 from typing import Any
 

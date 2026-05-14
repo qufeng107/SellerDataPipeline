@@ -185,7 +185,10 @@ CORE_SAMPLING_PLAN: tuple[ReportSamplingPlanItem, ...] = (
         report_type=rt.SETTLEMENT_V2,
         mode="discover",
         label="Settlement V2 reports, 89 days",
-        purpose="Actual financial ledger: sales, fees, refunds, reimbursements, ads, coupons, deals.",
+        purpose=(
+            "Actual financial ledger: sales, fees, refunds, reimbursements, ads, "
+            "coupons, deals."
+        ),
         days=89,
         priority=130,
         notes="Amazon-generated only; discover with getReports instead of createReport.",
@@ -232,7 +235,10 @@ CORE_SAMPLING_PLAN: tuple[ReportSamplingPlanItem, ...] = (
         days=30,
         priority=160,
         sensitive=True,
-        notes="Can include buyer/contact/address fields. Excluded unless --include-sensitive is used.",
+        notes=(
+            "Can include buyer/contact/address fields. "
+            "Excluded unless --include-sensitive is used."
+        ),
     ),
 )
 

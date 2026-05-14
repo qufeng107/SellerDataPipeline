@@ -7,7 +7,6 @@ import pytest
 
 from seller_data_pipeline.parsers.amazon.listings_all_data_parser import ListingsAllDataParser
 
-
 LISTING_CONTENT = (
     "item-name\titem-description\tlisting-id\tseller-sku\tprice\tquantity\topen-date\t"
     "image-url\titem-is-marketplace\tproduct-id-type\tzshop-shipping-fee\titem-note\t"

@@ -127,7 +127,10 @@ def test_inventory_ledger_summary_parser_parses_movement_columns() -> None:
         "0\t0\t0\t-1\t0\t0\t0\t11\t0\tUS\t\n"
     )
 
-    records = InventoryLedgerSummaryParser().parse_text(text=content, marketplace_id="ATVPDKIKX0DER")
+    records = InventoryLedgerSummaryParser().parse_text(
+        text=content,
+        marketplace_id="ATVPDKIKX0DER",
+    )
 
     assert len(records) == 1
     assert records[0].seller_sku == "SKU1"
