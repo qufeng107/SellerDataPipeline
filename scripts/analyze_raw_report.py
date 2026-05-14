@@ -6,7 +6,7 @@ from pathlib import Path
 from seller_data_pipeline.common.logging import configure_logging
 from seller_data_pipeline.config.settings import get_settings
 from seller_data_pipeline.sampling.report_analyzer import (
-    analyze_delimited_report_file,
+    analyze_report_file,
     render_report_analysis_markdown,
 )
 
@@ -37,7 +37,7 @@ def main() -> None:
 
     settings = get_settings()
     configure_logging(settings.log_level)
-    analysis = analyze_delimited_report_file(
+    analysis = analyze_report_file(
         raw_file_path=args.raw_file,
         report_type=args.report_type,
         marketplace_id=args.marketplace_id,

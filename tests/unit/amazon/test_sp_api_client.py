@@ -205,3 +205,52 @@ def test_lwa_http_error_raises_external_service_error() -> None:
 
     with pytest.raises(ExternalServiceError, match="HTTP 401"):
         client.get_lwa_access_token()
+
+
+def test_get_reports_uses_expected_filters() -> None:
+    session = FakeSession()
+    session.next_request_response = FakeResponse(
+        200,
+        {
+            "reports": [
+                {
+                    "reportId": "report-123",
+                    "reportType": "GET_V2_SETTLEMENT_REPORT_DATA_FLAT_FILE_V2",
+                    "processingStatus": "DONE",
+                }
+            ]
+        },
+    )
+    client = AmazonSpApiClient(settings=_settings(), session=session)  # type: ignore[arg-type]
+
+    payload = client.get_reports(
+        report_types=["GET_V2_SETTLEMENT_REPORT_DATA_FLAT_FILE_V2"],
+        processing_statuses=["DONE"],
+        marketplace_ids=["ATVPDKIKX0DER"],
+        page_size=20,
+        created_since=datetime(2026, 5, 1, tzinfo=UTC),
+        created_until=datetime(2026, 5, 14, tzinfo=UTC),
+    )
+
+    assert payload["reports"][0]["reportId"] == "report-123"
+    request_call = session.request_calls[0]
+    assert request_call["method"] == "GET"
+    assert request_call["url"].endswith("/reports/2021-06-30/reports")
+    assert request_call["params"] == {
+        "reportTypes": ["GET_V2_SETTLEMENT_REPORT_DATA_FLAT_FILE_V2"],
+        "processingStatuses": ["DONE"],
+        "marketplaceIds": ["ATVPDKIKX0DER"],
+        "pageSize": 20,
+        "createdSince": "2026-05-01T00:00:00Z",
+        "createdUntil": "2026-05-14T00:00:00Z",
+    }
+
+
+def test_get_reports_with_next_token_only() -> None:
+    session = FakeSession()
+    session.next_request_response = FakeResponse(200, {"reports": []})
+    client = AmazonSpApiClient(settings=_settings(), session=session)  # type: ignore[arg-type]
+
+    client.get_reports(report_types=["ignored"], next_token="next-1")
+
+    assert session.request_calls[0]["params"] == {"nextToken": "next-1"}

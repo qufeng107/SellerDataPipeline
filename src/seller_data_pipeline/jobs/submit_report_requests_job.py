@@ -11,9 +11,11 @@ def run(
     report_type: str = LISTINGS_ALL_DATA,
     marketplace_ids: list[str] | None = None,
     days: int | None = None,
+    report_options: dict[str, str] | None = None,
 ) -> Path:
     return SubmitReportRequestsService().run(
         report_type=report_type,
         marketplace_ids=marketplace_ids,
         days=days,
+        report_options=report_options,
     )

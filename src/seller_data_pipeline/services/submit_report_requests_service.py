@@ -36,23 +36,32 @@ class SubmitReportRequestsService:
         report_type: str = LISTINGS_ALL_DATA,
         marketplace_ids: list[str] | None = None,
         days: int | None = None,
+        report_options: dict[str, str] | None = None,
         today: date | None = None,
     ) -> Path:
         marketplace_ids = marketplace_ids or self._default_marketplace_ids()
         data_start_time, data_end_time = self._build_date_window_datetimes(days=days, today=today)
+        resolved_report_options = _resolve_report_options(
+            report_options=report_options,
+            data_start_time=data_start_time,
+            data_end_time=data_end_time,
+        )
 
         logger.info(
-            "Submitting Amazon report request: report_type=%s marketplace_ids=%s start=%s end=%s",
+            "Submitting Amazon report request: report_type=%s marketplace_ids=%s "
+            "start=%s end=%s report_options=%s",
             report_type,
             marketplace_ids,
             data_start_time,
             data_end_time,
+            resolved_report_options,
         )
         result = self.sp_api_client.create_report(
             report_type=report_type,
             marketplace_ids=marketplace_ids,
             data_start_time=data_start_time,
             data_end_time=data_end_time,
+            report_options=resolved_report_options,
         )
 
         manifest = {
@@ -61,6 +70,7 @@ class SubmitReportRequestsService:
             "marketplace_ids": marketplace_ids,
             "data_start_time": _dt_to_iso(data_start_time),
             "data_end_time": _dt_to_iso(data_end_time),
+            "report_options": resolved_report_options or {},
             "processing_status": "SUBMITTED",
             "download_status": "NOT_STARTED",
             "parse_status": "NOT_STARTED",
@@ -103,6 +113,30 @@ class SubmitReportRequestsService:
             datetime.combine(window.end, time.min, tzinfo=UTC),
         )
 
+
+
+def _resolve_report_options(
+    *,
+    report_options: dict[str, str] | None,
+    data_start_time: datetime | None,
+    data_end_time: datetime | None,
+) -> dict[str, str] | None:
+    if not report_options:
+        return None
+
+    resolved: dict[str, str] = {}
+    for key, value in report_options.items():
+        if value == "{data_start_time}":
+            if data_start_time is None:
+                raise ValueError(f"report option {key} requires a data_start_time")
+            resolved[key] = _dt_to_iso(data_start_time) or ""
+        elif value == "{data_end_time}":
+            if data_end_time is None:
+                raise ValueError(f"report option {key} requires a data_end_time")
+            resolved[key] = _dt_to_iso(data_end_time) or ""
+        else:
+            resolved[key] = value
+    return resolved
 
 def _dt_to_iso(value: datetime | None) -> str | None:
     if value is None:

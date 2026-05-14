@@ -1,17 +1,20 @@
 # SellerDataPipeline 数据库唯一事实设计 Spec
 
-> 文档版本：v0.3  
-> 更新日期：2026-05-13  
+> 文档版本：v1.4  
+> 更新日期：2026-05-14  
 > 当前状态：Azure SQL Database 已开通，但尚未建表；`sql/migrations/` 里的 SQL 暂视为草稿，执行前必须重新对齐本文档。  
 > 适用范围：Amazon SP-API Reports / Amazon Ads Reporting / Finances API / 原始数据归档 / 字段取样 / 周报、月报、季度会计数据包。
 
 ---
 
-## 0. 本次 v0.3 核心决策
+## 0. 本次 v0.9 核心决策
 
 本项目当前处于 **接口取样和数据模型探索阶段**。不要在没有真实 Amazon 样例数据前，把所有业务表和字段一次性建死。
 
-v0.3 已基于第一份真实 `GET_MERCHANT_LISTINGS_ALL_DATA` 样例更新 Listing 字段设计，并新增 `amazon_listing_snapshot` 的 normalized 表草案。当前仍不执行 SQL 建表。
+v0.8 已完成 Settlement 财务取样：通过 `getReports` 发现 8 份 `GET_V2_SETTLEMENT_REPORT_DATA_FLAT_FILE_V2` 自动生成报告，并全部下载 raw file。聚合样例共 4,911 行，其中 8 行为 settlement summary，4,903 行为交易明细。真实样例确认了 Order、Refund、ServiceFee、AmazonFees、Liquidations、FBA Inventory Reimbursement、Coupon / Deal fee、Storage Fee、Subscription Fee、FBA Inbound Placement Service Fee 等费用类型。parser 需要继承 summary 行中的 settlement period / currency / total amount 到后续明细行，并生成第一版 `amount_category` / `profit_bucket` 分类字段。当前仍不执行 SQL 建表。
+
+v0.9 新增批量取样计划：在正式建库前，先通过 `scripts/run_sampling_plan.py` 系统性提交/发现更多 Reports API 数据源，包括订单、退货、赔偿、费用预估、仓储费、库存健康、库存流水、促销/Coupon 等候选报告。默认批量计划会避开可能包含客户 PII 或客户评论的敏感报告；如业务确需取样，必须显式使用 `--include-sensitive`，并继续保证 `reports/raw/` 与 `runtime/` 不提交 GitHub。
+
 
 v0.2 的核心设计决策是：
 
@@ -38,6 +41,68 @@ sql/migrations/002_create_indexes.sql
 一旦初始 SQL 已经在正式 Azure SQL 中执行，历史 migration 就不可再改，只能新增 `003_xxx.sql`、`004_xxx.sql`。
 
 ---
+
+
+## 0.3 促销 / Coupon 报告诊断与成功取样结论 v1.3
+
+2026-05-14 取样中，`GET_PROMOTION_PERFORMANCE_REPORT` 与
+`GET_COUPON_PERFORMANCE_REPORT` 在未提供专用 `reportOptions` 时会生成 `FATAL`
+diagnostic document。诊断文件确认：
+
+```text
+GET_PROMOTION_PERFORMANCE_REPORT 需要 promotionStartDateFrom / promotionStartDateTo
+GET_COUPON_PERFORMANCE_REPORT    需要 couponStartDateFrom / couponStartDateTo
+```
+
+因此批量取样计划已调整为：
+
+```text
+GET_PROMOTION_PERFORMANCE_REPORT days=89
+  reportOptions.promotionStartDateFrom = {data_start_time}
+  reportOptions.promotionStartDateTo   = {data_end_time}
+
+GET_COUPON_PERFORMANCE_REPORT days=89
+  reportOptions.couponStartDateFrom = {data_start_time}
+  reportOptions.couponStartDateTo   = {data_end_time}
+```
+
+这两个报告即使继续失败，也不阻塞第一版建库。促销、Coupon 成本第一版仍以
+Settlement V2 的金额明细为主口径；Performance report 仅作为活动效果补充口径。
+
+
+
+## 0.4 Amazon Ads API 取样阶段 v1.4
+
+2026-05-14 起，项目进入 Amazon Ads API 取样阶段。SP-API Reports 已覆盖订单、库存、财务、销售流量、促销/Coupon 等经营数据；Ads API 用于补充广告运营口径，尤其是 campaign、targeting、search term、advertised product、purchased product 维度。
+
+Ads API 与 SP-API Reports 分开处理：
+
+```text
+SP-API Reports:      经营事实、库存、订单、财务结算、促销/Coupon财务口径
+Amazon Ads API:      广告投放结构、点击、曝光、花费、广告归因销售、搜索词表现
+```
+
+当前新增本地取样路径：
+
+```text
+runtime/sampling/ads_profiles.json
+runtime/sampling/ads_report_requests/{ads_report_id}.json
+runtime/sampling/ads_raw_files/{ads_report_id}.json
+reports/raw/amazon_ads/{profile_id}/{report_type_id}/{date}/{ads_report_id}.json
+```
+
+当前 Ads 表仍为 `draft`，必须等待真实 Ads raw report 下载并分析后再进入 `sampling`。第一批候选表：
+
+```text
+amazon_ads_profile
+amazon_ads_sp_campaign_daily
+amazon_ads_sp_targeting_daily
+amazon_ads_sp_search_term_daily
+amazon_ads_sp_advertised_product_daily
+amazon_ads_sp_purchased_product_daily
+```
+
+利润核算原则：Ads API 的 cost / sales / purchases 用于广告运营分析；最终利润核算中的广告实际扣费，仍优先以 Settlement V2 财务明细为准。
 
 ## 1. 文档定位与执行规则
 
@@ -68,9 +133,9 @@ sql/migrations/002_create_indexes.sql
 | Azure SQL Database | 已开通 |
 | Azure SQL 表 | 尚未创建 |
 | Amazon SP-API 连接测试 | 已成功 |
-| Reports API 采集闭环 | 本地 Sampling Mode 已实现并完成首个 Listing 报告下载 |
+| Reports API 采集闭环 | 本地 Sampling Mode 已实现，已完成 Listing、FBA 库存、销售与流量、Settlement V2 报告下载 |
 | 当前 SQL migration | 初始草稿，尚未执行 |
-| 当前数据库 spec | 本文件 v0.3 |
+| 当前数据库 spec | 本文件 v1.3 |
 
 ---
 
@@ -516,11 +581,22 @@ source_system + report_type + marketplace_id + source_field_name
 | 表名 | 表状态 | 第一数据来源候选 | 说明 |
 |---|---|---|---|
 | `amazon_listing_snapshot` | `sampling` | `GET_MERCHANT_LISTINGS_ALL_DATA` / `GET_FLAT_FILE_OPEN_LISTINGS_DATA` | Listing、SKU、ASIN、价格、状态、库存数量等 |
-| `amazon_inventory_daily` | `sampling` | Inventory report / FBA inventory source | 库存快照，需确认 FBA 字段口径 |
-| `amazon_sales_daily` | `draft` | Business Reports / Sales reports | 销售额、订单数、件数、Sessions 等，需确认 report type |
-| `amazon_finance_event` | `draft` | Finances API / settlement reports | 费用、退款、赔偿、仓储费、月租等，需先取样分类 |
+| `amazon_inventory_daily` | `sampling` | `GET_FBA_MYI_UNSUPPRESSED_INVENTORY_DATA` | FBA 库存快照，可售、预留、不可售、入库中等字段 |
+| `amazon_sales_traffic_daily` | `sampling` | `GET_SALES_AND_TRAFFIC_REPORT` | 日期维度销售额、订单数、件数、退款、Sessions、Page Views、转化率等 |
+| `amazon_sales_traffic_asin_daily` | `sampling` | `GET_SALES_AND_TRAFFIC_REPORT` | ASIN 维度销售与流量；7 天窗口样例已返回 PARENT ASIN 聚合行 |
+| `amazon_settlement_transaction` | `sampling` | `GET_V2_SETTLEMENT_REPORT_DATA_FLAT_FILE_V2` | 结算报告明细行，作为利润费用侧第一数据源；已发现并下载 8 份真实样例 |
+| `amazon_order_item` | `sampling` | `GET_FLAT_FILE_ALL_ORDERS_DATA_BY_ORDER_DATE_GENERAL` | 订单/行项目维度收入、数量、订单状态、促销折扣 |
+| `amazon_return_request` | `sampling` | `GET_FLAT_FILE_RETURNS_DATA_BY_RETURN_DATE` | 退货请求、RMA、原因、状态；当前样例为 header-only |
+| `amazon_fba_reimbursement` | `sampling` | `GET_FBA_REIMBURSEMENTS_DATA` | FBA 赔偿、case、原因、现金/库存赔偿数量 |
+| `amazon_fba_fee_preview` | `sampling` | `GET_FBA_ESTIMATED_FBA_FEES_TXT_DATA` | SKU/ASIN 维度 referral fee 与 FBA fulfillment fee 预估 |
+| `amazon_inventory_planning_daily` | `sampling` | `GET_FBA_INVENTORY_PLANNING_DATA` | 库龄、库存健康、周转、冗余和建议动作 |
+| `amazon_inventory_ledger_summary_daily` | `sampling` | `GET_LEDGER_SUMMARY_VIEW_DATA` | FBA 库存流水汇总，解释库存变化和差异 |
+| `amazon_finance_event` | `draft` | Settlement reports / Finances API | 费用、退款、赔偿、仓储费、月租等的统一归类层，需先取样分类 |
 | `amazon_ads_daily` | `draft` | Amazon Ads Reporting | Sponsored Products 广告表现，需确认 profile_id 和报表粒度 |
-| `amazon_promotion_daily` | `draft` | 财务事件 / 促销报表 / 手动导出 | Coupon、价格折扣、Deal、Prime Day 让利成本 |
+| `amazon_promotion_performance` | `sampling` | `GET_PROMOTION_PERFORMANCE_REPORT` | Deal/Promotion 活动主表，记录活动总体曝光、销售件数和销售额等运营效果 |
+| `amazon_promotion_product_performance` | `sampling` | `GET_PROMOTION_PERFORMANCE_REPORT` | Promotion 关联 ASIN 明细表，记录活动商品维度表现 |
+| `amazon_coupon_performance` | `sampling` | `GET_COUPON_PERFORMANCE_REPORT` | Coupon 主表，记录预算、领取、兑换、折扣、销售等运营效果 |
+| `amazon_coupon_asin` | `sampling` | `GET_COUPON_PERFORMANCE_REPORT` | Coupon 关联 ASIN 明细表 |
 | `amazon_sku_cost` | `confirmed` | 人工维护 / Excel 导入 | 采购、头程、包装、其他单位成本；可较早建表 |
 
 ### 9.1 Normalized 表通用字段要求
@@ -671,6 +747,519 @@ Parser 当前只做标准化内存记录，不写数据库。等本表字段从 
 
 ---
 
+### 9.4 `amazon_inventory_daily`
+
+**表状态：`sampling`**  
+**第一数据来源：** `GET_FBA_MYI_UNSUPPRESSED_INVENTORY_DATA`  
+**样例记录：** `requirements/data_samples/GET_FBA_MYI_UNSUPPRESSED_INVENTORY_DATA.md`  
+**用途：** 保存每次 FBA 库存报告解析后的 SKU / FNSKU / ASIN 库存快照。
+
+第二份真实样例结论：
+
+| 项目 | 结论 |
+|---|---|
+| report_type | `GET_FBA_MYI_UNSUPPRESSED_INVENTORY_DATA` |
+| marketplace_id | `ATVPDKIKX0DER` |
+| 文件格式 | tab-delimited flat file |
+| 样例编码 | `cp1252` |
+| 样例行数 | 5 行数据 |
+| 样例字段数 | 22 个字段 |
+| 适合进入本表 | FBA 可售、仓内、预留、不可售、入库中、researching 等库存字段 |
+| 第一版主库存口径 | `afn-fulfillable-quantity` |
+| 辅助解释字段 | `afn-total-quantity`、`afn-reserved-quantity`、`afn-unsellable-quantity`、`afn-warehouse-quantity` |
+
+#### 9.4.1 字段设计草案
+
+| 字段 | 类型 | 必填 | 默认值 | 字段状态 | 来源字段 / 说明 |
+|---|---|---:|---|---|---|
+| `id` | `BIGINT IDENTITY(1,1)` | 是 | - | `required_core` | 主键 |
+| `marketplace_id` | `NVARCHAR(50)` | 是 | - | `required_core` | Marketplace ID |
+| `snapshot_date` | `DATE` | 是 | - | `derived` | 本次下载/解析日期；第一版作为库存快照日期 |
+| `seller_sku` | `NVARCHAR(200)` | 是 | - | `observed` | `sku` |
+| `fnsku` | `NVARCHAR(100)` | 否 | `NULL` | `observed` | `fnsku` |
+| `asin` | `NVARCHAR(50)` | 否 | `NULL` | `observed` | `asin` |
+| `product_name` | `NVARCHAR(1000)` | 否 | `NULL` | `observed` | `product-name` |
+| `condition` | `NVARCHAR(50)` | 否 | `NULL` | `observed` | `condition`，如 `New` |
+| `your_price` | `DECIMAL(18,4)` | 否 | `NULL` | `observed` | `your-price` |
+| `currency` | `NVARCHAR(10)` | 否 | `NULL` | `derived` | 第一阶段美国站默认为 `USD` |
+| `mfn_listing_exists` | `BIT` | 否 | `NULL` | `observed` | `mfn-listing-exists`，`Yes/No` 转换 |
+| `mfn_fulfillable_quantity` | `INT` | 否 | `NULL` | `observed` | `mfn-fulfillable-quantity`，本次样例为空 |
+| `afn_listing_exists` | `BIT` | 否 | `NULL` | `observed` | `afn-listing-exists`，`Yes/No` 转换 |
+| `afn_warehouse_quantity` | `INT` | 否 | `NULL` | `observed` | `afn-warehouse-quantity` |
+| `afn_fulfillable_quantity` | `INT` | 否 | `NULL` | `observed` | `afn-fulfillable-quantity`，第一版可售库存主口径 |
+| `afn_unsellable_quantity` | `INT` | 否 | `NULL` | `observed` | `afn-unsellable-quantity` |
+| `afn_reserved_quantity` | `INT` | 否 | `NULL` | `observed` | `afn-reserved-quantity` |
+| `afn_total_quantity` | `INT` | 否 | `NULL` | `observed` | `afn-total-quantity` |
+| `per_unit_volume` | `DECIMAL(18,6)` | 否 | `NULL` | `observed` | `per-unit-volume` |
+| `afn_inbound_working_quantity` | `INT` | 否 | `NULL` | `observed` | `afn-inbound-working-quantity` |
+| `afn_inbound_shipped_quantity` | `INT` | 否 | `NULL` | `observed` | `afn-inbound-shipped-quantity` |
+| `afn_inbound_receiving_quantity` | `INT` | 否 | `NULL` | `observed` | `afn-inbound-receiving-quantity` |
+| `afn_researching_quantity` | `INT` | 否 | `NULL` | `observed` | `afn-researching-quantity` |
+| `afn_reserved_future_supply` | `INT` | 否 | `NULL` | `observed` | `afn-reserved-future-supply` |
+| `afn_future_supply_buyable` | `INT` | 否 | `NULL` | `observed` | `afn-future-supply-buyable` |
+| `store` | `NVARCHAR(200)` | 否 | `NULL` | `observed` | `store`，本次样例为空 |
+| `source_system` | `NVARCHAR(50)` | 是 | `sp_api_reports` | `required_core` | 数据来源 |
+| `source_report_type` | `NVARCHAR(200)` | 是 | - | `required_core` | `GET_FBA_MYI_UNSUPPRESSED_INVENTORY_DATA` |
+| `source_report_id` | `NVARCHAR(300)` | 否 | `NULL` | `required_core` | Amazon report ID |
+| `source_report_request_id` | `BIGINT` | 否 | `NULL` | `optional` | 对应 `amazon_report_request.id` |
+| `source_raw_file_id` | `BIGINT` | 否 | `NULL` | `optional` | 对应 `amazon_raw_report_file.id` |
+| `source_run_id` | `BIGINT` | 否 | `NULL` | `optional` | 对应 `amazon_sync_run_log.id` |
+| `source_row_hash` | `NVARCHAR(100)` | 是 | - | `required_core` | 原始行 JSON 的 SHA256，用于回刷去重 |
+| `raw_data` | `NVARCHAR(MAX)` | 是 | - | `required_core` | 单行原始 JSON |
+| `created_at` | `DATETIME2` | 是 | `SYSUTCDATETIME()` | `required_core` | 创建时间 |
+| `updated_at` | `DATETIME2` | 是 | `SYSUTCDATETIME()` | `required_core` | 更新时间 |
+
+#### 9.4.2 第一版库存口径
+
+第一版运营库存建议采用：
+
+```text
+available_inventory = afn_fulfillable_quantity
+warehouse_inventory = afn_warehouse_quantity
+total_inventory = afn_total_quantity
+reserved_inventory = afn_reserved_quantity
+unsellable_inventory = afn_unsellable_quantity
+inbound_inventory = afn_inbound_working_quantity
+                  + afn_inbound_shipped_quantity
+                  + afn_inbound_receiving_quantity
+```
+
+注意：
+
+1. `afn-fulfillable-quantity` 是 FBA 当前可履约库存，更适合周报中的“可售库存”。
+2. `afn-total-quantity` 不是可售库存，它包含预留、不可售等状态。
+3. `mfn-fulfillable-quantity` 本次样例为空，但如果未来有自发货 SKU，不能直接删除字段。
+4. 本报告可以补充 `fnsku`，Listing 报告不能提供该字段。
+
+#### 9.4.3 唯一键草案
+
+推荐唯一键：
+
+```text
+marketplace_id + source_report_type + seller_sku + fnsku + snapshot_date
+```
+
+说明：
+
+1. `seller_sku` 是后续成本、销售、广告归集的主关联键。
+2. `fnsku` 是 FBA 库存维度的重要标识，同一 SKU 未来理论上可能因库存/贴标变化出现不同 FNSKU。
+3. `asin` 保留为辅助关联字段，不建议单独作为唯一键。
+4. 如果 `fnsku` 为空，则 upsert 时需要降级使用 `source_row_hash` 或 `seller_sku + asin + condition`。
+
+#### 9.4.4 Parser 实现状态
+
+当前已新增本地 parser 草案：
+
+```text
+src/seller_data_pipeline/parsers/amazon/fba_inventory_parser.py
+```
+
+Parser 当前只做标准化内存记录，不写数据库。等本表字段从 `sampling` 升级为 `confirmed` 后，再实现 repository / upsert SQL。
+
+---
+
+
+### 9.5 `amazon_sales_traffic_daily`
+
+**表状态：`sampling`**  
+**第一数据来源：** `GET_SALES_AND_TRAFFIC_REPORT`  
+**样例记录：** `requirements/data_samples/GET_SALES_AND_TRAFFIC_REPORT.md`  
+**用途：** 保存 Business Reports 销售与流量报告中的日期维度运营指标，用于周报、月报、转化率分析和销售趋势分析。
+
+第三、四份真实销售与流量样例结论：
+
+| 项目 | 结论 |
+|---|---|
+| report_type | `GET_SALES_AND_TRAFFIC_REPORT` |
+| marketplace_id | `ATVPDKIKX0DER` |
+| 文件格式 | JSON |
+| 样例编码 | `utf-8-sig` |
+| reportOptions.dateGranularity | `DAY` |
+| reportOptions.asinGranularity | `PARENT` |
+| 单日样例 `salesAndTrafficByDate` | 1 行 |
+| 单日样例 `salesAndTrafficByAsin` | 0 行 |
+| 7 天窗口样例 `salesAndTrafficByDate` | 6 行 |
+| 7 天窗口样例 `salesAndTrafficByAsin` | 1 行，PARENT 粒度 |
+| 7 天窗口样例字段路径数 | 94 个 |
+| 适合进入本表 | 日期、销售额、订单数、销售件数、退款、Page Views、Sessions、转化率、Buy Box 百分比等 |
+| 不适合直接做利润 | 本报告没有 Amazon 费用、FBA fee、广告费、促销费、采购成本 |
+
+#### 9.5.1 字段设计草案
+
+| 字段 | 类型 | 必填 | 默认值 | 字段状态 | 来源字段 / 说明 |
+|---|---|---:|---|---|---|
+| `id` | `BIGINT IDENTITY(1,1)` | 是 | - | `required_core` | 主键 |
+| `marketplace_id` | `NVARCHAR(50)` | 是 | - | `required_core` | Marketplace ID |
+| `report_date` | `DATE` | 是 | - | `observed` | `salesAndTrafficByDate[].date` |
+| `date_granularity` | `NVARCHAR(50)` | 否 | `NULL` | `observed` | `reportSpecification.reportOptions.dateGranularity`，本次为 `DAY` |
+| `asin_granularity` | `NVARCHAR(50)` | 否 | `NULL` | `observed` | `reportSpecification.reportOptions.asinGranularity`，本次为 `PARENT` |
+| `ordered_product_sales_amount` | `DECIMAL(18,4)` | 否 | `NULL` | `observed` | `salesByDate.orderedProductSales.amount` |
+| `ordered_product_sales_currency` | `NVARCHAR(10)` | 否 | `NULL` | `observed` | `salesByDate.orderedProductSales.currencyCode` |
+| `ordered_product_sales_b2b_amount` | `DECIMAL(18,4)` | 否 | `NULL` | `observed` | `salesByDate.orderedProductSalesB2B.amount` |
+| `ordered_product_sales_b2b_currency` | `NVARCHAR(10)` | 否 | `NULL` | `observed` | `salesByDate.orderedProductSalesB2B.currencyCode` |
+| `units_ordered` | `INT` | 否 | `NULL` | `observed` | `salesByDate.unitsOrdered` |
+| `units_ordered_b2b` | `INT` | 否 | `NULL` | `observed` | `salesByDate.unitsOrderedB2B` |
+| `total_order_items` | `INT` | 否 | `NULL` | `observed` | `salesByDate.totalOrderItems` |
+| `total_order_items_b2b` | `INT` | 否 | `NULL` | `observed` | `salesByDate.totalOrderItemsB2B` |
+| `average_sales_per_order_item_amount` | `DECIMAL(18,4)` | 否 | `NULL` | `observed` | `salesByDate.averageSalesPerOrderItem.amount` |
+| `average_sales_per_order_item_currency` | `NVARCHAR(10)` | 否 | `NULL` | `observed` | `salesByDate.averageSalesPerOrderItem.currencyCode` |
+| `average_sales_per_order_item_b2b_amount` | `DECIMAL(18,4)` | 否 | `NULL` | `observed` | `salesByDate.averageSalesPerOrderItemB2B.amount` |
+| `average_sales_per_order_item_b2b_currency` | `NVARCHAR(10)` | 否 | `NULL` | `observed` | `salesByDate.averageSalesPerOrderItemB2B.currencyCode` |
+| `average_units_per_order_item` | `DECIMAL(18,6)` | 否 | `NULL` | `observed` | `salesByDate.averageUnitsPerOrderItem` |
+| `average_units_per_order_item_b2b` | `DECIMAL(18,6)` | 否 | `NULL` | `observed` | `salesByDate.averageUnitsPerOrderItemB2B` |
+| `average_selling_price_amount` | `DECIMAL(18,4)` | 否 | `NULL` | `observed` | `salesByDate.averageSellingPrice.amount` |
+| `average_selling_price_currency` | `NVARCHAR(10)` | 否 | `NULL` | `observed` | `salesByDate.averageSellingPrice.currencyCode` |
+| `average_selling_price_b2b_amount` | `DECIMAL(18,4)` | 否 | `NULL` | `observed` | `salesByDate.averageSellingPriceB2B.amount` |
+| `average_selling_price_b2b_currency` | `NVARCHAR(10)` | 否 | `NULL` | `observed` | `salesByDate.averageSellingPriceB2B.currencyCode` |
+| `units_refunded` | `INT` | 否 | `NULL` | `observed` | `salesByDate.unitsRefunded` |
+| `refund_rate` | `DECIMAL(18,6)` | 否 | `NULL` | `observed` | `salesByDate.refundRate` |
+| `claims_granted` | `INT` | 否 | `NULL` | `observed` | `salesByDate.claimsGranted` |
+| `claims_amount` | `DECIMAL(18,4)` | 否 | `NULL` | `observed` | `salesByDate.claimsAmount.amount` |
+| `claims_amount_currency` | `NVARCHAR(10)` | 否 | `NULL` | `observed` | `salesByDate.claimsAmount.currencyCode` |
+| `shipped_product_sales_amount` | `DECIMAL(18,4)` | 否 | `NULL` | `observed` | `salesByDate.shippedProductSales.amount` |
+| `shipped_product_sales_currency` | `NVARCHAR(10)` | 否 | `NULL` | `observed` | `salesByDate.shippedProductSales.currencyCode` |
+| `units_shipped` | `INT` | 否 | `NULL` | `observed` | `salesByDate.unitsShipped` |
+| `orders_shipped` | `INT` | 否 | `NULL` | `observed` | `salesByDate.ordersShipped` |
+| `browser_page_views` | `INT` | 否 | `NULL` | `observed` | `trafficByDate.browserPageViews` |
+| `mobile_app_page_views` | `INT` | 否 | `NULL` | `observed` | `trafficByDate.mobileAppPageViews` |
+| `page_views` | `INT` | 否 | `NULL` | `observed` | `trafficByDate.pageViews` |
+| `browser_sessions` | `INT` | 否 | `NULL` | `observed` | `trafficByDate.browserSessions` |
+| `mobile_app_sessions` | `INT` | 否 | `NULL` | `observed` | `trafficByDate.mobileAppSessions` |
+| `sessions` | `INT` | 否 | `NULL` | `observed` | `trafficByDate.sessions` |
+| `buy_box_percentage` | `DECIMAL(18,6)` | 否 | `NULL` | `observed` | `trafficByDate.buyBoxPercentage` |
+| `order_item_session_percentage` | `DECIMAL(18,6)` | 否 | `NULL` | `observed` | `trafficByDate.orderItemSessionPercentage` |
+| `unit_session_percentage` | `DECIMAL(18,6)` | 否 | `NULL` | `observed` | `trafficByDate.unitSessionPercentage` |
+| `average_offer_count` | `DECIMAL(18,6)` | 否 | `NULL` | `observed` | `trafficByDate.averageOfferCount` |
+| `average_parent_items` | `DECIMAL(18,6)` | 否 | `NULL` | `observed` | `trafficByDate.averageParentItems` |
+| `feedback_received` | `INT` | 否 | `NULL` | `observed` | `trafficByDate.feedbackReceived` |
+| `negative_feedback_received` | `INT` | 否 | `NULL` | `observed` | `trafficByDate.negativeFeedbackReceived` |
+| `received_negative_feedback_rate` | `DECIMAL(18,6)` | 否 | `NULL` | `observed` | `trafficByDate.receivedNegativeFeedbackRate` |
+| `source_system` | `NVARCHAR(50)` | 是 | `sp_api_reports` | `required_core` | 数据来源 |
+| `source_report_type` | `NVARCHAR(200)` | 是 | - | `required_core` | `GET_SALES_AND_TRAFFIC_REPORT` |
+| `source_report_id` | `NVARCHAR(300)` | 否 | `NULL` | `required_core` | Amazon report ID |
+| `source_report_request_id` | `BIGINT` | 否 | `NULL` | `optional` | 对应 `amazon_report_request.id` |
+| `source_raw_file_id` | `BIGINT` | 否 | `NULL` | `optional` | 对应 `amazon_raw_report_file.id` |
+| `source_run_id` | `BIGINT` | 否 | `NULL` | `optional` | 对应 `amazon_sync_run_log.id` |
+| `source_row_hash` | `NVARCHAR(100)` | 是 | - | `required_core` | 日期行原始 JSON 的 SHA256，用于回刷去重 |
+| `raw_data` | `NVARCHAR(MAX)` | 是 | - | `required_core` | 单行原始 JSON |
+| `created_at` | `DATETIME2` | 是 | `SYSUTCDATETIME()` | `required_core` | 创建时间 |
+| `updated_at` | `DATETIME2` | 是 | `SYSUTCDATETIME()` | `required_core` | 更新时间 |
+
+#### 9.5.2 第一版销售与流量口径
+
+第一版运营分析建议采用：
+
+```text
+ordered_sales = ordered_product_sales_amount
+ordered_units = units_ordered
+ordered_items = total_order_items
+shipped_sales = shipped_product_sales_amount
+shipped_units = units_shipped
+traffic_sessions = sessions
+traffic_page_views = page_views
+conversion_rate = unit_session_percentage
+refund_units = units_refunded
+refund_rate = refund_rate
+```
+
+注意：
+
+1. 本表是“销售与流量”数据，不是最终利润表。
+2. 费用、退款金额、FBA fee、广告费、促销费需要后续 Finances / Ads / Promotion 数据补齐。
+3. 7 天窗口样例已经验证非零销售、退款、B2B 销售、流量指标均能返回。
+4. `salesAndTrafficByAsin` 已返回 PARENT ASIN 聚合行，因此 ASIN 维度可进入 `sampling` 状态，但还不能升级为 `confirmed`。
+
+#### 9.5.3 唯一键草案
+
+推荐唯一键：
+
+```text
+marketplace_id + source_report_type + report_date + date_granularity + asin_granularity
+```
+
+说明：
+
+1. 日期维度报告本身没有 Amazon 原始唯一 ID。
+2. 同一日期、同一 marketplace、同一 granularity 应只有一条日期汇总记录。
+3. 如果未来支持多种 `reportOptions`，granularity 必须进入唯一键，避免 DAY/WEEK/MONTH 混写。
+
+#### 9.5.4 Parser 实现状态
+
+当前已新增本地 parser 草案：
+
+```text
+src/seller_data_pipeline/parsers/amazon/sales_report_parser.py
+```
+
+Parser 当前只做标准化内存记录，不写数据库。等本表字段从 `sampling` 升级为 `confirmed` 后，再实现 repository / upsert SQL。
+
+#### 9.5.5 后续待补样例
+
+需要继续补充：
+
+1. 更长日期窗口，例如最近 7 天或最近 30 天，验证多日记录和非零销售数据。
+2. 继续测试 `asinGranularity=CHILD` 或后续 reportOptions 支持情况，确认是否需要 child ASIN 维度。
+3. 与 Finances API 对齐，确认销售额和费用、退款金额、赔偿、清算的关系。
+
+
+### 9.6 `amazon_sales_traffic_asin_daily`
+
+**表状态：`sampling`**  
+**第一数据来源：** `GET_SALES_AND_TRAFFIC_REPORT`  
+**样例记录：** `requirements/data_samples/GET_SALES_AND_TRAFFIC_REPORT.md`  
+**用途：** 保存 Business Reports 销售与流量报告中的 ASIN 维度聚合指标，用于父体/子体商品表现分析。
+
+7 天窗口真实样例结论：
+
+| 项目 | 结论 |
+|---|---|
+| report_type | `GET_SALES_AND_TRAFFIC_REPORT` |
+| reportOptions.dateGranularity | `DAY` |
+| reportOptions.asinGranularity | `PARENT` |
+| `salesAndTrafficByAsin` | 1 行 |
+| ASIN 维度 | 当前样例为 `parentAsin`，`childAsin` 未出现 |
+| 适合进入本表 | parent ASIN、销售额、订单数、销售件数、Sessions、Page Views、各类百分比、Buy Box 百分比 |
+| 不足 | 当前只有一个父体 ASIN 样例；还需确认 CHILD 粒度是否可用 |
+
+#### 9.6.1 字段设计草案
+
+| 字段 | 类型 | 必填 | 默认值 | 字段状态 | 来源字段 / 说明 |
+|---|---|---:|---|---|---|
+| `id` | `BIGINT IDENTITY(1,1)` | 是 | - | `required_core` | 主键 |
+| `marketplace_id` | `NVARCHAR(50)` | 是 | - | `required_core` | Marketplace ID |
+| `report_start_date` | `DATE` | 否 | `NULL` | `observed` | `reportSpecification.dataStartTime` |
+| `report_end_date` | `DATE` | 否 | `NULL` | `observed` | `reportSpecification.dataEndTime` |
+| `date_granularity` | `NVARCHAR(50)` | 否 | `NULL` | `observed` | `reportSpecification.reportOptions.dateGranularity` |
+| `asin_granularity` | `NVARCHAR(50)` | 否 | `NULL` | `observed` | `reportSpecification.reportOptions.asinGranularity` |
+| `parent_asin` | `NVARCHAR(50)` | 否 | `NULL` | `observed` | `salesAndTrafficByAsin[].parentAsin` |
+| `child_asin` | `NVARCHAR(50)` | 否 | `NULL` | `reserved` | `salesAndTrafficByAsin[].childAsin`，当前样例未出现 |
+| `ordered_product_sales_amount` | `DECIMAL(18,4)` | 否 | `NULL` | `observed` | `salesByAsin.orderedProductSales.amount` |
+| `ordered_product_sales_currency` | `NVARCHAR(10)` | 否 | `NULL` | `observed` | `salesByAsin.orderedProductSales.currencyCode` |
+| `ordered_product_sales_b2b_amount` | `DECIMAL(18,4)` | 否 | `NULL` | `observed` | `salesByAsin.orderedProductSalesB2B.amount` |
+| `ordered_product_sales_b2b_currency` | `NVARCHAR(10)` | 否 | `NULL` | `observed` | `salesByAsin.orderedProductSalesB2B.currencyCode` |
+| `units_ordered` | `INT` | 否 | `NULL` | `observed` | `salesByAsin.unitsOrdered` |
+| `units_ordered_b2b` | `INT` | 否 | `NULL` | `observed` | `salesByAsin.unitsOrderedB2B` |
+| `total_order_items` | `INT` | 否 | `NULL` | `observed` | `salesByAsin.totalOrderItems` |
+| `total_order_items_b2b` | `INT` | 否 | `NULL` | `observed` | `salesByAsin.totalOrderItemsB2B` |
+| `browser_page_views` | `INT` | 否 | `NULL` | `observed` | `trafficByAsin.browserPageViews` |
+| `browser_page_views_b2b` | `INT` | 否 | `NULL` | `observed` | `trafficByAsin.browserPageViewsB2B` |
+| `browser_page_views_percentage` | `DECIMAL(18,6)` | 否 | `NULL` | `observed` | `trafficByAsin.browserPageViewsPercentage` |
+| `browser_page_views_percentage_b2b` | `DECIMAL(18,6)` | 否 | `NULL` | `observed` | `trafficByAsin.browserPageViewsPercentageB2B` |
+| `mobile_app_page_views` | `INT` | 否 | `NULL` | `observed` | `trafficByAsin.mobileAppPageViews` |
+| `mobile_app_page_views_b2b` | `INT` | 否 | `NULL` | `observed` | `trafficByAsin.mobileAppPageViewsB2B` |
+| `mobile_app_page_views_percentage` | `DECIMAL(18,6)` | 否 | `NULL` | `observed` | `trafficByAsin.mobileAppPageViewsPercentage` |
+| `mobile_app_page_views_percentage_b2b` | `DECIMAL(18,6)` | 否 | `NULL` | `observed` | `trafficByAsin.mobileAppPageViewsPercentageB2B` |
+| `page_views` | `INT` | 否 | `NULL` | `observed` | `trafficByAsin.pageViews` |
+| `page_views_b2b` | `INT` | 否 | `NULL` | `observed` | `trafficByAsin.pageViewsB2B` |
+| `page_views_percentage` | `DECIMAL(18,6)` | 否 | `NULL` | `observed` | `trafficByAsin.pageViewsPercentage` |
+| `page_views_percentage_b2b` | `DECIMAL(18,6)` | 否 | `NULL` | `observed` | `trafficByAsin.pageViewsPercentageB2B` |
+| `browser_sessions` | `INT` | 否 | `NULL` | `observed` | `trafficByAsin.browserSessions` |
+| `browser_sessions_b2b` | `INT` | 否 | `NULL` | `observed` | `trafficByAsin.browserSessionsB2B` |
+| `browser_session_percentage` | `DECIMAL(18,6)` | 否 | `NULL` | `observed` | `trafficByAsin.browserSessionPercentage` |
+| `browser_session_percentage_b2b` | `DECIMAL(18,6)` | 否 | `NULL` | `observed` | `trafficByAsin.browserSessionPercentageB2B` |
+| `mobile_app_sessions` | `INT` | 否 | `NULL` | `observed` | `trafficByAsin.mobileAppSessions` |
+| `mobile_app_sessions_b2b` | `INT` | 否 | `NULL` | `observed` | `trafficByAsin.mobileAppSessionsB2B` |
+| `mobile_app_session_percentage` | `DECIMAL(18,6)` | 否 | `NULL` | `observed` | `trafficByAsin.mobileAppSessionPercentage` |
+| `mobile_app_session_percentage_b2b` | `DECIMAL(18,6)` | 否 | `NULL` | `observed` | `trafficByAsin.mobileAppSessionPercentageB2B` |
+| `sessions` | `INT` | 否 | `NULL` | `observed` | `trafficByAsin.sessions` |
+| `sessions_b2b` | `INT` | 否 | `NULL` | `observed` | `trafficByAsin.sessionsB2B` |
+| `session_percentage` | `DECIMAL(18,6)` | 否 | `NULL` | `observed` | `trafficByAsin.sessionPercentage` |
+| `session_percentage_b2b` | `DECIMAL(18,6)` | 否 | `NULL` | `observed` | `trafficByAsin.sessionPercentageB2B` |
+| `buy_box_percentage` | `DECIMAL(18,6)` | 否 | `NULL` | `observed` | `trafficByAsin.buyBoxPercentage` |
+| `buy_box_percentage_b2b` | `DECIMAL(18,6)` | 否 | `NULL` | `observed` | `trafficByAsin.buyBoxPercentageB2B` |
+| `unit_session_percentage` | `DECIMAL(18,6)` | 否 | `NULL` | `observed` | `trafficByAsin.unitSessionPercentage` |
+| `unit_session_percentage_b2b` | `DECIMAL(18,6)` | 否 | `NULL` | `observed` | `trafficByAsin.unitSessionPercentageB2B` |
+| `source_system` | `NVARCHAR(50)` | 是 | `sp_api_reports` | `required_core` | 数据来源 |
+| `source_report_type` | `NVARCHAR(200)` | 是 | - | `required_core` | `GET_SALES_AND_TRAFFIC_REPORT` |
+| `source_report_id` | `NVARCHAR(300)` | 否 | `NULL` | `required_core` | Amazon report ID |
+| `source_report_request_id` | `BIGINT` | 否 | `NULL` | `optional` | 对应 `amazon_report_request.id` |
+| `source_raw_file_id` | `BIGINT` | 否 | `NULL` | `optional` | 对应 `amazon_raw_report_file.id` |
+| `source_run_id` | `BIGINT` | 否 | `NULL` | `optional` | 对应 `amazon_sync_run_log.id` |
+| `source_row_hash` | `NVARCHAR(100)` | 是 | - | `required_core` | ASIN 行原始 JSON 的 SHA256，用于回刷去重 |
+| `raw_data` | `NVARCHAR(MAX)` | 是 | - | `required_core` | 单行原始 JSON |
+| `created_at` | `DATETIME2` | 是 | `SYSUTCDATETIME()` | `required_core` | 创建时间 |
+| `updated_at` | `DATETIME2` | 是 | `SYSUTCDATETIME()` | `required_core` | 更新时间 |
+
+#### 9.6.2 唯一键草案
+
+推荐唯一键：
+
+```text
+marketplace_id + source_report_type + report_start_date + report_end_date + asin_granularity + parent_asin
+```
+
+说明：
+
+1. 当前样例为 PARENT 粒度，因此先用 `parent_asin` 作为业务键核心。
+2. 如果后续支持 CHILD 粒度，应把 `child_asin` 纳入唯一键或拆分粒度处理。
+3. 因为本表是报告窗口聚合，不是每日逐 ASIN 行，必须保留 report_start_date / report_end_date。
+4. 如果后续需要每日 ASIN 表，应尝试 reportOptions 是否可返回更细粒度。
+
+#### 9.6.3 Parser 实现状态
+
+当前 parser 已能解析 `salesAndTrafficByAsin` 中观察到的 PARENT ASIN 聚合字段：
+
+```text
+src/seller_data_pipeline/parsers/amazon/sales_report_parser.py
+```
+
+Parser 当前只做标准化内存记录，不写数据库。等本表字段从 `sampling` 升级为 `confirmed` 后，再实现 repository / upsert SQL。
+
+---
+
+### 9.7 `amazon_settlement_transaction`
+
+**表状态：`sampling`**  
+**第一数据来源：** `GET_V2_SETTLEMENT_REPORT_DATA_FLAT_FILE_V2`  
+**样例记录：** `requirements/data_samples/GET_V2_SETTLEMENT_REPORT_DATA_FLAT_FILE_V2.md`  
+**用途：** 保存 Amazon 结算报告中的逐行财务交易明细，作为退款、平台费、FBA fee、广告费、赔偿、清算、促销抵扣、仓储费、月租等利润费用侧的第一来源。
+
+重要采集事实：
+
+1. Settlement reports 不是普通 requestable report，不能用 `createReport` 主动生成。
+2. 需要通过 Reports API `getReports` 按 `reportTypes=GET_V2_SETTLEMENT_REPORT_DATA_FLAT_FILE_V2`、`processingStatuses=DONE` 发现 Amazon 自动生成的报告。
+3. 本次 89 天窗口发现并下载 8 份报告，合计 4,911 行；每份报告第一行通常是 settlement summary 行。
+4. Summary 行包含 `settlement-start-date`、`settlement-end-date`、`deposit-date`、`total-amount`、`currency`；后续交易明细行这些列通常为空。
+5. Parser 必须把 summary 元数据向下继承到交易明细行，否则大部分交易会缺少币种和结算周期。
+6. Flat File V2 把金额统一收敛到 `amount-type`、`amount-description`、`amount` 三列，适合用字典做费用分类。
+7. 本次样例已出现广告费、Coupon fee、Deal fee、Storage Fee、Subscription Fee、FBA Inbound Placement Service Fee、Inventory Reimbursement、Liquidations 等利润关键类型。
+
+#### 9.7.1 字段设计草案
+
+| 字段 | 类型 | 必填 | 默认值 | 字段状态 | 来源字段 / 说明 |
+|---|---|---:|---|---|---|
+| `id` | `BIGINT IDENTITY(1,1)` | 是 | - | `required_core` | 主键 |
+| `marketplace_id` | `NVARCHAR(50)` | 是 | - | `required_core` | Marketplace ID |
+| `settlement_id` | `NVARCHAR(100)` | 否 | `NULL` | `observed` | `settlement-id` |
+| `settlement_start_date_raw` | `NVARCHAR(100)` | 否 | `NULL` | `observed` | `settlement-start-date`；parser 从 summary 行继承到明细行 |
+| `settlement_end_date_raw` | `NVARCHAR(100)` | 否 | `NULL` | `observed` | `settlement-end-date`；parser 从 summary 行继承到明细行 |
+| `deposit_date_raw` | `NVARCHAR(100)` | 否 | `NULL` | `observed` | `deposit-date`；parser 从 summary 行继承到明细行 |
+| `total_amount` | `DECIMAL(18,4)` | 否 | `NULL` | `observed` | `total-amount`；结算总额，parser 从 summary 行继承到明细行，用于 reconciliation |
+| `currency` | `NVARCHAR(10)` | 否 | `NULL` | `observed` | `currency`；parser 从 summary 行继承到明细行 |
+| `is_settlement_summary` | `BIT` | 是 | `0` | `mapped` | 是否为 settlement summary 行；summary 行不直接参与利润明细汇总 |
+| `transaction_type` | `NVARCHAR(100)` | 否 | `NULL` | `observed` | `transaction-type`，如 Order / Refund / ServiceFee / AmazonFees / Liquidations |
+| `order_id` | `NVARCHAR(100)` | 否 | `NULL` | `observed` | `order-id` |
+| `merchant_order_id` | `NVARCHAR(100)` | 否 | `NULL` | `observed` | `merchant-order-id` |
+| `adjustment_id` | `NVARCHAR(100)` | 否 | `NULL` | `observed` | `adjustment-id` |
+| `shipment_id` | `NVARCHAR(100)` | 否 | `NULL` | `observed` | `shipment-id` |
+| `marketplace_name` | `NVARCHAR(200)` | 否 | `NULL` | `observed` | `marketplace-name` |
+| `amount_type` | `NVARCHAR(200)` | 否 | `NULL` | `observed` | `amount-type`，费用大类 |
+| `amount_description` | `NVARCHAR(300)` | 否 | `NULL` | `observed` | `amount-description`，费用细项 |
+| `amount` | `DECIMAL(18,4)` | 否 | `NULL` | `observed` | `amount`，行级金额；利润计算主要使用该字段 |
+| `amount_category` | `NVARCHAR(100)` | 是 | - | `mapped` | parser 第一版分类，如 product_sales / fba_fulfillment_fee / advertising_fee / refund_revenue |
+| `profit_bucket` | `NVARCHAR(100)` | 是 | - | `mapped` | 运营利润归集桶，如 revenue / amazon_fee / fba_fee / promotion_cost / advertising_cost / reimbursement / tax_passthrough |
+| `fulfillment_id` | `NVARCHAR(100)` | 否 | `NULL` | `observed` | `fulfillment-id` |
+| `posted_date_raw` | `NVARCHAR(100)` | 否 | `NULL` | `observed` | `posted-date` 原始字符串；样例中存在 yyyy-mm-dd 与 dd.mm.yyyy 两类格式 |
+| `posted_date_time_raw` | `NVARCHAR(100)` | 否 | `NULL` | `observed` | `posted-date-time` 原始字符串 |
+| `order_item_code` | `NVARCHAR(100)` | 否 | `NULL` | `observed` | `order-item-code` |
+| `merchant_order_item_id` | `NVARCHAR(100)` | 否 | `NULL` | `observed` | `merchant-order-item-id` |
+| `merchant_adjustment_item_id` | `NVARCHAR(100)` | 否 | `NULL` | `observed` | `merchant-adjustment-item-id` |
+| `seller_sku` | `NVARCHAR(200)` | 否 | `NULL` | `observed` | `sku`；费用类行可能为空 |
+| `quantity_purchased` | `INT` | 否 | `NULL` | `observed` | `quantity-purchased` |
+| `promotion_id` | `NVARCHAR(300)` | 否 | `NULL` | `observed` | `promotion-id`；样例中 Coupon / Deal fee 行可能为空 |
+| `source_system` | `NVARCHAR(50)` | 是 | `sp_api_reports` | `required_core` | 数据来源 |
+| `source_report_type` | `NVARCHAR(200)` | 是 | - | `required_core` | `GET_V2_SETTLEMENT_REPORT_DATA_FLAT_FILE_V2` |
+| `source_report_id` | `NVARCHAR(300)` | 否 | `NULL` | `required_core` | Amazon report ID |
+| `source_report_request_id` | `BIGINT` | 否 | `NULL` | `optional` | 对应 `amazon_report_request.id` |
+| `source_raw_file_id` | `BIGINT` | 否 | `NULL` | `optional` | 对应 `amazon_raw_report_file.id` |
+| `source_run_id` | `BIGINT` | 否 | `NULL` | `optional` | 对应 `amazon_sync_run_log.id` |
+| `source_row_hash` | `NVARCHAR(100)` | 是 | - | `required_core` | 原始行 JSON 的 SHA256，用于回刷去重 |
+| `raw_data` | `NVARCHAR(MAX)` | 是 | - | `required_core` | 单行原始 JSON；保留未继承前的原始空字段 |
+| `created_at` | `DATETIME2` | 是 | `SYSUTCDATETIME()` | `required_core` | 创建时间 |
+| `updated_at` | `DATETIME2` | 是 | `SYSUTCDATETIME()` | `required_core` | 更新时间 |
+
+#### 9.7.2 第一版 `profit_bucket` 草案
+
+| profit_bucket | 含义 | 样例来源 |
+|---|---|---|
+| `revenue` | 商品销售收入、运费收入等 | Order / ItemPrice / Principal、Shipping |
+| `refund` | 退款相关收入冲减 | Refund / ItemPrice |
+| `amazon_fee` | 平台佣金、shipping chargeback、月租等 Amazon fee | ItemFees / Commission、Subscription Fee |
+| `amazon_fee_refund` | 退款导致的平台佣金返还或调整 | Refund / ItemFees / Commission、RefundCommission |
+| `fba_fee` | FBA 配送费、入库配置服务费等 | FBAPerUnitFulfillmentFee、FBA Inbound Placement Service Fee |
+| `fba_storage_fee` | 仓储费 | Storage Fee |
+| `promotion_cost` | Coupon / promotion 折扣让利 | Promotion / Principal、Shipping |
+| `promotion_fee` | Coupon / Deal 平台活动费用 | Coupon Performance Based Fee、Deal Participation Fee |
+| `advertising_cost` | 广告扣费的财务入账金额 | Cost of Advertising / TransactionTotalAmount |
+| `reimbursement` | FBA 库存赔偿、追回等 | FBA Inventory Reimbursement |
+| `liquidation` | 清算收入 | Liquidations / ItemPrice |
+| `liquidation_fee` | 清算服务费 | Liquidations / ItemFees |
+| `tax_passthrough` | 税收代收代缴相关，不直接视为经营利润 | Tax、MarketplaceFacilitatorTax-*、ItemWithheldTax |
+| `reconciliation` | 结算 summary、Payable to Amazon、Successful charge 等对账项 | summary 行 / settlement transfer |
+| `unknown` | 尚未分类 | 未来样例补充 |
+
+注意：这是运营分析口径，不是最终会计科目。后续需要用实际月报与会计核对。
+
+#### 9.7.3 第一版财务口径原则
+
+第一版不要直接把 settlement report 汇总成最终利润。应先保留逐行交易明细：
+
+```text
+settlement raw rows
+    ↓
+amazon_settlement_transaction
+    ↓
+amount_category / profit_bucket 第一版分类
+    ↓
+人工抽样核对
+    ↓
+amazon_finance_event 或利润分析中间表
+```
+
+费用分类需要基于真实样例逐步确认，特别是：
+
+1. `amount-type` / `amount-description` / `transaction-type` 的组合映射是否覆盖所有费用类型。
+2. `Cost of Advertising` 在 settlement 中是财务扣款口径；Ads API 后续用于 campaign / keyword 运营分析口径。
+3. 清算、赔偿、订阅费、仓储费、入库配置费等不一定有 SKU，要允许 `seller_sku` 为空。
+4. 税收相关字段进入 `tax_passthrough`，第一版利润分析可单独列示，不直接混入经营利润。
+5. 金额格式在不同站点可能存在本地化格式，例如小数逗号，因此 parser 需要支持金额格式标准化。
+
+#### 9.7.4 唯一键草案
+
+推荐唯一键先不急着用业务字段硬凑，第一版以 hash 去重为主：
+
+```text
+marketplace_id + source_report_type + source_report_id + source_row_hash
+```
+
+说明：
+
+1. settlement 明细行不一定都有 `order-id`、`sku` 或 `order-item-code`。
+2. 同一结算报告可能存在多行相同订单、不同 amount-description。
+3. 用完整原始行 hash 更安全，后续再根据真实样例增加业务索引。
+
+#### 9.7.5 Parser 实现状态
+
+当前 parser 已升级为：
+
+```text
+src/seller_data_pipeline/parsers/amazon/settlement_report_parser.py
+```
+
+已支持：
+
+1. 解析 Flat File V2 settlement report。
+2. 识别 settlement summary 行。
+3. 向下继承 summary 行的 settlement period / currency / total amount。
+4. 生成 `amount_category` / `profit_bucket` 第一版分类。
+5. 保留 `raw_data` 和 `source_row_hash`，暂不写数据库。
+
+聚合分析脚本：
+
+```text
+scripts/analyze_settlement_reports.py
+```
+
+已生成样例文档：
+
+```text
+requirements/data_samples/GET_V2_SETTLEMENT_REPORT_DATA_FLAT_FILE_V2.md
+```
+
+
+---
+
+
 ## 10. SKU 成本表设计
 
 `amazon_sku_cost` 可以较早确认，因为它主要来自人工维护，不依赖 Amazon report 字段。
@@ -817,7 +1406,7 @@ amazon_sku_cost
 暂不建：
 
 ```text
-amazon_sales_daily
+amazon_sales_traffic_daily
 amazon_inventory_daily
 amazon_finance_event
 amazon_ads_daily
@@ -845,8 +1434,8 @@ amazon_periodic_report_log
 | 顺序 | 数据 | 候选 report/API | 目的 |
 |---:|---|---|---|
 | 1 | Listing / Open Listings | `GET_MERCHANT_LISTINGS_ALL_DATA` 或 `GET_FLAT_FILE_OPEN_LISTINGS_DATA` | 字段简单，验证 Reports API 全链路 |
-| 2 | 库存 | Listings/Inventory/FBA inventory 相关报告 | 明确 SKU 库存字段 |
-| 3 | 销售和流量 | Business Reports / Sales reports | 确认销售额、订单、sessions 口径 |
+| 2 | 库存 | `GET_FBA_MYI_UNSUPPRESSED_INVENTORY_DATA` | 已完成首份样例；继续确认库存口径 |
+| 3 | 销售和流量 | `GET_SALES_AND_TRAFFIC_REPORT` | 已完成 7 天窗口样例；日期维度与 PARENT ASIN 维度进入 sampling |
 | 4 | 财务 | Finances API / settlement report | 确认费用、退款、赔偿、清算分类 |
 | 5 | 广告 | Amazon Ads Reporting | 确认 Sponsored Products 粒度与归因字段 |
 | 6 | 促销 | 财务事件 + Seller Central 导出/可用 API | 确认 Coupon / Deal / Price Discount 成本来源 |
@@ -888,7 +1477,7 @@ amazon_periodic_report_log
 
 1. `requirements/database_spec.md` 已更新为 v0.2 或更高版本。
 2. 当前 SQL 草稿明确不直接执行，后续必须按 spec 重写。
-3. Reports API client 能提交一个 Listing report request。
+3. Reports API client 能提交 Listing、FBA inventory、Sales and Traffic report request。
 4. 本地 Sampling Mode 能记录 request manifest。
 5. collect 脚本能轮询 `reportId`。
 6. 报告 `DONE` 后能下载 raw file。
@@ -896,6 +1485,7 @@ amazon_periodic_report_log
 8. 能生成 raw file manifest，包含 path、sha256、row_count、column_count、encoding。
 9. 能读取 header，并产出字段样例清单。
 10. 根据样例更新本文档中的 L3 业务表字段。
+11. 已为 Listing、FBA 库存、销售与流量报告新增 parser 草案。
 
 ---
 
@@ -903,8 +1493,8 @@ amazon_periodic_report_log
 
 以下问题不阻塞下一阶段取样：
 
-1. 销售日表第一版具体使用哪个 report type。
-2. 库存表是否以 FBA 可履约库存为主，还是 Listing quantity 为主。
+1. 销售日表第一版已选择 `GET_SALES_AND_TRAFFIC_REPORT`，但还需补充多日和非零销售样例。
+2. 库存表第一版已决定以 FBA 可履约库存 `afn-fulfillable-quantity` 为主，但仍需更多日期样例验证。
 3. 财务数据优先用 Finances API 还是 settlement report。
 4. Coupon / Deal / Price Discount 是否有稳定 API；如果没有，是否从财务事件中归类。
 5. Ads API 授权和 profile id 获取流程。
@@ -925,7 +1515,513 @@ amazon_periodic_report_log
 3. 用 Listing 报告跑通第一个 raw file 下载闭环。
 4. 解析 header 和前几行样例。
 5. 回到本文件更新 L3 normalized 表字段。
-6. 等第一批字段稳定后，再重写 001/002 SQL。
+6. 继续取样更长日期窗口的销售/流量和财务数据。
+7. 等第一批字段稳定后，再重写 001/002 SQL。
 ```
 
 这条路线能避免过早设计错误，同时不会阻塞真实接口开发。
+
+
+## 19. v0.9 批量接口取样计划
+
+当前进入“尽量下载可用样例”的阶段，但仍不建表。
+
+新增取样计划文档：
+
+```text
+requirements/amazon_report_sampling_plan.md
+```
+
+新增批量脚本：
+
+```text
+scripts/run_sampling_plan.py
+```
+
+默认非敏感计划覆盖：
+
+| 数据域 | report/API | 目标用途 |
+|---|---|---|
+| Listing | `GET_MERCHANT_LISTINGS_ALL_DATA` | SKU / ASIN / listing / price / status |
+| FBA 库存 | `GET_FBA_MYI_UNSUPPRESSED_INVENTORY_DATA` | 可售、预留、入库、不可售库存 |
+| 销售与流量 | `GET_SALES_AND_TRAFFIC_REPORT` | 日期/ASIN 粒度销售、流量、转化 |
+| 订单明细 | `GET_FLAT_FILE_ALL_ORDERS_DATA_BY_ORDER_DATE_GENERAL` | 订单、SKU、ASIN、订单状态、促销折扣 |
+| 退货 | `GET_FLAT_FILE_RETURNS_DATA_BY_RETURN_DATE` | 退货原因、RMA、状态 |
+| FBA 赔偿 | `GET_FBA_REIMBURSEMENTS_DATA` | 赔偿原因、金额、数量 |
+| FBA 费用预估 | `GET_FBA_ESTIMATED_FBA_FEES_TXT_DATA` | referral fee / FBA fee 预估 |
+| FBA 仓储费 | `GET_FBA_STORAGE_FEE_CHARGES_DATA` | 月度仓储费和库存体积 |
+| 库存健康 | `GET_FBA_INVENTORY_PLANNING_DATA` | 库龄、周转、冗余、建议动作 |
+| 库存流水 | `GET_LEDGER_SUMMARY_VIEW_DATA` / `GET_LEDGER_DETAIL_VIEW_DATA` | 收货、发货、退货、丢失、损坏、调整 |
+| Settlement | `GET_V2_SETTLEMENT_REPORT_DATA_FLAT_FILE_V2` | 实际结算明细与费用分类 |
+| 促销/Coupon | `GET_PROMOTION_PERFORMANCE_REPORT` / `GET_COUPON_PERFORMANCE_REPORT` | 若账号可用，辅助活动效果分析 |
+
+敏感报告默认不跑：
+
+| report/API | 原因 |
+|---|---|
+| `GET_AMAZON_FULFILLED_SHIPMENTS_DATA_GENERAL` | 可能包含买家联系方式/地址相关字段 |
+| `GET_FBA_FULFILLMENT_CUSTOMER_RETURNS_DATA` | 可能包含 customer-comments |
+
+后续处理规则：
+
+1. 批量脚本只负责提交/发现 report，不负责建库。
+2. `collect_ready_reports.py --limit 50` 下载 raw file。
+3. 每个新 report 下载后，先用 analyzer 生成脱敏字段样例。
+4. 根据样例更新本 spec。
+5. parser 与 normalized 表设计确认后，再统一重写 SQL。
+
+## 20. v1.0 批量取样结果与新增 normalized 草案
+
+本轮批量取样已经下载并分析以下新增 raw report：
+
+| 数据域 | report_type | 样例结果 | 建议目标表 | 设计状态 |
+|---|---|---:|---|---|
+| 订单明细 | `GET_FLAT_FILE_ALL_ORDERS_DATA_BY_ORDER_DATE_GENERAL` | 112 行 / 33 字段 | `amazon_order_item` | `sampling` |
+| 退货请求 | `GET_FLAT_FILE_RETURNS_DATA_BY_RETURN_DATE` | 0 行 / 33 字段，header-only | `amazon_return_request` | `sampling` |
+| FBA 赔偿 | `GET_FBA_REIMBURSEMENTS_DATA` | 19 行 / 18 字段 | `amazon_fba_reimbursement` | `sampling` |
+| FBA 费用预估 | `GET_FBA_ESTIMATED_FBA_FEES_TXT_DATA` | 8 行 / 31 字段 | `amazon_fba_fee_preview` | `sampling` |
+| 库存健康 | `GET_FBA_INVENTORY_PLANNING_DATA` | 4 行 / 97 字段 | `amazon_inventory_planning_daily` | `sampling` |
+| 库存流水汇总 | `GET_LEDGER_SUMMARY_VIEW_DATA` | 150 行 / 22 字段 | `amazon_inventory_ledger_summary_daily` | `sampling` |
+
+本轮还观察到：
+
+1. `GET_FBA_STORAGE_FEE_CHARGES_DATA` 已成功提交但最终 `CANCELLED`，当前窗口可能无可生成数据，暂不建表。
+2. `GET_PROMOTION_PERFORMANCE_REPORT` 在首次轮询时仍为 `IN_PROGRESS`，应继续运行 `collect_ready_reports.py --limit 50`。
+3. `GET_COUPON_PERFORMANCE_REPORT` 返回 `FATAL`，且 Amazon 给出了 `reportDocumentId`；后续可考虑增强 collect 脚本，下载 FATAL document 用于诊断。
+4. `GET_LEDGER_DETAIL_VIEW_DATA` 使用 `reportOptions={"eventType":""}` 被当前 SP-API 校验拒绝；后续批量计划改为不显式传空字符串，先尝试无 `reportOptions`。
+
+### 20.1 `amazon_order_item`
+
+**表状态：`sampling`**  
+**第一数据来源：** `GET_FLAT_FILE_ALL_ORDERS_DATA_BY_ORDER_DATE_GENERAL`  
+**样例记录：** `requirements/data_samples/GET_FLAT_FILE_ALL_ORDERS_DATA_BY_ORDER_DATE_GENERAL.md`
+
+用途：保存订单行项目维度数据，用于按 SKU/ASIN/订单状态/履约渠道/促销折扣分析销售。
+
+第一版建议字段：
+
+| 字段 | 类型 | 字段状态 | 来源字段 / 说明 |
+|---|---|---|---|
+| `marketplace_id` | `NVARCHAR(50)` | `required_core` | Marketplace ID |
+| `amazon_order_id` | `NVARCHAR(100)` | `observed` | `amazon-order-id` |
+| `merchant_order_id` | `NVARCHAR(100)` | `observed` | `merchant-order-id` |
+| `purchase_date_raw` | `NVARCHAR(100)` | `observed` | `purchase-date` |
+| `last_updated_date_raw` | `NVARCHAR(100)` | `observed` | `last-updated-date` |
+| `order_status` | `NVARCHAR(80)` | `observed` | `order-status` |
+| `fulfillment_channel` | `NVARCHAR(80)` | `observed` | `fulfillment-channel` |
+| `sales_channel` | `NVARCHAR(100)` | `observed` | `sales-channel` |
+| `product_name` | `NVARCHAR(1000)` | `observed` | `product-name` |
+| `seller_sku` | `NVARCHAR(200)` | `observed` | `sku` |
+| `asin` | `NVARCHAR(50)` | `observed` | `asin` |
+| `item_status` | `NVARCHAR(80)` | `observed` | `item-status` |
+| `quantity` | `INT` | `observed` | `quantity` |
+| `currency` | `NVARCHAR(10)` | `observed` | `currency` |
+| `item_price` | `DECIMAL(18,4)` | `observed` | `item-price` |
+| `item_tax` | `DECIMAL(18,4)` | `observed` | `item-tax` |
+| `shipping_price` | `DECIMAL(18,4)` | `observed` | `shipping-price` |
+| `shipping_tax` | `DECIMAL(18,4)` | `observed` | `shipping-tax` |
+| `item_promotion_discount` | `DECIMAL(18,4)` | `observed` | `item-promotion-discount` |
+| `ship_promotion_discount` | `DECIMAL(18,4)` | `observed` | `ship-promotion-discount` |
+| `ship_state` | `NVARCHAR(100)` | `optional` | `ship-state`，低敏地理维度 |
+| `ship_postal_code` | `NVARCHAR(50)` | `optional` | `ship-postal-code`，后续可考虑脱敏/截断 |
+| `ship_country` | `NVARCHAR(20)` | `observed` | `ship-country` |
+| `promotion_ids` | `NVARCHAR(MAX)` | `optional` | `promotion-ids` |
+| `is_business_order` | `BIT` | `observed` | `is-business-order` |
+
+注意：订单报告可用于运营销售行项目分析，但利润最终仍应以 settlement/finance 费用口径做对账。
+
+### 20.2 `amazon_return_request`
+
+**表状态：`sampling`**  
+**第一数据来源：** `GET_FLAT_FILE_RETURNS_DATA_BY_RETURN_DATE`  
+**样例记录：** `requirements/data_samples/GET_FLAT_FILE_RETURNS_DATA_BY_RETURN_DATE.md`
+
+用途：保存退货请求、RMA、退货原因、Safe-T、退款金额等。
+
+本次样例是 header-only，说明窗口内无返回行；字段结构已可进入 parser 草案，但还需要未来补充含数据行样例。
+
+第一版建议字段：`order_id`、`order_date_raw`、`return_request_date_raw`、`return_request_status`、`amazon_rma_id`、`merchant_rma_id`、`currency_code`、`asin`、`seller_sku`、`item_name`、`return_quantity`、`return_reason`、`return_type`、`resolution`、`refunded_amount`、`order_item_id`、`safe_t_claim_id`、`safe_t_claim_state`。
+
+### 20.3 `amazon_fba_reimbursement`
+
+**表状态：`sampling`**  
+**第一数据来源：** `GET_FBA_REIMBURSEMENTS_DATA`  
+**样例记录：** `requirements/data_samples/GET_FBA_REIMBURSEMENTS_DATA.md`
+
+用途：保存 FBA 赔偿明细，用于识别赔现金、赔库存、CustomerReturn 相关赔偿和原始 reimbursement id。
+
+第一版建议字段：`approval_date_raw`、`reimbursement_id`、`case_id`、`amazon_order_id`、`reason`、`seller_sku`、`fnsku`、`asin`、`product_name`、`condition`、`currency`、`amount_per_unit`、`amount_total`、`quantity_reimbursed_cash`、`quantity_reimbursed_inventory`、`quantity_reimbursed_total`、`original_reimbursement_id`、`original_reimbursement_type`。
+
+### 20.4 `amazon_fba_fee_preview`
+
+**表状态：`sampling`**  
+**第一数据来源：** `GET_FBA_ESTIMATED_FBA_FEES_TXT_DATA`  
+**样例记录：** `requirements/data_samples/GET_FBA_ESTIMATED_FBA_FEES_TXT_DATA.md`
+
+用途：保存 SKU/FNSKU/ASIN 维度 FBA 费用预估，用于新品定价、利润预估和与真实 settlement fee 做差异分析。
+
+第一版建议字段：`seller_sku`、`fnsku`、`asin`、`amazon_store`、`product_name`、`product_group`、`brand`、`fulfilled_by`、`your_price`、`sales_price`、`currency`、`estimated_fee_total`、`estimated_referral_fee_per_unit`、`estimated_variable_closing_fee`、`expected_fulfillment_fee_per_unit`、`estimated_future_fee_total`、`product_size_tier`、包裹尺寸和重量字段。
+
+注意：样例中 `amazon-store` 出现 US/CA 等值，后续唯一键应包含 `amazon_store` 或映射后的 marketplace。
+
+### 20.5 `amazon_inventory_planning_daily`
+
+**表状态：`sampling`**  
+**第一数据来源：** `GET_FBA_INVENTORY_PLANNING_DATA`  
+**样例记录：** `requirements/data_samples/GET_FBA_INVENTORY_PLANNING_DATA.md`
+
+用途：保存库存健康、库龄、周转、冗余和 Amazon 建议动作。
+
+第一版正式列优先保留：`snapshot_date_raw`、`seller_sku`、`fnsku`、`asin`、`available_quantity`、`pending_removal_quantity`、各库龄段、`units_shipped_t7/t30/t60/t90`、`alert`、`recommended_action`、`sell_through`、`days_of_supply`、`estimated_excess_quantity`、`recommended_removal_quantity`。
+
+由于本报告字段多达 97 个，低频或空值字段先保留在 `raw_data`，不要一次性全部建成正式列。
+
+### 20.6 `amazon_inventory_ledger_summary_daily`
+
+**表状态：`sampling`**  
+**第一数据来源：** `GET_LEDGER_SUMMARY_VIEW_DATA`，当前样例使用 `aggregateByLocation=COUNTRY`、`aggregatedByTimePeriod=DAILY`。  
+**样例记录：** `requirements/data_samples/GET_LEDGER_SUMMARY_VIEW_DATA.md`
+
+用途：保存 FBA 库存流水汇总，用于解释库存变化和差异：收货、客户发货、客户退货、仓库调拨、找到、丢失、损坏、销毁、其他事件。
+
+第一版建议字段：`ledger_date_raw`、`fnsku`、`asin`、`seller_sku`、`title`、`disposition`、`starting_warehouse_balance`、`in_transit_between_warehouses`、`receipts`、`customer_shipments`、`customer_returns`、`vendor_returns`、`warehouse_transfer_in_out`、`found`、`lost`、`damaged`、`disposed`、`other_events`、`ending_warehouse_balance`、`unknown_events`、`location`、`store`。
+
+后续如需要仓库维度，可追加取样 `aggregateByLocation=FC`。
+
+
+---
+
+## 21. v1.1 第二轮批量取样结果、诊断下载与新增库存表草案
+
+本轮继续执行扩展后的批量取样计划，新增下载并分析：
+
+| 数据域 | report_type | 样例结果 | 建议目标表 | 设计状态 |
+|---|---|---:|---|---|
+| 库存流水明细 | `GET_LEDGER_DETAIL_VIEW_DATA` | 207 行 / 16 字段 | `amazon_inventory_ledger_detail` | `sampling` |
+| 预留库存 | `GET_RESERVED_INVENTORY_DATA` | 5 行 / 9 字段 | `amazon_reserved_inventory_daily` | `sampling` |
+| 补货建议 | `GET_RESTOCK_INVENTORY_RECOMMENDATIONS_REPORT` | 5 行 / 30 字段 | `amazon_restock_inventory_recommendation` | `sampling` |
+
+本轮还观察到：
+
+1. `GET_FBA_STORAGE_FEE_CHARGES_DATA`、`GET_STRANDED_INVENTORY_UI_DATA`、`GET_FBA_RECOMMENDED_REMOVAL_DATA`、`GET_FBA_FULFILLMENT_LONGTERM_STORAGE_FEE_CHARGES_DATA`、`GET_FBA_OVERAGE_FEE_CHARGES_DATA` 返回 `CANCELLED`，且没有 `reportDocumentId`。当前阶段解释为：该账号/该期间没有可生成数据、报告不适用或该报告在当前站点/条件下不可用；暂不阻塞建模。
+2. `GET_COUPON_PERFORMANCE_REPORT` 返回 `FATAL`，但带有 `reportDocumentId`。后续 collect 会下载 diagnostic document，作为诊断文件保存，不作为业务 raw data。
+3. `GET_PROMOTION_PERFORMANCE_REPORT` 长时间 `IN_PROGRESS`。短期不阻塞：促销/Coupon 成本仍可先通过 settlement 的 `promotion-id`、`amount-type`、`amount-description` 分类做财务口径分析。
+4. Discovery 类报告必须避免覆盖已下载 manifest，否则会导致已下载 settlement 报告重复进入待下载队列。后续逻辑已调整为保留 `download_status=DOWNLOADED` 的本地状态。
+
+### 21.1 `amazon_inventory_ledger_detail`
+
+**表状态：`sampling`**  
+**第一数据来源：** `GET_LEDGER_DETAIL_VIEW_DATA`  
+**样例记录：** `requirements/data_samples/GET_LEDGER_DETAIL_VIEW_DATA.md`
+
+用途：保存 FBA 库存流水明细事件，解释库存每日变化来源，例如 Shipments、CustomerReturns、WhseTransfers 等。
+
+第一版建议字段：
+
+| 字段 | 类型 | 字段状态 | 来源字段 / 说明 |
+|---|---|---|---|
+| `marketplace_id` | `NVARCHAR(50)` | `required_core` | Marketplace ID |
+| `ledger_date_raw` | `NVARCHAR(50)` | `observed` | `Date` |
+| `fnsku` | `NVARCHAR(100)` | `observed` | `FNSKU` |
+| `asin` | `NVARCHAR(50)` | `observed` | `ASIN` |
+| `seller_sku` | `NVARCHAR(200)` | `observed` | `MSKU` |
+| `title` | `NVARCHAR(1000)` | `observed` | `Title` |
+| `event_type` | `NVARCHAR(100)` | `observed` | `Event Type` |
+| `reference_id` | `NVARCHAR(200)` | `optional` | `Reference ID`，样例多为空 |
+| `quantity` | `INT` | `observed` | `Quantity`，可正可负 |
+| `fulfillment_center` | `NVARCHAR(50)` | `observed` | `Fulfillment Center` |
+| `disposition` | `NVARCHAR(80)` | `observed` | `Disposition` |
+| `reason` | `NVARCHAR(200)` | `optional` | `Reason` |
+| `country` | `NVARCHAR(20)` | `observed` | `Country` |
+| `reconciled_quantity` | `INT` | `observed` | `Reconciled Quantity` |
+| `unreconciled_quantity` | `INT` | `observed` | `Unreconciled Quantity` |
+| `date_time_raw` | `NVARCHAR(100)` | `observed` | `Date and Time` |
+| `store` | `NVARCHAR(100)` | `optional` | `Store` |
+| `source_report_id` / `source_raw_file_path` / `source_row_hash` / `raw_data` | 通用溯源字段 | `required_core` | 所有 normalized 表保留 |
+
+建议唯一键草案：`marketplace_id + source_report_id + source_row_hash`。后续如确认 `Date and Time + FNSKU + Event Type + Fulfillment Center + Quantity` 足够稳定，可再设计业务唯一键。
+
+### 21.2 `amazon_reserved_inventory_daily`
+
+**表状态：`sampling`**  
+**第一数据来源：** `GET_RESERVED_INVENTORY_DATA`  
+**样例记录：** `requirements/data_samples/GET_RESERVED_INVENTORY_DATA.md`
+
+用途：保存 FBA reserved inventory 拆分，解释 `afn-reserved-quantity` 的构成。
+
+第一版建议字段：
+
+| 字段 | 类型 | 字段状态 | 来源字段 / 说明 |
+|---|---|---|---|
+| `marketplace_id` | `NVARCHAR(50)` | `required_core` | Marketplace ID |
+| `snapshot_date` | `DATE` | `derived` | 下载日期或运行日期；原 report 无明确 snapshot date |
+| `seller_sku` | `NVARCHAR(200)` | `observed` | `sku` |
+| `fnsku` | `NVARCHAR(100)` | `observed` | `fnsku` |
+| `asin` | `NVARCHAR(50)` | `observed` | `asin` |
+| `product_name` | `NVARCHAR(1000)` | `observed` | `product-name` |
+| `reserved_quantity` | `INT` | `observed` | `reserved_qty` |
+| `reserved_customer_orders` | `INT` | `observed` | `reserved_customerorders` |
+| `reserved_fc_transfers` | `INT` | `observed` | `reserved_fc-transfers` |
+| `reserved_fc_processing` | `INT` | `observed` | `reserved_fc-processing` |
+| `program` | `NVARCHAR(100)` | `optional` | `program`，样例为空 |
+| `source_report_id` / `source_raw_file_path` / `source_row_hash` / `raw_data` | 通用溯源字段 | `required_core` | 所有 normalized 表保留 |
+
+建议唯一键草案：`marketplace_id + snapshot_date + seller_sku + fnsku`。
+
+### 21.3 `amazon_restock_inventory_recommendation`
+
+**表状态：`sampling`**  
+**第一数据来源：** `GET_RESTOCK_INVENTORY_RECOMMENDATIONS_REPORT`  
+**样例记录：** `requirements/data_samples/GET_RESTOCK_INVENTORY_RECOMMENDATIONS_REPORT.md`
+
+用途：保存 Amazon 补货建议、库存覆盖天数、30 天销量、推荐补货量和建议发货日期，用于清仓/补货/库存健康分析。
+
+第一版建议字段：
+
+| 字段 | 类型 | 字段状态 | 来源字段 / 说明 |
+|---|---|---|---|
+| `marketplace_id` | `NVARCHAR(50)` | `required_core` | Marketplace ID |
+| `snapshot_date` | `DATE` | `derived` | 下载日期或运行日期；原 report 无明确 snapshot date |
+| `country` | `NVARCHAR(20)` | `observed` | `Country` |
+| `product_name` | `NVARCHAR(1000)` | `observed` | `Product Name` |
+| `fnsku` | `NVARCHAR(100)` | `observed` | `FNSKU` |
+| `seller_sku` | `NVARCHAR(200)` | `observed` | `Merchant SKU` |
+| `asin` | `NVARCHAR(50)` | `observed` | `ASIN` |
+| `condition` | `NVARCHAR(80)` | `observed` | `Condition` |
+| `supplier` | `NVARCHAR(200)` | `optional` | `Supplier` |
+| `currency_code` | `NVARCHAR(10)` | `observed` | `Currency code` |
+| `price` | `DECIMAL(18,4)` | `observed` | `Price` |
+| `sales_last_30_days` | `DECIMAL(18,4)` | `observed` | `Sales last 30 days` |
+| `units_sold_last_30_days` | `INT` | `observed` | `Units Sold Last 30 Days` |
+| `total_units` | `INT` | `observed` | `Total Units` |
+| `inbound_quantity` | `INT` | `observed` | `Inbound` |
+| `available_quantity` | `INT` | `observed` | `Available` |
+| `fc_transfer_quantity` | `INT` | `observed` | `FC transfer` |
+| `fc_processing_quantity` | `INT` | `observed` | `FC Processing` |
+| `customer_order_quantity` | `INT` | `observed` | `Customer Order` |
+| `unfulfillable_quantity` | `INT` | `observed` | `Unfulfillable` |
+| `working_quantity` / `shipped_quantity` / `receiving_quantity` | `INT` | `observed` | 入库阶段拆分 |
+| `fulfilled_by` | `NVARCHAR(100)` | `observed` | `Fulfilled by` |
+| `total_days_of_supply` | `INT` | `observed` | `Total Days of Supply...` |
+| `days_of_supply_at_amazon_fulfillment_network` | `INT` | `observed` | `Days of Supply at Amazon Fulfillment Network` |
+| `alert` | `NVARCHAR(500)` | `optional` | `Alert` |
+| `recommended_replenishment_quantity` | `INT` | `observed` | `Recommended replenishment qty` |
+| `recommended_ship_date_raw` | `NVARCHAR(100)` | `optional` | `Recommended ship date` |
+| `recommended_action` | `NVARCHAR(500)` | `optional` | `Recommended action` |
+| `unit_storage_size` | `DECIMAL(18,6)` | `observed` | `Unit storage size` |
+| `source_report_id` / `source_raw_file_path` / `source_row_hash` / `raw_data` | 通用溯源字段 | `required_core` | 所有 normalized 表保留 |
+
+建议唯一键草案：`marketplace_id + snapshot_date + seller_sku + fnsku`。
+
+---
+
+## 22. 当前下载失败/取消报告的处理原则
+
+| report_type | 当前状态 | 是否阻塞建库 | 处理方式 |
+|---|---|---:|---|
+| `GET_FBA_STORAGE_FEE_CHARGES_DATA` | `CANCELLED` | 否 | 先通过 settlement 识别 storage fee；后续到月末/出账后重试 |
+| `GET_FBA_FULFILLMENT_LONGTERM_STORAGE_FEE_CHARGES_DATA` | `CANCELLED` | 否 | 同上，当前无长期仓储费数据也合理 |
+| `GET_FBA_OVERAGE_FEE_CHARGES_DATA` | `CANCELLED` | 否 | 同上，当前无超量仓储费数据也合理 |
+| `GET_STRANDED_INVENTORY_UI_DATA` | `CANCELLED` | 否 | 当前无 stranded 库存样例；暂不建正式表 |
+| `GET_FBA_RECOMMENDED_REMOVAL_DATA` | `CANCELLED` | 否 | 当前无移除建议样例；暂不建正式表 |
+| `GET_COUPON_PERFORMANCE_REPORT` | `DONE` | 否 | 带 couponStartDateFrom / couponStartDateTo 后已成功下载；作为 Coupon 运营效果补充口径 |
+| `GET_PROMOTION_PERFORMANCE_REPORT` | `DONE` | 否 | 带 promotionStartDateFrom / promotionStartDateTo 后已成功下载；作为 Promotion/Deal 运营效果补充口径 |
+
+原则：仓储费、滞留、移除等取消类报告不影响当前主数据库设计。利润核算所需的费用侧数据，优先以 settlement 作为财务事实来源；Promotion/Coupon Performance report 已完成运营效果取样，但不直接替代 settlement 财务费用口径。
+
+---
+
+## 23. v1.3 Promotion / Coupon Performance 成功取样与表草案
+
+本轮复测确认，`GET_PROMOTION_PERFORMANCE_REPORT` 与 `GET_COUPON_PERFORMANCE_REPORT` 在传入专用日期 `reportOptions` 后可以正常生成并下载业务报告。
+
+| 数据域 | report_type | 样例结果 | 建议目标表 | 设计状态 |
+|---|---|---:|---|---|
+| Promotion / Deal 运营效果 | `GET_PROMOTION_PERFORMANCE_REPORT` | 1 个 promotion / 3 个 includedProducts | `amazon_promotion_performance`、`amazon_promotion_product_performance` | `sampling` |
+| Coupon 运营效果 | `GET_COUPON_PERFORMANCE_REPORT` | 2 个 coupons / 4 个 coupon ASIN 关系 | `amazon_coupon_performance`、`amazon_coupon_asin` | `sampling` |
+
+重要口径：
+
+1. Promotion / Coupon Performance report 是**运营效果口径**，适合评估活动曝光、销量、领取、兑换、预算消耗、销售额等。
+2. 第一版利润核算仍以 Settlement V2 作为**财务事实口径**，Promotion / Coupon report 不直接替代 settlement 中的实际费用、折扣和扣款。
+3. Promotion report 的 `includedProducts` 是嵌套数组，应拆为活动主表与活动商品表。Coupon report 的 `asins` 是嵌套数组，应拆为 Coupon 主表与 Coupon-ASIN 关系表。
+
+### 23.1 `amazon_promotion_performance`
+
+**表状态：`sampling`**  
+**第一数据来源：** `GET_PROMOTION_PERFORMANCE_REPORT`  
+**样例记录：** `requirements/data_samples/GET_PROMOTION_PERFORMANCE_REPORT.md`
+
+用途：保存 Promotion / Deal 活动主表，用于分析活动整体曝光、销售件数和销售额。
+
+第一版建议字段：
+
+| 字段 | 类型 | 字段状态 | 来源字段 / 说明 |
+|---|---|---|---|
+| `marketplace_id` | `NVARCHAR(50)` | `required_core` | `marketplaceId` |
+| `promotion_id` | `NVARCHAR(100)` | `observed` | `promotionId` |
+| `merchant_id` | `NVARCHAR(100)` | `observed` | `merchantId` |
+| `promotion_name` | `NVARCHAR(500)` | `observed` | `promotionName` |
+| `promotion_type` | `NVARCHAR(100)` | `observed` | `type`，如 `BEST_DEAL` |
+| `status` | `NVARCHAR(100)` | `observed` | `status` |
+| `glance_views` | `INT` | `observed` | `glanceViews` |
+| `units_sold` | `INT` | `observed` | `unitsSold` |
+| `revenue` | `DECIMAL(18,4)` | `observed` | `revenue` |
+| `revenue_currency_code` | `NVARCHAR(10)` | `observed` | `revenueCurrencyCode` |
+| `start_date_time_raw` / `end_date_time_raw` | `NVARCHAR(100)` | `observed` | `startDateTime` / `endDateTime` |
+| `created_date_time_raw` / `last_updated_date_time_raw` | `NVARCHAR(100)` | `observed` | `createdDateTime` / `lastUpdatedDateTime` |
+| `source_report_id` / `source_raw_file_path` / `source_row_hash` / `raw_data` | 通用溯源字段 | `required_core` | 所有 normalized 表保留 |
+
+建议唯一键草案：`marketplace_id + promotion_id + source_report_id`。后续如需保留同一 promotion 多次快照，可改为 `marketplace_id + promotion_id + snapshot_date`。
+
+### 23.2 `amazon_promotion_product_performance`
+
+**表状态：`sampling`**  
+**第一数据来源：** `GET_PROMOTION_PERFORMANCE_REPORT.promotions[].includedProducts[]`
+
+用途：保存 Promotion / Deal 关联商品维度表现。
+
+第一版建议字段：
+
+| 字段 | 类型 | 字段状态 | 来源字段 / 说明 |
+|---|---|---|---|
+| `marketplace_id` | `NVARCHAR(50)` | `required_core` | 父级 `marketplaceId` |
+| `promotion_id` | `NVARCHAR(100)` | `observed` | 父级 `promotionId` |
+| `promotion_name` / `promotion_type` / `status` | `NVARCHAR` | `observed` | 父级活动字段冗余，方便分析 |
+| `asin` | `NVARCHAR(50)` | `observed` | `includedProducts[].asin` |
+| `product_name` | `NVARCHAR(1000)` | `observed` | `includedProducts[].productName` |
+| `product_glance_views` | `INT` | `observed` | `productGlanceViews` |
+| `product_units_sold` | `INT` | `observed` | `productUnitsSold` |
+| `product_revenue` | `DECIMAL(18,4)` | `observed` | `productRevenue` |
+| `product_revenue_currency_code` | `NVARCHAR(10)` | `observed` | `productRevenueCurrencyCode` |
+| `source_report_id` / `source_raw_file_path` / `source_row_hash` / `raw_data` | 通用溯源字段 | `required_core` | 所有 normalized 表保留 |
+
+建议唯一键草案：`marketplace_id + promotion_id + asin + source_report_id`。
+
+### 23.3 `amazon_coupon_performance`
+
+**表状态：`sampling`**  
+**第一数据来源：** `GET_COUPON_PERFORMANCE_REPORT`  
+**样例记录：** `requirements/data_samples/GET_COUPON_PERFORMANCE_REPORT.md`
+
+用途：保存 Coupon 主表，用于分析预算、预算消耗、领取、兑换、折扣、销售额等。
+
+第一版建议字段：
+
+| 字段 | 类型 | 字段状态 | 来源字段 / 说明 |
+|---|---|---|---|
+| `marketplace_id` | `NVARCHAR(50)` | `required_core` | `marketplaceId` |
+| `coupon_id` | `NVARCHAR(100)` | `observed` | `couponId` |
+| `merchant_id` | `NVARCHAR(100)` | `observed` | `merchantId` |
+| `currency_code` | `NVARCHAR(10)` | `observed` | `currencyCode` |
+| `name` / `website_message` | `NVARCHAR(500)` | `observed` | `name` / `websiteMessage` |
+| `start_date_time_raw` / `end_date_time_raw` | `NVARCHAR(100)` | `observed` | `startDateTime` / `endDateTime` |
+| `discount_type` | `NVARCHAR(100)` | `observed` | `discountType` |
+| `discount_amount` | `DECIMAL(18,4)` | `observed` | `discountAmount` |
+| `total_discount` | `DECIMAL(18,4)` | `observed` | `totalDiscount` |
+| `clips` / `redemptions` | `INT` | `observed` | `clips` / `redemptions` |
+| `budget` / `budget_spent` / `budget_remaining` | `DECIMAL(18,4)` | `observed` | 预算与已消耗预算 |
+| `budget_percentage_used` | `DECIMAL(9,4)` | `observed` | `budgetPercentageUsed` |
+| `sales` | `DECIMAL(18,4)` | `observed` | `sales` |
+| `source_report_id` / `source_raw_file_path` / `source_row_hash` / `raw_data` | 通用溯源字段 | `required_core` | 所有 normalized 表保留 |
+
+建议唯一键草案：`marketplace_id + coupon_id + source_report_id`。后续如需保留同一 coupon 多次快照，可改为 `marketplace_id + coupon_id + snapshot_date`。
+
+### 23.4 `amazon_coupon_asin`
+
+**表状态：`sampling`**  
+**第一数据来源：** `GET_COUPON_PERFORMANCE_REPORT.coupons[].asins[]`
+
+用途：保存 Coupon 与 ASIN 的关联关系。
+
+第一版建议字段：
+
+| 字段 | 类型 | 字段状态 | 来源字段 / 说明 |
+|---|---|---|---|
+| `marketplace_id` | `NVARCHAR(50)` | `required_core` | 父级 `marketplaceId` |
+| `coupon_id` | `NVARCHAR(100)` | `observed` | 父级 `couponId` |
+| `merchant_id` | `NVARCHAR(100)` | `observed` | 父级 `merchantId` |
+| `asin` | `NVARCHAR(50)` | `observed` | `asins[].asin` |
+| `coupon_name` | `NVARCHAR(500)` | `observed` | 父级 `name`，方便分析 |
+| `currency_code` | `NVARCHAR(10)` | `observed` | 父级 `currencyCode` |
+| `start_date_time_raw` / `end_date_time_raw` | `NVARCHAR(100)` | `observed` | 父级活动时间 |
+| `source_report_id` / `source_raw_file_path` / `source_row_hash` / `raw_data` | 通用溯源字段 | `required_core` | 所有 normalized 表保留 |
+
+建议唯一键草案：`marketplace_id + coupon_id + asin + source_report_id`。
+
+
+
+## 24. Amazon Ads API normalized 表草案
+
+> 当前状态：`draft`。以下字段基于 Ads Reporting v3 取样计划，不是最终建表字段。必须等真实 Ads raw report 下载后，再用字段样例更新为 `sampling`。
+
+### 24.1 `amazon_ads_profile`
+
+**表状态：`draft`**  
+**第一数据来源：** Amazon Ads `/v2/profiles`
+
+用途：保存 Ads profile 与 marketplace / advertiser account 的映射。
+
+第一版候选字段：
+
+| 字段 | 类型 | 字段状态 | 来源字段 / 说明 |
+|---|---|---|---|
+| `profile_id` | `NVARCHAR(100)` | `candidate` | `profileId` |
+| `country_code` | `NVARCHAR(10)` | `candidate` | `countryCode` |
+| `currency_code` | `NVARCHAR(10)` | `candidate` | `currencyCode` |
+| `timezone` | `NVARCHAR(100)` | `candidate` | `timezone` |
+| `account_id` | `NVARCHAR(100)` | `candidate` | `accountInfo.id` |
+| `account_name` | `NVARCHAR(500)` | `candidate` | `accountInfo.name` |
+| `account_type` | `NVARCHAR(100)` | `candidate` | `accountInfo.type` |
+| `raw_data` | `NVARCHAR(MAX)` | `required_core` | 原始 profile JSON |
+
+### 24.2 `amazon_ads_sp_campaign_daily`
+
+**表状态：`draft`**  
+**第一数据来源：** Ads Reporting v3 `reportTypeId=spCampaigns`
+
+用途：保存 Sponsored Products campaign 维度广告表现。
+
+候选字段：
+
+| 字段 | 类型 | 字段状态 | 来源字段 / 说明 |
+|---|---|---|---|
+| `profile_id` | `NVARCHAR(100)` | `candidate` | request scope profile |
+| `report_date` | `DATE` | `candidate` | `date` |
+| `campaign_id` | `NVARCHAR(100)` | `candidate` | `campaignId` |
+| `campaign_name` | `NVARCHAR(500)` | `candidate` | `campaignName` |
+| `campaign_status` | `NVARCHAR(100)` | `candidate` | `campaignStatus` |
+| `impressions` / `clicks` | `INT` | `candidate` | 曝光与点击 |
+| `cost` | `DECIMAL(18,4)` | `candidate` | 广告花费；币种需结合 profile 或返回字段确认 |
+| `sales_7d` | `DECIMAL(18,4)` | `candidate` | `sales7d` |
+| `purchases_7d` | `INT` | `candidate` | `purchases7d` |
+| `units_sold_clicks_7d` | `INT` | `candidate` | `unitsSoldClicks7d` |
+| `source_ads_report_id` / `source_raw_file_path` / `source_row_hash` / `raw_data` | 通用溯源字段 | `required_core` | Ads normalized 表保留 |
+
+### 24.3 `amazon_ads_sp_targeting_daily`
+
+**表状态：`draft`**  
+**第一数据来源：** Ads Reporting v3 `reportTypeId=spTargeting`
+
+用途：保存 keyword / targeting 维度表现，用于调价、否词、关键词筛选。候选字段包括：`profile_id`、`report_date`、`campaign_id`、`campaign_name`、`ad_group_id`、`ad_group_name`、`keyword_id`、`keyword`、`match_type`、`targeting`、`impressions`、`clicks`、`cost`、`sales_7d`、`purchases_7d`、`units_sold_clicks_7d` 以及通用溯源字段。
+
+### 24.4 `amazon_ads_sp_search_term_daily`
+
+**表状态：`draft`**  
+**第一数据来源：** Ads Reporting v3 `reportTypeId=spSearchTerm`
+
+用途：保存用户搜索词表现，用于找词、加词、否词。候选字段包括 `search_term`，以及 campaign / ad group / keyword / targeting / impressions / clicks / cost / sales / purchases 等字段。
+
+### 24.5 `amazon_ads_sp_advertised_product_daily`
+
+**表状态：`draft`**  
+**第一数据来源：** Ads Reporting v3 `reportTypeId=spAdvertisedProduct`
+
+用途：保存广告推广 SKU / ASIN 维度表现，用于判断哪个产品广告效率高。候选字段包括：`advertised_asin`、`advertised_sku`、campaign / ad group、impressions、clicks、cost、sales、purchases、units sold。
+
+### 24.6 `amazon_ads_sp_purchased_product_daily`
+
+**表状态：`draft`**  
+**第一数据来源：** Ads Reporting v3 `reportTypeId=spPurchasedProduct`
+
+用途：保存广告点击后最终购买的 ASIN，用于分析 halo sales / 跨 ASIN 购买。候选字段包括：`purchased_asin`、`advertised_asin`、`advertised_sku`、campaign / ad group、sales、purchases、units sold。

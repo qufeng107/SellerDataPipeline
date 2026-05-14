@@ -32,6 +32,15 @@ def main() -> None:
         default=None,
         help="Optional lookback window. Omit for report types that do not need date ranges.",
     )
+    parser.add_argument(
+        "--report-option",
+        action="append",
+        default=[],
+        help=(
+            "Optional Amazon reportOptions entry in KEY=VALUE form. "
+            "Can be passed multiple times."
+        ),
+    )
     args = parser.parse_args()
 
     settings = get_settings()
@@ -40,8 +49,22 @@ def main() -> None:
         report_type=args.report_type,
         marketplace_ids=args.marketplace_ids,
         days=args.days,
+        report_options=_parse_report_options(args.report_option),
     )
     print(f"Submitted report request. Manifest: {manifest_path}")
+
+
+def _parse_report_options(values: list[str]) -> dict[str, str]:
+    options: dict[str, str] = {}
+    for value in values:
+        if "=" not in value:
+            raise SystemExit(f"Invalid --report-option value, expected KEY=VALUE: {value}")
+        key, option_value = value.split("=", 1)
+        key = key.strip()
+        if not key:
+            raise SystemExit(f"Invalid --report-option value, empty key: {value}")
+        options[key] = option_value.strip()
+    return options
 
 
 if __name__ == "__main__":

@@ -98,6 +98,7 @@ class AmazonSpApiClient:
         marketplace_ids: list[str],
         data_start_time: datetime | None = None,
         data_end_time: datetime | None = None,
+        report_options: dict[str, str] | None = None,
     ) -> ReportRequestResult:
         """Create an Amazon report request and return Amazon's reportId."""
 
@@ -111,6 +112,8 @@ class AmazonSpApiClient:
             body["dataStartTime"] = _format_sp_api_datetime(data_start_time)
         if data_end_time is not None:
             body["dataEndTime"] = _format_sp_api_datetime(data_end_time)
+        if report_options:
+            body["reportOptions"] = report_options
 
         payload = self._request_json(
             "POST",
@@ -122,6 +125,46 @@ class AmazonSpApiClient:
         if not report_id:
             raise ExternalServiceError("createReport response did not contain reportId")
         return ReportRequestResult(report_id=report_id, payload=payload)
+
+    def get_reports(
+        self,
+        *,
+        report_types: list[str],
+        processing_statuses: list[str] | None = None,
+        marketplace_ids: list[str] | None = None,
+        page_size: int | None = None,
+        created_since: datetime | None = None,
+        created_until: datetime | None = None,
+        next_token: str | None = None,
+    ) -> dict[str, Any]:
+        """Return reports matching filters via the Reports API getReports operation."""
+
+        if next_token:
+            return self._request_json(
+                "GET",
+                f"/reports/{REPORTS_API_VERSION}/reports",
+                params={"nextToken": next_token},
+            )
+        if not report_types:
+            raise ValueError("report_types must contain at least one report type")
+
+        params: dict[str, Any] = {"reportTypes": report_types}
+        if processing_statuses:
+            params["processingStatuses"] = processing_statuses
+        if marketplace_ids:
+            params["marketplaceIds"] = marketplace_ids
+        if page_size is not None:
+            params["pageSize"] = page_size
+        if created_since is not None:
+            params["createdSince"] = _format_sp_api_datetime(created_since)
+        if created_until is not None:
+            params["createdUntil"] = _format_sp_api_datetime(created_until)
+
+        return self._request_json(
+            "GET",
+            f"/reports/{REPORTS_API_VERSION}/reports",
+            params=params,
+        )
 
     def get_report(self, *, report_id: str) -> dict[str, Any]:
         """Return the latest processing status for an Amazon report request."""

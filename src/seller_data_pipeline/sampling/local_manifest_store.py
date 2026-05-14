@@ -6,8 +6,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-TERMINAL_NO_DOWNLOAD_STATUSES = {"CANCELLED", "FATAL"}
-DOWNLOADED_STATUS = "DOWNLOADED"
+TERMINAL_NO_DOWNLOAD_STATUSES = {"CANCELLED"}
+DOWNLOADED_STATUSES = {"DOWNLOADED", "DIAGNOSTIC_DOWNLOADED"}
 
 
 def utc_now_iso() -> str:
@@ -55,9 +55,11 @@ class LocalManifestStore:
         for manifest in self.iter_report_requests():
             processing_status = str(manifest.get("processing_status", "")).upper()
             download_status = str(manifest.get("download_status", "")).upper()
+            if download_status in DOWNLOADED_STATUSES:
+                continue
             if processing_status in TERMINAL_NO_DOWNLOAD_STATUSES:
                 continue
-            if download_status == DOWNLOADED_STATUS:
+            if processing_status == "FATAL" and not manifest.get("report_document_id"):
                 continue
             collectable.append(manifest)
             if len(collectable) >= limit:

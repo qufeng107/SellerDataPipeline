@@ -5,7 +5,7 @@
 原始下载文件应保存到本地未提交目录，例如：
 
 ```text
-data/raw/amazon/...
+reports/raw/amazon/...
 ```
 
 字段确认流程：

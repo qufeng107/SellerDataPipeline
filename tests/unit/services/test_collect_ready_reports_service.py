@@ -72,3 +72,69 @@ def test_collect_ready_report_downloads_raw_file_and_updates_manifests(tmp_path:
     raw_manifest = manifest_store._read_json(raw_manifest_path)  # noqa: SLF001
     assert raw_manifest["preview"]["header"] == ["sku", "price"]
     assert raw_manifest["preview"]["sample_rows"] == [{"sku": "ABC", "price": "9.99"}]
+
+
+
+class FakeFatalSpApiClient:
+    def get_report(self, *, report_id: str) -> dict[str, Any]:
+        return {
+            "reportId": report_id,
+            "processingStatus": "FATAL",
+            "reportDocumentId": "fatal-doc-123",
+        }
+
+    def get_report_document(self, *, report_document_id: str) -> dict[str, Any]:
+        return {
+            "reportDocumentId": report_document_id,
+            "url": "https://example.test/fatal-document",
+        }
+
+    def download_report_document(
+        self,
+        *,
+        document_url: str,
+        compression_algorithm: str | None = None,
+    ) -> FakeDownloadedDocument:
+        return FakeDownloadedDocument(
+            b'{"reportRequestError":"Please provide report options couponStartDateFrom."}'
+        )
+
+
+def test_collect_fatal_report_downloads_diagnostic_document(tmp_path: Path) -> None:
+    sampling_root = tmp_path / "sampling"
+    raw_root = tmp_path / "raw"
+    settings = Settings(local_sampling_root=str(sampling_root), raw_reports_root=str(raw_root))
+    manifest_store = LocalManifestStore(root_dir=sampling_root)
+    manifest_store.save_report_request(
+        {
+            "report_id": "fatal-report-123",
+            "report_type": "GET_PROMOTION_PERFORMANCE_REPORT",
+            "marketplace_ids": ["ATVPDKIKX0DER"],
+            "processing_status": "IN_PROGRESS",
+            "download_status": "NOT_STARTED",
+        }
+    )
+    service = CollectReadyReportsService(
+        settings=settings,
+        sp_api_client=FakeFatalSpApiClient(),  # type: ignore[arg-type]
+        manifest_store=manifest_store,
+        raw_file_store=RawReportFileStore(root_dir=raw_root),
+    )
+
+    results = service.run(limit=10)
+
+    assert len(results) == 1
+    manifest = manifest_store.read_report_request("fatal-report-123")
+    assert manifest["processing_status"] == "FATAL"
+    assert manifest["download_status"] == "DIAGNOSTIC_DOWNLOADED"
+    assert manifest["raw_file_path"] is None
+    assert manifest["diagnostic_error_message"] == (
+        "Please provide report options couponStartDateFrom."
+    )
+    assert manifest["error_message"] == "Please provide report options couponStartDateFrom."
+    assert Path(manifest["diagnostic_file_path"]).exists()
+    diagnostic_manifest = manifest_store._read_json(  # noqa: SLF001
+        Path(manifest["diagnostic_file_manifest_path"])
+    )
+    assert diagnostic_manifest["is_diagnostic_document"] is True
+    assert diagnostic_manifest["preview"]["header"]

@@ -21,11 +21,13 @@ def main() -> None:
     for result in results:
         print(
             "report_id={report_id} processing_status={processing_status} "
-            "download_status={download_status} raw_file_path={raw_file_path}".format(
+            "download_status={download_status} raw_file_path={raw_file_path} "
+            "diagnostic_file_path={diagnostic_file_path}".format(
                 report_id=result.get("report_id"),
                 processing_status=result.get("processing_status"),
                 download_status=result.get("download_status"),
                 raw_file_path=result.get("raw_file_path"),
+                diagnostic_file_path=result.get("diagnostic_file_path"),
             )
         )
 

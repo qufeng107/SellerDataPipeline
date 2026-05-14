@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import logging
 from typing import Any
 
@@ -14,7 +15,12 @@ TERMINAL_REPORT_STATUSES = {"DONE", "CANCELLED", "FATAL"}
 
 
 class CollectReadyReportsService:
-    """Poll local sampling report manifests and download DONE Amazon reports."""
+    """Poll local sampling report manifests and download ready Amazon reports.
+
+    DONE reports are downloaded as normal raw data files. Some FATAL reports still contain a
+    reportDocumentId; those documents are diagnostic artifacts rather than usable business data,
+    so they are saved separately with download_status=DIAGNOSTIC_DOWNLOADED.
+    """
 
     def __init__(
         self,
@@ -77,23 +83,34 @@ class CollectReadyReportsService:
         manifest = self.manifest_store.update_report_request(report_id, updates)
         logger.info("Checked report_id=%s processing_status=%s", report_id, report_status)
 
-        if report_status != "DONE":
-            return manifest
-
         document_id = str(manifest.get("report_document_id") or report_document_id or "")
-        if not document_id:
-            return self.manifest_store.update_report_request(
-                report_id,
-                {"error_message": "DONE report did not contain reportDocumentId"},
+        if report_status == "DONE":
+            if not document_id:
+                return self.manifest_store.update_report_request(
+                    report_id,
+                    {"error_message": "DONE report did not contain reportDocumentId"},
+                )
+            return self._download_report_document(
+                manifest=manifest,
+                report_document_id=document_id,
+                diagnostic=False,
             )
 
-        return self._download_done_report(manifest=manifest, report_document_id=document_id)
+        if report_status == "FATAL" and document_id:
+            return self._download_report_document(
+                manifest=manifest,
+                report_document_id=document_id,
+                diagnostic=True,
+            )
 
-    def _download_done_report(
+        return manifest
+
+    def _download_report_document(
         self,
         *,
         manifest: dict[str, Any],
         report_document_id: str,
+        diagnostic: bool,
     ) -> dict[str, Any]:
         report_id = str(manifest["report_id"])
         document_info = self.sp_api_client.get_report_document(
@@ -121,6 +138,7 @@ class CollectReadyReportsService:
             "checksum_sha256": saved.checksum_sha256,
             "size_bytes": saved.size_bytes,
             "downloaded_at_utc": utc_now_iso(),
+            "is_diagnostic_document": diagnostic,
             "amazon_get_report_document_response": _redact_document_url(document_info),
             "compression_algorithm": downloaded.compression_algorithm,
             "download_raw_size_bytes": downloaded.raw_size_bytes,
@@ -138,11 +156,31 @@ class CollectReadyReportsService:
             manifest=raw_manifest,
         )
         logger.info(
-            "Downloaded report_id=%s document=%s raw_file=%s",
+            "Downloaded %sreport_id=%s document=%s raw_file=%s",
+            "diagnostic " if diagnostic else "",
             report_id,
             report_document_id,
             saved.file_path,
         )
+
+        if diagnostic:
+            diagnostic_message = _extract_diagnostic_document_message(downloaded.content)
+            return self.manifest_store.update_report_request(
+                report_id,
+                {
+                    "download_status": "DIAGNOSTIC_DOWNLOADED",
+                    "diagnostic_downloaded_at_utc": utc_now_iso(),
+                    "raw_file_path": None,
+                    "raw_file_manifest_path": None,
+                    "diagnostic_file_path": str(saved.file_path),
+                    "diagnostic_file_manifest_path": str(raw_manifest_path),
+                    "diagnostic_checksum_sha256": saved.checksum_sha256,
+                    "diagnostic_error_message": diagnostic_message,
+                    "amazon_get_report_document_response": _redact_document_url(document_info),
+                    "error_message": diagnostic_message or "FATAL diagnostic document downloaded",
+                },
+            )
+
         return self.manifest_store.update_report_request(
             report_id,
             {
@@ -175,6 +213,31 @@ def _extract_report_document_id(payload: dict[str, Any]) -> str | None:
 def _extract_report_error_message(payload: dict[str, Any]) -> str | None:
     value = payload.get("processingStatus") or _payload_dict(payload).get("processingStatus")
     return str(value) if value else None
+
+
+def _extract_diagnostic_document_message(content: bytes) -> str | None:
+    text = _decode_diagnostic_content(content).strip()
+    if not text:
+        return None
+    try:
+        payload = json.loads(text)
+    except json.JSONDecodeError:
+        return text[:1000]
+    if isinstance(payload, dict):
+        for key in ("reportRequestError", "message", "error", "errorMessage"):
+            value = payload.get(key)
+            if value:
+                return str(value)
+    return text[:1000]
+
+
+def _decode_diagnostic_content(content: bytes) -> str:
+    for encoding in ("utf-8-sig", "utf-8", "cp1252", "latin-1"):
+        try:
+            return content.decode(encoding)
+        except UnicodeDecodeError:
+            continue
+    return content.decode("utf-8", errors="replace")
 
 
 def _redact_document_url(document_info: dict[str, Any]) -> dict[str, Any]:
