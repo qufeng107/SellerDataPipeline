@@ -13,8 +13,15 @@ DEFAULT_AMAZON_SP_API_ENDPOINTS = {
     "EU": "https://sellingpartnerapi-eu.amazon.com",
     "FE": "https://sellingpartnerapi-fe.amazon.com",
 }
+DEFAULT_AMAZON_ADS_API_ENDPOINTS = {
+    "NA": "https://advertising-api.amazon.com",
+    "EU": "https://advertising-api-eu.amazon.com",
+    "FE": "https://advertising-api-fe.amazon.com",
+}
 DEFAULT_LWA_TOKEN_URL = "https://api.amazon.com/auth/o2/token"
 DEFAULT_USER_AGENT = "SellerDataPipeline/0.1.0 (Language=Python/3.11)"
+DEFAULT_LOCAL_SAMPLING_ROOT = "runtime/sampling"
+DEFAULT_RAW_REPORTS_ROOT = "reports/raw"
 
 
 def _env(name: str, default: str | None = None) -> str | None:
@@ -26,6 +33,13 @@ def _default_sp_api_endpoint(region: str) -> str:
     return DEFAULT_AMAZON_SP_API_ENDPOINTS.get(
         region.upper(),
         DEFAULT_AMAZON_SP_API_ENDPOINTS["NA"],
+    )
+
+
+def _default_ads_api_endpoint(region: str) -> str:
+    return DEFAULT_AMAZON_ADS_API_ENDPOINTS.get(
+        region.upper(),
+        DEFAULT_AMAZON_ADS_API_ENDPOINTS["NA"],
     )
 
 
@@ -60,7 +74,30 @@ class Settings:
     amazon_sp_api_user_agent: str = _env("AMAZON_SP_API_USER_AGENT", DEFAULT_USER_AGENT) or (
         DEFAULT_USER_AGENT
     )
+    amazon_ads_client_id: str | None = _env("AMAZON_ADS_CLIENT_ID", _env("AMAZON_LWA_CLIENT_ID"))
+    amazon_ads_client_secret: str | None = _env(
+        "AMAZON_ADS_CLIENT_SECRET",
+        _env("AMAZON_LWA_CLIENT_SECRET"),
+    )
     amazon_ads_refresh_token: str | None = _env("AMAZON_ADS_REFRESH_TOKEN")
+    amazon_ads_profile_id: str | None = _env("AMAZON_ADS_PROFILE_ID")
+    amazon_ads_api_endpoint: str = (
+        _env(
+            "AMAZON_ADS_API_ENDPOINT",
+            _default_ads_api_endpoint(_env("AMAZON_REGION", "NA") or "NA"),
+        )
+        or DEFAULT_AMAZON_ADS_API_ENDPOINTS["NA"]
+    )
+    amazon_ads_user_agent: str = _env("AMAZON_ADS_USER_AGENT", DEFAULT_USER_AGENT) or (
+        DEFAULT_USER_AGENT
+    )
+
+    local_sampling_root: str = _env("LOCAL_SAMPLING_ROOT", DEFAULT_LOCAL_SAMPLING_ROOT) or (
+        DEFAULT_LOCAL_SAMPLING_ROOT
+    )
+    raw_reports_root: str = _env("RAW_REPORTS_ROOT", DEFAULT_RAW_REPORTS_ROOT) or (
+        DEFAULT_RAW_REPORTS_ROOT
+    )
 
     report_receiver_email: str | None = _env("REPORT_RECEIVER_EMAIL")
 

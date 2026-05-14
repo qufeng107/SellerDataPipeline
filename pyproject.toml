@@ -18,6 +18,3 @@ pythonpath = ["src"]
 markers = [
   "integration: tests that require real external services",
 ]
-
-[tool.ruff.lint.isort]
-known-first-party = ["seller_data_pipeline"]
