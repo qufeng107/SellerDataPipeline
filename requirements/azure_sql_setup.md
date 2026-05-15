@@ -6,6 +6,28 @@
 
 ---
 
+
+## 0. 当前状态提醒（2026-05-15）
+
+本轮 chat 中用户确认：Azure SQL 参数尚未配置，真实 SQL 执行和真实入库将在后续新 chat 继续。
+
+当前不要执行：
+
+```powershell
+python scripts/run_sql_migration.py --file sql/migrations/001_create_core_tables.sql
+python scripts/run_sql_migration.py --file sql/migrations/002_create_indexes.sql
+python scripts/ingest_ads_reports.py --execute
+```
+
+下一次继续时，先完成 `.env` 中 Azure SQL 参数配置，再运行：
+
+```powershell
+python scripts/test_azure_sql_connection.py --json
+```
+
+连接成功后再 dry-run migration，并人工确认 `requirements/database_spec.md` 与 SQL migration 一致。
+
+
 ## 1. 当前结论
 
 当前不要通过 Azure Portal 手动复制粘贴整段 SQL。建议统一使用项目内脚本执行：

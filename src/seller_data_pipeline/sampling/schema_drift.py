@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Iterable
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Iterable
 
 from seller_data_pipeline.sampling.ads_report_sampling_plan import get_ads_sampling_plan
 from seller_data_pipeline.sampling.report_analyzer import FieldAnalysis, ReportAnalysis

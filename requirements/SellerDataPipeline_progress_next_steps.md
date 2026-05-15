@@ -1,7 +1,7 @@
 # SellerDataPipeline 当前进展与下一步计划
 
 > 更新时间：2026-05-15  
-> 当前更新：v1.13 Amazon Ads 入库前 dry-run 守门链路已完成；SQL 仍未执行。  
+> 当前更新：v1.13 Amazon Ads 入库前 dry-run 守门链路已完成；本轮 chat 已完成 Ads 取样收口与下一阶段入库/审计/通知规划；Azure 参数尚未配置，SQL 仍未执行。  
 > 文档用途：记录项目真实进展、阶段结论、后续计划和注意事项。长期架构以 `requirements/amazon_profit_report_serverless_design_plan_v1_1.md` 为参考；数据库唯一事实以 `requirements/database_spec.md` 为准；本文件负责说明“现在做到哪里、下一步做什么”。
 
 ---
@@ -49,6 +49,132 @@ SQL migration 草案已为 Ads 四张核心表补充 business_key_hash 和唯一
 ```
 
 ---
+
+
+## 1.1 本轮 Chat 收口摘要：Ads 取样与入库前守门链路
+
+> 记录日期：2026-05-15  
+> 目的：给下一次 chat / 下一阶段开发做 handoff，避免忘记本轮关键决策、真实验证结果和注意事项。
+
+### A. 本轮已经确认的事实
+
+1. **Azure SQL 执行继续搁置**：用户明确表示 Azure 参数尚未配置，真实建表与真实入库将在新 chat 继续。
+2. **Amazon Ads API 已开通并可用**：`scripts/test_ads_api_connection.py` 已成功获取 LWA access token，并发现 4 个 profiles。
+3. **US 广告 profile 已确认**：
+
+```text
+profile_id = 3917953989967300
+country = US
+currency = USD
+timezone = America/Los_Angeles
+account_type = seller
+account_name = Cuide market
+valid_payment = True
+```
+
+4. BR profile `909721457096469` 的 `valid_payment=False`，不作为当前 US 店铺广告数据主线。
+5. PowerShell 中不要使用 Bash 风格 `\` 换行；需要用单行命令或 PowerShell 反引号续行。
+6. `Get-Content` 在 Windows PowerShell 下查看 UTF-8 JSONL 时可能显示中文乱码；这通常是控制台编码显示问题，不代表 raw file 或 Python 解析坏了。需要用 VS Code、Python、或 `Get-Content -Encoding utf8` 查看。
+
+### B. Amazon Ads 实测 canary 结果
+
+| reportTypeId | report_id | 取样窗口 | 下载状态 | normalized_rows | schema 状态 | 当前结论 |
+|---|---|---|---|---:|---|---|
+| `spCampaigns` | `5dc8e80b-72cc-4e37-864f-e877b7f90e5c` | 2026-05-12 至 2026-05-15 | DOWNLOADED | 8 | ok | 第一批入库 |
+| `spTargeting` | `c89e0e82-be20-468d-8ec7-884a1d623e9f` | 2026-05-12 至 2026-05-15 | DOWNLOADED | 99 | ok | 第一批入库 |
+| `spSearchTerm` | `4c38fa3c-8595-40c3-8e9f-2c52e90641a9` | 2026-05-12 至 2026-05-15 | DOWNLOADED | 61 | ok | 第一批入库 |
+| `spAdvertisedProduct` | `b6754b6b-482b-4169-8fe3-86e0af5065b3` | 2026-05-12 至 2026-05-15 | DOWNLOADED | 32 | ok | 第一批入库 |
+| `spPurchasedProduct` | `7ee85e28-5800-4095-8f7f-d111e70445c1` | 2026-05-12 至 2026-05-15 | DOWNLOADED | 0 | empty_report | API 可用但当前窗口为空，暂不建表 |
+
+第一批 Ads 入库表只包含 4 张非空 confirmed 表：
+
+```text
+amazon_ads_sp_campaign_daily
+amazon_ads_sp_targeting_daily
+amazon_ads_sp_search_term_daily
+amazon_ads_sp_advertised_product_daily
+```
+
+`amazon_ads_sp_purchased_product_daily` 暂缓，等未来用 14/30 天窗口拿到非空样例后再进入 database spec 和 migration。
+
+### C. 当前已实现的 Ads 入库前守门能力
+
+当前代码已具备以下能力：
+
+```text
+Ads raw file 下载与本地留存
+  -> 脱敏字段样例 ADS_*.md
+  -> schema validation / schema drift 检测
+  -> parser normalized rows
+  -> prepare_ads_ingestion.py 生成 DB-ready preview JSONL
+  -> 生成 ads_ingestion_summary.json
+  -> 生成 task_audit_event.json
+  -> 生成 schema_validation_events.jsonl
+```
+
+用户本地已验证：
+
+```text
+python scripts/prepare_ads_ingestion.py --profile-id 3917953989967300 --marketplace-id ATVPDKIKX0DER
+
+Ads ingestion dry-run status=success
+processed_files=4
+parsed_rows=200
+prepared_rows=200
+preview_files=4
+requires_review=False
+```
+
+当前 zip 实际代码状态：
+
+```text
+已实现：scripts/prepare_ads_ingestion.py
+已实现：src/seller_data_pipeline/ingestion/ads_table_mapping.py
+已实现：src/seller_data_pipeline/ingestion/ads_ingestion_dry_run.py
+已实现：src/seller_data_pipeline/sampling/schema_drift.py
+尚未完成：真实 Ads repository/upsert
+尚未完成：scripts/ingest_ads_reports.py 正式入库入口
+尚未完成：邮件通知 notifier
+尚未完成：Azure Container Apps Jobs 自动任务
+```
+
+注意：`src/seller_data_pipeline/db/repositories/ads_repo.py` 当前仍是 placeholder，不要误认为真实 Ads 入库已实现。
+
+### D. 长期数据库稳定维护原则
+
+本轮明确以下长期规则，后续必须继续遵守：
+
+1. **raw file 必须留存**：Amazon 下载的 raw report 是事实源，不因 parser 或表结构变化而丢弃。
+2. **入库前必须 schema validation**：不能等 SQL 报错才发现字段变化。
+3. **字段漂移必须阻断入库**：`new_fields`、`missing_fields`、`schema_drift`、`unmapped_fields`、`validation_failed` 默认 `requires_review=true`。
+4. **需要人工检查时后续要邮件通知**：入库失败、字段漂移、API 失败达到重试上限、异常空报表等，都要触发通知。
+5. **`database_spec.md` 是数据库唯一事实文档**：任何字段、表、业务唯一键变化，必须先改 spec，再改 SQL migration，再改 parser/mapping/repository/tests。
+6. **已执行 migration 不可修改**：SQL 在 Azure 执行之前可以重写 001/002；一旦执行，只能新增 003/004 迁移。
+7. **业务键和 raw 追溯键分离**：
+
+```text
+business_key_hash = 未来 upsert 的稳定业务唯一键
+source_row_hash   = raw row 追溯与审计
+```
+
+### E. 下一阶段推荐顺序
+
+下一次 chat 建议从以下顺序继续：
+
+```text
+1. 配置 Azure SQL .env 参数
+2. 运行 scripts/test_azure_sql_connection.py --json
+3. dry-run SQL migration：001_create_core_tables.sql / 002_create_indexes.sql
+4. 人工确认 SQL 表结构与 database_spec.md 一致
+5. 执行 001/002 建表
+6. 实现真实 AdsRepo upsert，白名单限制只能写 Ads 四张表和审计表
+7. 新增 scripts/ingest_ads_reports.py，默认 dry-run，显式 --execute 才写库
+8. 写入 amazon_sync_run_log 任务审计
+9. 写入 amazon_schema_validation_event 字段漂移事件
+10. 增加 email notifier，出现 requires_review 或入库失败时通知用户
+11. 最后再接 Azure Container Apps Jobs 自动任务
+```
+
 
 ## 2. 项目目标简述
 
@@ -1105,126 +1231,3 @@ empty_report_unexpected
 5. 将 `schema_validation_events.jsonl` 写入 `amazon_schema_validation_event`。
 6. 接入邮件通知：字段漂移、parser 失败、upsert 失败、任务异常退出时通知。
 
-
-## 17. v1.14 Ads repository/upsert 准备层
-
-本阶段继续保持 **不执行 Azure SQL**，但已经把未来真实入库所需的 repository/upsert 代码准备好，并保持默认 dry-run 安全模式。
-
-新增入口：
-
-```powershell
-python scripts/ingest_ads_reports.py --profile-id 3917953989967300 --marketplace-id ATVPDKIKX0DER
-```
-
-默认行为：
-
-```text
-1. 先复用 v1.13 dry-run guard：raw -> schema validation -> parser -> preview rows
-2. 如果 requires_review=True，则阻断数据库写入
-3. 如果未传 --execute，则不连接 Azure SQL，不写数据库
-4. 输出本次 dry-run 结果和 output_dir
-```
-
-真实写库入口，必须显式加 `--execute`：
-
-```powershell
-python scripts/ingest_ads_reports.py --profile-id 3917953989967300 --marketplace-id ATVPDKIKX0DER --execute
-```
-
-只有在以下前提全部满足后才允许执行：
-
-```text
-Azure SQL 连接测试成功
-001_create_core_tables.sql 已执行
-002_create_indexes.sql 已执行
-四张 Ads 目标表存在
-business_key_hash 唯一索引存在
-本地 dry-run requires_review=False
-```
-
-### 17.1 upsert 稳定性设计
-
-`AdsRepo` 只允许写入 allowlist 表：
-
-```text
-amazon_ads_sp_campaign_daily
-amazon_ads_sp_targeting_daily
-amazon_ads_sp_search_term_daily
-amazon_ads_sp_advertised_product_daily
-amazon_sync_run_log
-amazon_schema_validation_event
-```
-
-禁止 CLI 或外部参数直接拼接任意表名。Ads 数据表 upsert 使用：
-
-```text
-MERGE ... ON business_key_hash
-```
-
-原因：
-
-```text
-business_key_hash 表示同一天、同一 profile、同一 campaign/target/search term/product 的逻辑记录
-source_row_hash 只用于追溯 raw row，不适合作为幂等入库唯一键
-同一日期报表重跑后 report_id 或 row order 可能变化，但业务键应保持稳定
-```
-
-### 17.2 任务审计写入策略
-
-真实 `--execute` 模式下：
-
-```text
-1. 先向 amazon_sync_run_log 写入 running 记录并 commit，确保任务启动审计可留痕
-2. 后续 upsert 数据表
-3. 写入 amazon_schema_validation_event
-4. 成功后更新 amazon_sync_run_log 为 success
-5. 如果 upsert 阶段失败，rollback 数据写入，并把 amazon_sync_run_log 更新为 failed
-```
-
-这保证了后续自动任务即使失败，也能在任务审计表里留下可追踪结果。
-
-### 17.3 UTF-8 preview 查看方式
-
-Windows PowerShell 直接使用 `Get-Content` 查看 UTF-8 无 BOM JSONL 时，中文可能显示为乱码。这不是 raw 文件或 Python 解析错误，而是终端代码页显示问题。
-
-推荐使用新增脚本查看 preview：
-
-```powershell
-python scripts/inspect_ingestion_preview.py runtime\ingestion\amazon_ads\3917953989967300\<timestamp>\previews\amazon_ads_sp_campaign_daily.preview.jsonl --limit 2
-```
-
-默认会脱敏：
-
-```text
-campaign_name
-ad_group_name
-keyword
-targeting
-search_term
-advertised_asin
-advertised_sku
-purchased_asin
-raw_data
-```
-
-如需本地自己查看真实值，可加：
-
-```powershell
-python scripts/inspect_ingestion_preview.py <preview_file> --limit 2 --show-sensitive
-```
-
-注意：脱敏只用于命令行展示，raw 文件和 preview 文件仍保存真实值，供后续入库和审计使用。
-
-### 17.4 下一步
-
-下一步可以回到 Azure SQL 执行线：
-
-```text
-1. python scripts/test_azure_sql_connection.py --json
-2. python scripts/run_sql_migration.py --file sql/migrations/001_create_core_tables.sql --dry-run --show-batches
-3. python scripts/run_sql_migration.py --file sql/migrations/002_create_indexes.sql --dry-run --show-batches
-4. 确认无误后真实执行 001/002
-5. python scripts/ingest_ads_reports.py --profile-id 3917953989967300 --marketplace-id ATVPDKIKX0DER --execute
-```
-
-如果仍想继续搁置 SQL，也可以先开发邮件通知层。建议顺序仍是：先建表和 upsert 一次，再接通知和定时任务。

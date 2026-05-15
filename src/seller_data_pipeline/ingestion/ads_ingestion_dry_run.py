@@ -8,8 +8,6 @@ from typing import Any
 
 from seller_data_pipeline.ingestion.ads_table_mapping import (
     ADS_TARGET_TABLE_SPECS,
-    AdsTargetTableSpec,
-    dataclass_to_json_dict,
     get_ads_target_table_spec,
     map_ads_record_to_table_row,
     write_jsonl,

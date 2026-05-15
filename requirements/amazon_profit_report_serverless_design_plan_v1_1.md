@@ -1,11 +1,83 @@
 # Amazon 周度盈亏自动化系统：Serverless 稳定版设计与开发计划
 
-> 版本：v1.1  
-> 日期：2026-05-11  
+> 版本：v1.2  
+> 日期：2026-05-15  
 > 适用场景：小体量跨境电商公司，美国 Amazon Seller Central 店铺，当前重点是低成本、稳定、自动化地获取店铺经营数据，并输出周报、月报，以及未来可交给会计/用于报税准备的季度财务数据包。  
 > 推荐技术路线：Azure Container Apps Job + Azure SQL Database + Azure Key Vault + Azure Container Registry + Azure Blob Storage + GitHub Actions 部署。
 
 ---
+
+
+## 0. 2026-05-15 开发进展 Handoff：Ads API 与入库前守门
+
+本节记录本轮实际开发进展，用于后续继续实现 Azure SQL 入库、邮件通知和自动任务。长期架构仍以本文为准，数据库表结构唯一事实以 `requirements/database_spec.md` 为准，当前进展以 `requirements/SellerDataPipeline_progress_next_steps.md` 为准。
+
+### 0.1 当前真实状态
+
+```text
+Azure SQL Database: 已开通，但 Azure 连接参数尚未配置
+SQL migration: 001/002 仍未真实执行
+SP-API Reports: 本地取样闭环已完成多类报表
+Amazon Ads API: 已开通并完成 Sponsored Products 核心 canary
+Ads 入库: 当前只完成 dry-run preview，尚未真实写库
+邮件通知: 尚未实现
+自动任务: 尚未接 Azure Container Apps Jobs
+```
+
+### 0.2 Ads API 已验证数据源
+
+第一批 Ads Sponsored Products 报表状态：
+
+```text
+spCampaigns: 8 rows, schema ok
+spTargeting: 99 rows, schema ok
+spSearchTerm: 61 rows, schema ok
+spAdvertisedProduct: 32 rows, schema ok
+spPurchasedProduct: 0 rows, empty_report, 暂不建表
+```
+
+当前第一批 Ads 目标表：
+
+```text
+amazon_ads_sp_campaign_daily
+amazon_ads_sp_targeting_daily
+amazon_ads_sp_search_term_daily
+amazon_ads_sp_advertised_product_daily
+```
+
+### 0.3 新增稳定性设计原则
+
+后续自动化系统必须把“长期稳定维护”放在入库前：
+
+```text
+raw file 必须保存
+schema validation 必须先于 parser/upsert
+字段漂移必须阻断业务表写入
+入库失败必须可审计
+需要人工检查的问题必须邮件通知
+所有表结构以 database_spec.md 为唯一事实
+已执行 migration 不可修改，只能新增 migration
+```
+
+### 0.4 后续实现顺序
+
+下一阶段开发顺序：
+
+```text
+1. 配置 Azure SQL 连接参数
+2. 运行 test_azure_sql_connection.py
+3. dry-run 001/002 migration
+4. 执行 001/002 migration
+5. 实现 AdsRepo 真实 upsert
+6. 新增 ingest_ads_reports.py，默认 dry-run，显式 --execute 才写库
+7. 将 task_audit_event.json 写入 amazon_sync_run_log
+8. 将 schema validation event 写入 amazon_schema_validation_event
+9. 新增 email notifier
+10. 最后接 Azure Container Apps Jobs schedule
+```
+
+在真实入库之前，继续使用本地 dry-run 输出验证字段映射和业务唯一键。
+
 
 ## 1. 背景与目标
 

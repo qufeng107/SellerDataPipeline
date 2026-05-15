@@ -1,8 +1,8 @@
 # SellerDataPipeline 数据库唯一事实设计 Spec
 
-> 文档版本：v1.9  
+> 文档版本：v1.10  
 > 更新日期：2026-05-15  
-> 当前状态：Azure SQL Database 已开通但 SQL 执行继续搁置；Amazon Ads API 已开通，SP 广告 `spCampaigns`、`spTargeting`、`spSearchTerm` 三个核心 canary 已完成并生成脱敏字段样例。  
+> 当前状态：Azure SQL Database 已开通但 SQL 执行继续搁置；Azure 参数尚未配置。Amazon Ads API 已开通，SP 广告 `spCampaigns`、`spTargeting`、`spSearchTerm`、`spAdvertisedProduct` 四个核心 canary 已完成并生成脱敏字段样例；Ads 入库前 dry-run 已生成 200 行 DB-ready preview。  
 > 适用范围：Amazon SP-API Reports / Amazon Ads Reporting / Finances API / 原始数据归档 / 字段取样 / 周报、月报、季度会计数据包。
 
 ---
@@ -121,6 +121,148 @@ amazon_ads_sp_purchased_product_daily # sampling_confirmed_empty，暂不进入�
 
 `AdsReportParser` 当前仍是通用 JSON 行解析器，用于确认 downloaded raw report 能否被解析并统计 `normalized_row_count`；正式 repository/upsert 表字段仍以真实字段样例为准。样例文档必须对 keyword / targeting / searchTerm 等投放策略字段脱敏。
 
+
+## 0.5 本轮 Ads 入库前 dry-run 与数据库维护规则 v1.10
+
+2026-05-15 本轮 Amazon Ads API 取样与入库前 dry-run 已形成以下数据库设计结论。
+
+### 0.5.1 已确认进入第一批 Ads 入库的表
+
+```text
+amazon_ads_sp_campaign_daily
+amazon_ads_sp_targeting_daily
+amazon_ads_sp_search_term_daily
+amazon_ads_sp_advertised_product_daily
+```
+
+这些表均已具备：
+
+```text
+真实 raw report
+脱敏字段样例 ADS_*.md
+schema validation status=ok
+parser normalized rows
+ingestion dry-run preview rows
+business_key_hash 设计
+source_row_hash 追溯字段
+```
+
+实测行数：
+
+| reportTypeId | 目标表 | normalized_rows | schema 状态 | 是否进入第一批 SQL |
+|---|---|---:|---|---|
+| `spCampaigns` | `amazon_ads_sp_campaign_daily` | 8 | ok | 是 |
+| `spTargeting` | `amazon_ads_sp_targeting_daily` | 99 | ok | 是 |
+| `spSearchTerm` | `amazon_ads_sp_search_term_daily` | 61 | ok | 是 |
+| `spAdvertisedProduct` | `amazon_ads_sp_advertised_product_daily` | 32 | ok | 是 |
+| `spPurchasedProduct` | `amazon_ads_sp_purchased_product_daily` | 0 | empty_report | 否，暂缓 |
+
+### 0.5.2 暂缓表
+
+`spPurchasedProduct` API 已接受请求并成功下载，但当前 3 天窗口返回空数组。该 reportTypeId 标记为：
+
+```text
+sampling_confirmed_empty
+```
+
+暂不创建：
+
+```text
+amazon_ads_sp_purchased_product_daily
+```
+
+后续应使用 14/30 天窗口再次取样；只有拿到非空样例后，才允许补充字段、业务键、migration 和 repository。
+
+### 0.5.3 business_key_hash 与 source_row_hash
+
+所有第一批 Ads normalized 表必须同时保留：
+
+```text
+business_key_hash
+source_row_hash
+```
+
+语义：
+
+```text
+business_key_hash = 基于业务唯一键生成，用于 MERGE / upsert
+source_row_hash   = 基于原始 row 生成，用于 raw row 追溯和审计
+```
+
+禁止使用 `source_row_hash` 作为业务 upsert 唯一键，因为同一日期同一业务记录在 Amazon 重新生成报表时，raw file path、report_id、row order 或格式细节可能变化。
+
+### 0.5.4 Ads 第一批业务唯一键
+
+```text
+amazon_ads_sp_campaign_daily:
+profile_id + report_date + campaign_id
+
+amazon_ads_sp_targeting_daily:
+profile_id + report_date + campaign_id + ad_group_id + keyword_id + targeting + match_type
+
+amazon_ads_sp_search_term_daily:
+profile_id + report_date + campaign_id + ad_group_id + keyword_id + targeting + search_term + match_type
+
+amazon_ads_sp_advertised_product_daily:
+profile_id + report_date + campaign_id + ad_group_id + advertised_asin + advertised_sku
+```
+
+注意：`keyword`、`targeting`、`search_term`、`campaign_name`、ASIN/SKU 是运营敏感字段。数据库可以保存真实值，但提交到 GitHub 的样例文档必须脱敏。
+
+### 0.5.5 字段漂移守门规则
+
+所有自动下载的 Amazon 文件必须先保存 raw，再执行 schema validation。入库前必须检查：
+
+```text
+schema_validation_status == ok
+```
+
+可接受但不写业务表：
+
+```text
+empty_report
+```
+
+以下状态必须阻断业务表写入，进入人工检查/通知流程：
+
+```text
+new_fields
+missing_fields
+schema_drift
+unmapped_fields
+validation_failed
+no_expected_schema
+parser_failed
+upsert_failed
+```
+
+后续正式入库后，这些事件应写入：
+
+```text
+amazon_schema_validation_event
+```
+
+并在通知模块完成后发邮件提醒用户检查 raw file、更新 spec、更新 migration 和 parser/mapping。
+
+### 0.5.6 数据库唯一事实维护规则
+
+本文件是数据库唯一事实来源，后续必须执行：
+
+```text
+1. 发现新字段 / 缺字段 / 空报表 / parser 不匹配
+2. 保留 raw file 与 manifest
+3. 在本文件记录字段含义、目标表、业务键、状态
+4. 新增或修改 migration
+5. 更新 parser / table mapping / repository / tests
+6. 本地 dry-run 通过
+7. 执行 SQL 或新增 migration
+8. 真实入库
+9. 写入任务审计和 schema validation event
+```
+
+一旦 001/002 migration 在 Azure SQL 中真实执行，禁止再重写已执行 migration。后续所有结构变化必须使用 `003_xxx.sql`、`004_xxx.sql` 递增。
+
+
 ## 1. 文档定位与执行规则
 
 本文档是 SellerDataPipeline 项目的 **数据库唯一事实来源**。
@@ -152,7 +294,7 @@ amazon_ads_sp_purchased_product_daily # sampling_confirmed_empty，暂不进入�
 | Amazon SP-API 连接测试 | 已成功 |
 | Reports API 采集闭环 | 本地 Sampling Mode 已实现，已完成 Listing、FBA 库存、销售与流量、Settlement V2 报告下载 |
 | 当前 SQL migration | 初始草稿，尚未执行 |
-| 当前数据库 spec | 本文件 v1.3 |
+| 当前数据库 spec | 本文件 v1.10 |
 
 ---
 
@@ -2272,34 +2414,3 @@ runtime/ingestion/amazon_ads/{profile_id}/{YYYYMMDD_HHMMSS}/
 
 禁止跳过 spec 直接改 SQL 或 Python。数据库 spec 是唯一事实文档，migration 是执行记录，parser/repository 是实现。
 
-
-## Appendix: Ads repository/upsert maintenance rule
-
-Ads ingestion writes are governed by the same table specs used by local preview generation.
-The current allowed Ads write targets are:
-
-```text
-amazon_ads_sp_campaign_daily
-amazon_ads_sp_targeting_daily
-amazon_ads_sp_search_term_daily
-amazon_ads_sp_advertised_product_daily
-amazon_sync_run_log
-amazon_schema_validation_event
-```
-
-Implementation rule:
-
-```text
-1. Do not build SQL from arbitrary CLI-provided table names.
-2. Resolve reportTypeId -> target table through ingestion/ads_table_mapping.py.
-3. Use business_key_hash as the only merge key for Ads normalized tables.
-4. Keep source_row_hash for raw-row traceability only.
-5. On any target table or column change, update this database_spec.md first, then SQL migration, then mapping, repository, and tests.
-```
-
-Operational rule:
-
-```text
---execute mode must only be used after 001/002 migrations have been applied successfully.
-Default CLI mode must remain dry-run/no database write.
-```
