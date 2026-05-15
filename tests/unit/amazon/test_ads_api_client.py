@@ -100,6 +100,37 @@ def test_list_profiles_uses_ads_headers_without_scope() -> None:
     assert "Amazon-Advertising-API-Scope" not in call["headers"]
 
 
+def test_check_connection_returns_sanitized_profile_summaries() -> None:
+    session = FakeSession()
+    session.next_request_response = FakeResponse(
+        200,
+        [
+            {
+                "profileId": 123,
+                "countryCode": "US",
+                "currencyCode": "USD",
+                "timezone": "America/Los_Angeles",
+                "accountInfo": {
+                    "id": "seller-1",
+                    "type": "seller",
+                    "name": "Demo Store",
+                    "validPaymentMethod": True,
+                    "marketplaceStringId": "ATVPDKIKX0DER",
+                },
+            }
+        ],
+    )
+    client = AmazonAdsApiClient(settings=_settings(), session=session)  # type: ignore[arg-type]
+
+    result = client.check_connection(profile_id="123")
+
+    assert result.lwa_access_token_obtained is True
+    assert result.profile_count == 1
+    assert result.selected_profile_found is True
+    assert result.profiles[0]["profileId"] == 123
+    assert result.profiles[0]["accountInfo"]["marketplaceStringId"] == "ATVPDKIKX0DER"
+
+
 def test_create_report_posts_reporting_v3_body_and_headers() -> None:
     session = FakeSession()
     session.next_request_response = FakeResponse(

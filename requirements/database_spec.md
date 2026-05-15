@@ -1,8 +1,8 @@
 # SellerDataPipeline 数据库唯一事实设计 Spec
 
-> 文档版本：v1.4  
-> 更新日期：2026-05-14  
-> 当前状态：Azure SQL Database 已开通，但尚未建表；`sql/migrations/` 里的 SQL 暂视为草稿，执行前必须重新对齐本文档。  
+> 文档版本：v1.10  
+> 更新日期：2026-05-15  
+> 当前状态：Azure SQL Database 已开通但 SQL 执行继续搁置；Azure 参数尚未配置。Amazon Ads API 已开通，SP 广告 `spCampaigns`、`spTargeting`、`spSearchTerm`、`spAdvertisedProduct` 四个核心 canary 已完成并生成脱敏字段样例；Ads 入库前 dry-run 已生成 200 行 DB-ready preview。  
 > 适用范围：Amazon SP-API Reports / Amazon Ads Reporting / Finances API / 原始数据归档 / 字段取样 / 周报、月报、季度会计数据包。
 
 ---
@@ -91,7 +91,7 @@ runtime/sampling/ads_raw_files/{ads_report_id}.json
 reports/raw/amazon_ads/{profile_id}/{report_type_id}/{date}/{ads_report_id}.json
 ```
 
-当前 Ads 表仍为 `draft`，必须等待真实 Ads raw report 下载并分析后再进入 `sampling`。第一批候选表：
+当前 Ads 表从 `draft` 调整为分层 sampling 状态：API 已开通，US profile 连接已验证，`spCampaigns`、`spTargeting`、`spSearchTerm`、`spAdvertisedProduct` 已下载真实 raw report 并生成脱敏字段样例，标记为 `sampling_confirmed`。`spPurchasedProduct` 也已提交和下载成功，但 2026-05-12 至 2026-05-15 窗口返回空数组，标记为 `sampling_confirmed_empty`，暂不进入第一批 SQL。第一批候选表：
 
 ```text
 amazon_ads_profile
@@ -99,10 +99,169 @@ amazon_ads_sp_campaign_daily
 amazon_ads_sp_targeting_daily
 amazon_ads_sp_search_term_daily
 amazon_ads_sp_advertised_product_daily
-amazon_ads_sp_purchased_product_daily
+amazon_ads_sp_purchased_product_daily # sampling_confirmed_empty，暂不进入第一批 SQL
 ```
 
 利润核算原则：Ads API 的 cost / sales / purchases 用于广告运营分析；最终利润核算中的广告实际扣费，仍优先以 Settlement V2 财务明细为准。
+
+### 0.4.1 Ads API 开通后的执行顺序 v1.8
+
+2026-05-15 用户确认 Amazon Ads API 已通过审核，并已准备 `AMAZON_ADS_CLIENT_ID`、`AMAZON_ADS_CLIENT_SECRET`、`AMAZON_ADS_REFRESH_TOKEN`、`AMAZON_ADS_PROFILE_ID` 等变量。本轮先不执行 SQL，而是按以下顺序推进 Ads 取样：
+
+```text
+只读连接自检 scripts/test_ads_api_connection.py：已完成
+  -> 选择 US / Amazon.com 对应 profile_id：已完成，profile_id=3917953989967300
+  -> spCampaigns 3 天 canary：已完成，8 行
+  -> spTargeting 3 天 canary：已完成，99 行
+  -> spSearchTerm 3 天 canary：已完成，61 行
+  -> analyze_ads_downloaded_reports.py 批量生成 ADS_*.md 脱敏字段样例：已补充
+  -> 冻结 Ads 核心三表字段草案：本轮完成
+  -> 下一步 spAdvertisedProduct 3 天 canary
+```
+
+`AdsReportParser` 当前仍是通用 JSON 行解析器，用于确认 downloaded raw report 能否被解析并统计 `normalized_row_count`；正式 repository/upsert 表字段仍以真实字段样例为准。样例文档必须对 keyword / targeting / searchTerm 等投放策略字段脱敏。
+
+
+## 0.5 本轮 Ads 入库前 dry-run 与数据库维护规则 v1.10
+
+2026-05-15 本轮 Amazon Ads API 取样与入库前 dry-run 已形成以下数据库设计结论。
+
+### 0.5.1 已确认进入第一批 Ads 入库的表
+
+```text
+amazon_ads_sp_campaign_daily
+amazon_ads_sp_targeting_daily
+amazon_ads_sp_search_term_daily
+amazon_ads_sp_advertised_product_daily
+```
+
+这些表均已具备：
+
+```text
+真实 raw report
+脱敏字段样例 ADS_*.md
+schema validation status=ok
+parser normalized rows
+ingestion dry-run preview rows
+business_key_hash 设计
+source_row_hash 追溯字段
+```
+
+实测行数：
+
+| reportTypeId | 目标表 | normalized_rows | schema 状态 | 是否进入第一批 SQL |
+|---|---|---:|---|---|
+| `spCampaigns` | `amazon_ads_sp_campaign_daily` | 8 | ok | 是 |
+| `spTargeting` | `amazon_ads_sp_targeting_daily` | 99 | ok | 是 |
+| `spSearchTerm` | `amazon_ads_sp_search_term_daily` | 61 | ok | 是 |
+| `spAdvertisedProduct` | `amazon_ads_sp_advertised_product_daily` | 32 | ok | 是 |
+| `spPurchasedProduct` | `amazon_ads_sp_purchased_product_daily` | 0 | empty_report | 否，暂缓 |
+
+### 0.5.2 暂缓表
+
+`spPurchasedProduct` API 已接受请求并成功下载，但当前 3 天窗口返回空数组。该 reportTypeId 标记为：
+
+```text
+sampling_confirmed_empty
+```
+
+暂不创建：
+
+```text
+amazon_ads_sp_purchased_product_daily
+```
+
+后续应使用 14/30 天窗口再次取样；只有拿到非空样例后，才允许补充字段、业务键、migration 和 repository。
+
+### 0.5.3 business_key_hash 与 source_row_hash
+
+所有第一批 Ads normalized 表必须同时保留：
+
+```text
+business_key_hash
+source_row_hash
+```
+
+语义：
+
+```text
+business_key_hash = 基于业务唯一键生成，用于 MERGE / upsert
+source_row_hash   = 基于原始 row 生成，用于 raw row 追溯和审计
+```
+
+禁止使用 `source_row_hash` 作为业务 upsert 唯一键，因为同一日期同一业务记录在 Amazon 重新生成报表时，raw file path、report_id、row order 或格式细节可能变化。
+
+### 0.5.4 Ads 第一批业务唯一键
+
+```text
+amazon_ads_sp_campaign_daily:
+profile_id + report_date + campaign_id
+
+amazon_ads_sp_targeting_daily:
+profile_id + report_date + campaign_id + ad_group_id + keyword_id + targeting + match_type
+
+amazon_ads_sp_search_term_daily:
+profile_id + report_date + campaign_id + ad_group_id + keyword_id + targeting + search_term + match_type
+
+amazon_ads_sp_advertised_product_daily:
+profile_id + report_date + campaign_id + ad_group_id + advertised_asin + advertised_sku
+```
+
+注意：`keyword`、`targeting`、`search_term`、`campaign_name`、ASIN/SKU 是运营敏感字段。数据库可以保存真实值，但提交到 GitHub 的样例文档必须脱敏。
+
+### 0.5.5 字段漂移守门规则
+
+所有自动下载的 Amazon 文件必须先保存 raw，再执行 schema validation。入库前必须检查：
+
+```text
+schema_validation_status == ok
+```
+
+可接受但不写业务表：
+
+```text
+empty_report
+```
+
+以下状态必须阻断业务表写入，进入人工检查/通知流程：
+
+```text
+new_fields
+missing_fields
+schema_drift
+unmapped_fields
+validation_failed
+no_expected_schema
+parser_failed
+upsert_failed
+```
+
+后续正式入库后，这些事件应写入：
+
+```text
+amazon_schema_validation_event
+```
+
+并在通知模块完成后发邮件提醒用户检查 raw file、更新 spec、更新 migration 和 parser/mapping。
+
+### 0.5.6 数据库唯一事实维护规则
+
+本文件是数据库唯一事实来源，后续必须执行：
+
+```text
+1. 发现新字段 / 缺字段 / 空报表 / parser 不匹配
+2. 保留 raw file 与 manifest
+3. 在本文件记录字段含义、目标表、业务键、状态
+4. 新增或修改 migration
+5. 更新 parser / table mapping / repository / tests
+6. 本地 dry-run 通过
+7. 执行 SQL 或新增 migration
+8. 真实入库
+9. 写入任务审计和 schema validation event
+```
+
+一旦 001/002 migration 在 Azure SQL 中真实执行，禁止再重写已执行 migration。后续所有结构变化必须使用 `003_xxx.sql`、`004_xxx.sql` 递增。
+
 
 ## 1. 文档定位与执行规则
 
@@ -135,7 +294,7 @@ amazon_ads_sp_purchased_product_daily
 | Amazon SP-API 连接测试 | 已成功 |
 | Reports API 采集闭环 | 本地 Sampling Mode 已实现，已完成 Listing、FBA 库存、销售与流量、Settlement V2 报告下载 |
 | 当前 SQL migration | 初始草稿，尚未执行 |
-| 当前数据库 spec | 本文件 v1.3 |
+| 当前数据库 spec | 本文件 v1.10 |
 
 ---
 
@@ -592,7 +751,11 @@ source_system + report_type + marketplace_id + source_field_name
 | `amazon_inventory_planning_daily` | `sampling` | `GET_FBA_INVENTORY_PLANNING_DATA` | 库龄、库存健康、周转、冗余和建议动作 |
 | `amazon_inventory_ledger_summary_daily` | `sampling` | `GET_LEDGER_SUMMARY_VIEW_DATA` | FBA 库存流水汇总，解释库存变化和差异 |
 | `amazon_finance_event` | `draft` | Settlement reports / Finances API | 费用、退款、赔偿、仓储费、月租等的统一归类层，需先取样分类 |
-| `amazon_ads_daily` | `draft` | Amazon Ads Reporting | Sponsored Products 广告表现，需确认 profile_id 和报表粒度 |
+| `amazon_ads_sp_campaign_daily` | `sampling_confirmed` | Amazon Ads Reporting v3 `spCampaigns` | 已用 US profile 下载 3 天 canary 样例，8 行，字段样例见 `ADS_spCampaigns.md`，纳入 Ads 第一批 SQL 草案但暂不执行 |
+| `amazon_ads_sp_targeting_daily` | `sampling_confirmed` | Amazon Ads Reporting v3 `spTargeting` | 已用 US profile 下载 3 天 canary 样例，99 行，字段样例见 `ADS_spTargeting.md`，纳入 Ads 第一批 SQL 草案但暂不执行 |
+| `amazon_ads_sp_search_term_daily` | `sampling_confirmed` | Amazon Ads Reporting v3 `spSearchTerm` | 已用 US profile 下载 3 天 canary 样例，61 行，字段样例见 `ADS_spSearchTerm.md`，纳入 Ads 第一批 SQL 草案但暂不执行 |
+| `amazon_ads_sp_advertised_product_daily` | `sampling_confirmed` | Amazon Ads Reporting v3 `spAdvertisedProduct` | 已用 US profile 下载 3 天 canary 样例，32 行，字段样例见 `ADS_spAdvertisedProduct.md`，groupBy=advertiser 已被当前账号接受，纳入 Ads 第一批 SQL 草案但暂不执行 |
+| `amazon_ads_sp_purchased_product_daily` | `sampling_confirmed_empty` | Amazon Ads Reporting v3 `spPurchasedProduct` | API 接受并下载成功，但 3 天窗口空数组；待 14/30 天非空样例后再建表 |
 | `amazon_promotion_performance` | `sampling` | `GET_PROMOTION_PERFORMANCE_REPORT` | Deal/Promotion 活动主表，记录活动总体曝光、销售件数和销售额等运营效果 |
 | `amazon_promotion_product_performance` | `sampling` | `GET_PROMOTION_PERFORMANCE_REPORT` | Promotion 关联 ASIN 明细表，记录活动商品维度表现 |
 | `amazon_coupon_performance` | `sampling` | `GET_COUPON_PERFORMANCE_REPORT` | Coupon 主表，记录预算、领取、兑换、折扣、销售等运营效果 |
@@ -1953,12 +2116,16 @@ scripts/run_sampling_plan.py
 
 ## 24. Amazon Ads API normalized 表草案
 
-> 当前状态：`draft`。以下字段基于 Ads Reporting v3 取样计划，不是最终建表字段。必须等真实 Ads raw report 下载后，再用字段样例更新为 `sampling`。
+> 当前状态：`sampling_confirmed` for Ads 核心四表。Ads API 已开通，US profile 连接、`spCampaigns`、`spTargeting`、`spSearchTerm`、`spAdvertisedProduct` 四个 3 天 canary 已跑通并下载真实 raw JSON。`amazon_ads_profile`、`amazon_ads_sp_campaign_daily`、`amazon_ads_sp_targeting_daily`、`amazon_ads_sp_search_term_daily`、`amazon_ads_sp_advertised_product_daily` 已纳入 SQL migration 草案；v1.13 已增加 `business_key_hash` 用于未来幂等 upsert，但当前仍不执行 Azure SQL。
+>
+> 已生成样例：`requirements/data_samples/ADS_spCampaigns.md`、`requirements/data_samples/ADS_spTargeting.md`、`requirements/data_samples/ADS_spSearchTerm.md`、`requirements/data_samples/ADS_spAdvertisedProduct.md`。
 
 ### 24.1 `amazon_ads_profile`
 
-**表状态：`draft`**  
-**第一数据来源：** Amazon Ads `/v2/profiles`
+**表状态：`sampling_confirmed`**  
+**第一数据来源：** Amazon Ads profiles API
+
+当前已发现 4 个 seller profiles：BR、CA、MX、US；当前运营主 profile 为 US / USD / validPayment=true，对应 `AMAZON_ADS_PROFILE_ID=3917953989967300`。
 
 用途：保存 Ads profile 与 marketplace / advertiser account 的映射。
 
@@ -1973,12 +2140,16 @@ scripts/run_sampling_plan.py
 | `account_id` | `NVARCHAR(100)` | `candidate` | `accountInfo.id` |
 | `account_name` | `NVARCHAR(500)` | `candidate` | `accountInfo.name` |
 | `account_type` | `NVARCHAR(100)` | `candidate` | `accountInfo.type` |
+| `valid_payment_method` | `BIT` | `candidate` | `accountInfo.validPaymentMethod` |
+| `daily_budget` | `DECIMAL(18,4)` | `candidate` | `dailyBudget` |
 | `raw_data` | `NVARCHAR(MAX)` | `required_core` | 原始 profile JSON |
 
 ### 24.2 `amazon_ads_sp_campaign_daily`
 
-**表状态：`draft`**  
+**表状态：`sampling_confirmed`**  
 **第一数据来源：** Ads Reporting v3 `reportTypeId=spCampaigns`
+
+当前样例：2026-05-12 至 2026-05-15，8 行，字段样例见 `requirements/data_samples/ADS_spCampaigns.md`。
 
 用途：保存 Sponsored Products campaign 维度广告表现。
 
@@ -1996,32 +2167,250 @@ scripts/run_sampling_plan.py
 | `sales_7d` | `DECIMAL(18,4)` | `candidate` | `sales7d` |
 | `purchases_7d` | `INT` | `candidate` | `purchases7d` |
 | `units_sold_clicks_7d` | `INT` | `candidate` | `unitsSoldClicks7d` |
-| `source_ads_report_id` / `source_raw_file_path` / `source_row_hash` / `raw_data` | 通用溯源字段 | `required_core` | Ads normalized 表保留 |
+| `source_report_id` / `source_raw_file_path` / `source_row_index` / `source_row_hash` / `business_key_hash` / `raw_data` | 通用溯源字段 | `required_core` | `source_row_hash` 追溯 raw row；`business_key_hash` 用于未来 upsert |
 
 ### 24.3 `amazon_ads_sp_targeting_daily`
 
-**表状态：`draft`**  
+**表状态：`sampling_confirmed`**  
 **第一数据来源：** Ads Reporting v3 `reportTypeId=spTargeting`
+
+当前样例：2026-05-12 至 2026-05-15，99 行，字段样例见 `requirements/data_samples/ADS_spTargeting.md`。注意：keyword / targeting 属于投放策略数据，样例文档必须脱敏。
 
 用途：保存 keyword / targeting 维度表现，用于调价、否词、关键词筛选。候选字段包括：`profile_id`、`report_date`、`campaign_id`、`campaign_name`、`ad_group_id`、`ad_group_name`、`keyword_id`、`keyword`、`match_type`、`targeting`、`impressions`、`clicks`、`cost`、`sales_7d`、`purchases_7d`、`units_sold_clicks_7d` 以及通用溯源字段。
 
 ### 24.4 `amazon_ads_sp_search_term_daily`
 
-**表状态：`draft`**  
+**表状态：`sampling_confirmed`**  
 **第一数据来源：** Ads Reporting v3 `reportTypeId=spSearchTerm`
 
-用途：保存用户搜索词表现，用于找词、加词、否词。候选字段包括 `search_term`，以及 campaign / ad group / keyword / targeting / impressions / clicks / cost / sales / purchases 等字段。
+当前样例：2026-05-12 至 2026-05-15，61 行，字段样例见 `requirements/data_samples/ADS_spSearchTerm.md`。注意：keyword / targeting / searchTerm 属于投放策略数据，样例文档必须脱敏。
+
+用途：保存用户搜索词表现，用于找词、加词、否词。第一版字段包括 `profile_id`、`report_date`、`campaign_id`、`campaign_name`、`ad_group_id`、`ad_group_name`、`keyword_id`、`keyword`、`match_type`、`targeting`、`search_term`、`impressions`、`clicks`、`cost`、`sales_7d`、`purchases_7d`、`units_sold_clicks_7d` 以及通用溯源字段。
 
 ### 24.5 `amazon_ads_sp_advertised_product_daily`
 
-**表状态：`draft`**  
+**表状态：`sampling_confirmed`**  
 **第一数据来源：** Ads Reporting v3 `reportTypeId=spAdvertisedProduct`
 
-用途：保存广告推广 SKU / ASIN 维度表现，用于判断哪个产品广告效率高。候选字段包括：`advertised_asin`、`advertised_sku`、campaign / ad group、impressions、clicks、cost、sales、purchases、units sold。
+当前样例：2026-05-12 至 2026-05-15，32 行，字段样例见 `requirements/data_samples/ADS_spAdvertisedProduct.md`。当前账号已接受 `groupBy=advertiser` 和第一版列清单。注意：advertised SKU / ASIN 属于商品经营数据，样例文档必须脱敏。
+
+用途：保存广告推广 SKU / ASIN 维度表现，用于判断哪个产品广告效率高。第一版字段包括 `profile_id`、`report_date`、`campaign_id`、`campaign_name`、`ad_group_id`、`ad_group_name`、`advertised_asin`、`advertised_sku`、`impressions`、`clicks`、`cost`、`sales_7d`、`purchases_7d`、`units_sold_clicks_7d` 以及通用溯源字段。
 
 ### 24.6 `amazon_ads_sp_purchased_product_daily`
 
-**表状态：`draft`**  
+**表状态：`sampling_confirmed_empty`**  
 **第一数据来源：** Ads Reporting v3 `reportTypeId=spPurchasedProduct`
 
-用途：保存广告点击后最终购买的 ASIN，用于分析 halo sales / 跨 ASIN 购买。候选字段包括：`purchased_asin`、`advertised_asin`、`advertised_sku`、campaign / ad group、sales、purchases、units sold。
+当前样例：2026-05-12 至 2026-05-15，Amazon Ads API 接受 `groupBy=asin` 和第一版列清单，报告 `COMPLETED / DOWNLOADED`，但 raw JSON 是空数组，字段样例见 `requirements/data_samples/ADS_spPurchasedProduct.md`。这说明当前窗口没有可观测的 purchased product 归因行，不是 API 或 parser 失败。
+
+用途：保存广告点击后最终购买的 ASIN，用于分析 halo sales / 跨 ASIN 购买。候选字段包括：`purchased_asin`、`advertised_asin`、`advertised_sku`、campaign / ad group、sales、purchases、units sold。由于当前样例没有字段行，第一批 SQL 暂不建本表；后续用 14/30 天窗口补到非空样例后，再将状态升级为 `sampling_confirmed` 并追加 migration。
+
+---
+
+## 18. Raw 文件留存、字段漂移检测与唯一事实维护规则 v1.12
+
+### 18.1 原始文件留存原则
+
+所有从 Amazon SP-API Reports API 与 Amazon Ads API 下载的文件，都必须先保存 raw file，再进入 parser / repository / upsert。
+
+```text
+Amazon API download
+    -> 保存 raw file 到 reports/raw/... 或未来 Azure Blob
+    -> 写 raw manifest / amazon_raw_report_file
+    -> 字段结构分析 analyze_report_file
+    -> schema validation / drift guard
+    -> parser normalized records
+    -> repository upsert
+```
+
+即使 parser 失败、字段不匹配、报表为空，也不能丢弃 raw file。raw file 是后续修复 parser、更新表结构、追溯利润口径的唯一证据。
+
+### 18.2 字段漂移 / 表结构不匹配处理规则
+
+后续持续自动任务中，以下情况都视为需要审查：
+
+1. Amazon 返回了新增字段，当前 expected schema 未记录。
+2. Amazon 缺少 expected schema 中的字段。
+3. parser 成功但 normalized row 写入失败。
+4. SQL upsert 报字段不存在、类型转换失败、长度超限、唯一键冲突等错误。
+5. 报表长期为空，导致无法确认目标表字段。
+
+第一版字段漂移检测已通过 `seller_data_pipeline.sampling.schema_drift` 实现，当前优先覆盖 Amazon Ads downloaded JSON reports：
+
+```text
+spCampaigns
+spTargeting
+spSearchTerm
+spAdvertisedProduct
+spPurchasedProduct
+```
+
+`spPurchasedProduct` 当前 3 天窗口为空，因此状态为 `sampling_confirmed_empty`。它证明 API/report 配置有效，但不能据此设计正式业务表。
+
+### 18.3 schema validation 状态
+
+| 状态 | 含义 | 是否需要人工审查 |
+|---|---|---|
+| `ok` | observed fields 与 expected fields 一致 | 否 |
+| `empty_report` | 报表成功下载但无数据行 | 否，但不能据此建表 |
+| `new_fields` | Amazon 返回了未记录的新字段 | 是 |
+| `missing_fields` | Amazon 缺少预期字段 | 是 |
+| `schema_drift` | 同时存在新增字段和缺失字段 | 是 |
+| `unmapped_fields` | 字段存在但未映射到 spec / parser | 是 |
+| `validation_failed` | 字段校验本身失败 | 是 |
+| `no_expected_schema` | 尚未登记 expected schema | 按阶段判断 |
+
+### 18.4 数据库记录表
+
+新增草案表：
+
+```text
+amazon_schema_validation_event
+```
+
+用途：
+
+1. 记录每个 raw file 的字段校验结果。
+2. 记录 observed_fields / expected_fields / missing_fields / new_fields / unmapped_fields。
+3. 标记 `requires_review`。
+4. 记录邮件通知状态。
+5. 与 `amazon_sync_run_log`、`amazon_raw_report_file` 软关联。
+
+第一版本地 Sampling Mode 会先把 schema validation 写入 local raw manifest 和 `runtime/sampling/schema_validation/*.json`。Azure SQL 建表后，再由 repository 写入 `amazon_schema_validation_event`。
+
+### 18.5 邮件通知规则
+
+后续自动任务上线后，如果出现以下状态：
+
+```text
+new_fields
+missing_fields
+schema_drift
+unmapped_fields
+validation_failed
+parser_failed
+upsert_failed
+```
+
+任务不应静默失败，应写入：
+
+```text
+amazon_sync_run_log
+amazon_schema_validation_event
+```
+
+并通过 `EmailService` 发送通知给运营/开发负责人。邮件内容至少包含：
+
+```text
+source_system
+report_type
+marketplace_id / profile_id
+report_id
+raw_file_path / blob_path
+schema_validation_status
+missing_fields
+new_fields
+unmapped_fields
+error_type / error_detail
+建议下一步：查看 raw file -> 更新 database_spec.md -> 新增 migration -> 更新 parser/repository
+```
+
+邮件通知不是第一阶段必须打通的外部服务，但必须在流程中预留通知状态字段，避免未来自动任务失败无人发现。
+
+### 18.6 database_spec.md 唯一事实规则
+
+数据库创建完成后，`requirements/database_spec.md` 必须继续作为唯一事实设计文档维护。
+
+任何表结构变化都必须遵守：
+
+```text
+先更新 database_spec.md
+    -> 再新增 migration，例如 003_add_ads_new_metric.sql
+    -> 再更新 parser / repository / tests
+    -> 再执行 migration
+    -> 最后在进度文档记录变更原因
+```
+
+禁止只改 SQL 或只改 Python 代码而不更新本 spec。否则后续字段漂移和利润口径会越来越难追踪。
+
+---
+
+## 25. v1.13 入库前 dry-run、业务唯一键与表结构维护规则
+
+v1.13 新增 Ads 入库前 dry-run 守门链路，目的不是替代数据库，而是在 Azure SQL 建表前先确认：
+
+```text
+raw file 是否存在
+schema validation 是否 ok
+parser 是否能生成 normalized records
+目标表字段是否完整
+业务唯一键是否稳定
+未来写入 amazon_sync_run_log / amazon_schema_validation_event 的审计结构是否完整
+```
+
+本阶段输出均在本地 `runtime/ingestion/amazon_ads/`，不提交 GitHub，不写 Azure SQL。
+
+### 25.1 Ads 四张核心表的 business_key_hash
+
+Ads 表同时保留两个 hash：
+
+| 字段 | 用途 | 是否适合 upsert |
+|---|---|---|
+| `source_row_hash` | 追溯某个 raw file 中的原始行，包含 source row index | 否 |
+| `business_key_hash` | 基于目标表名和业务键生成，代表同一业务事实 | 是 |
+
+第一版四张 Ads 表业务键：
+
+| 表 | business_key_fields |
+|---|---|
+| `amazon_ads_sp_campaign_daily` | `profile_id`, `report_date`, `campaign_id` |
+| `amazon_ads_sp_targeting_daily` | `profile_id`, `report_date`, `campaign_id`, `ad_group_id`, `keyword_id`, `targeting`, `match_type` |
+| `amazon_ads_sp_search_term_daily` | `profile_id`, `report_date`, `campaign_id`, `ad_group_id`, `keyword_id`, `targeting`, `search_term`, `match_type` |
+| `amazon_ads_sp_advertised_product_daily` | `profile_id`, `report_date`, `campaign_id`, `ad_group_id`, `advertised_asin`, `advertised_sku` |
+
+SQL 草案中已为四张表加入 `business_key_hash NVARCHAR(100) NOT NULL`，并在 `002_create_indexes.sql` 中加入唯一索引草案：
+
+```text
+UX_amazon_ads_sp_campaign_daily_business_key
+UX_amazon_ads_sp_targeting_daily_business_key
+UX_amazon_ads_sp_search_term_daily_business_key
+UX_amazon_ads_sp_advertised_product_daily_business_key
+```
+
+### 25.2 入库前 dry-run 输出
+
+命令：
+
+```powershell
+python scripts/prepare_ads_ingestion.py --profile-id 3917953989967300 --marketplace-id ATVPDKIKX0DER
+```
+
+输出：
+
+```text
+runtime/ingestion/amazon_ads/{profile_id}/{YYYYMMDD_HHMMSS}/
+    ads_ingestion_summary.json
+    task_audit_event.json
+    schema_validation_events.jsonl
+    previews/*.preview.jsonl
+```
+
+`task_audit_event.json` 对齐未来 `amazon_sync_run_log`；`schema_validation_events.jsonl` 对齐未来 `amazon_schema_validation_event`。
+
+### 25.3 字段变化维护流程
+
+一旦后续自动任务发现字段漂移或入库失败，必须按以下顺序维护：
+
+```text
+1. 保留 raw file 与 manifest
+2. 查看 schema_validation_events / task_audit_event
+3. 更新 requirements/database_spec.md
+4. 新增 migration，例如 003_add_ads_xxx.sql
+5. 更新 parser / table mapping / repository / tests
+6. 执行 migration
+7. 重跑 prepare_ads_ingestion.py 或 ingest 脚本
+8. 在进度文档记录原因和结果
+```
+
+禁止跳过 spec 直接改 SQL 或 Python。数据库 spec 是唯一事实文档，migration 是执行记录，parser/repository 是实现。
+

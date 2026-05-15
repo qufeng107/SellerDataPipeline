@@ -40,6 +40,10 @@ DEFAULT_SENSITIVE_FIELD_PATTERNS = (
     "address",
     "phone",
     "message",
+    "keyword",
+    "targeting",
+    "searchterm",
+    "search term",
 )
 
 DATE_FIELD_PATTERN = re.compile(r"(^|[-_ .])date($|[-_ .])|open-date|created|updated", re.I)
@@ -523,6 +527,35 @@ COUPON_PERFORMANCE_MAPPED_FIELDS = {
 }
 
 
+ADS_REPORT_MAPPED_FIELDS = {
+    "[].date",
+    "[].campaignId",
+    "[].campaignName",
+    "[].campaignStatus",
+    "[].adGroupId",
+    "[].adGroupName",
+    "[].keywordId",
+    "[].keyword",
+    "[].matchType",
+    "[].targeting",
+    "[].searchTerm",
+    "[].advertisedAsin",
+    "[].advertisedSku",
+    "[].purchasedAsin",
+    "[].impressions",
+    "[].clicks",
+    "[].cost",
+    "[].sales7d",
+    "[].purchases7d",
+    "[].unitsSoldClicks7d",
+    "rows[].date",
+    "rows[].campaignId",
+    "rows[].campaignName",
+    "rows[].impressions",
+    "rows[].clicks",
+    "rows[].cost",
+}
+
 @dataclass(frozen=True)
 class FieldAnalysis:
     position: int
@@ -543,6 +576,7 @@ class FieldAnalysis:
 class ReportAnalysis:
     report_type: str
     marketplace_id: str | None
+    source_system: str
     raw_file_path: str
     encoding: str
     delimiter: str | None
@@ -556,6 +590,7 @@ class ReportAnalysis:
         return {
             "report_type": self.report_type,
             "marketplace_id": self.marketplace_id,
+            "source_system": self.source_system,
             "raw_file_path": self.raw_file_path,
             "encoding": self.encoding,
             "delimiter": self.delimiter,
@@ -572,6 +607,7 @@ def analyze_report_file(
     raw_file_path: str | Path,
     report_type: str,
     marketplace_id: str | None = None,
+    source_system: str = "sp_api_reports",
     sample_value_limit: int = 5,
     redact_sample_values: bool = True,
 ) -> ReportAnalysis:
@@ -585,6 +621,7 @@ def analyze_report_file(
             raw_file_path=path,
             report_type=report_type,
             marketplace_id=marketplace_id,
+            source_system=source_system,
             encoding=encoding,
             sample_value_limit=sample_value_limit,
             redact_sample_values=redact_sample_values,
@@ -594,6 +631,7 @@ def analyze_report_file(
         raw_file_path=path,
         report_type=report_type,
         marketplace_id=marketplace_id,
+        source_system=source_system,
         encoding=encoding,
         sample_value_limit=sample_value_limit,
         redact_sample_values=redact_sample_values,
@@ -605,6 +643,7 @@ def analyze_delimited_report_file(
     raw_file_path: str | Path,
     report_type: str,
     marketplace_id: str | None = None,
+    source_system: str = "sp_api_reports",
     sample_value_limit: int = 5,
     redact_sample_values: bool = True,
 ) -> ReportAnalysis:
@@ -617,6 +656,7 @@ def analyze_delimited_report_file(
         raw_file_path=path,
         report_type=report_type,
         marketplace_id=marketplace_id,
+        source_system=source_system,
         encoding=encoding,
         sample_value_limit=sample_value_limit,
         redact_sample_values=redact_sample_values,
@@ -629,6 +669,7 @@ def analyze_delimited_report_text(
     raw_file_path: str | Path,
     report_type: str,
     marketplace_id: str | None,
+    source_system: str,
     encoding: str,
     sample_value_limit: int,
     redact_sample_values: bool,
@@ -639,6 +680,7 @@ def analyze_delimited_report_text(
         return ReportAnalysis(
             report_type=report_type,
             marketplace_id=marketplace_id,
+            source_system=source_system,
             raw_file_path=str(path),
             encoding=encoding,
             delimiter=None,
@@ -699,6 +741,7 @@ def analyze_delimited_report_text(
     return ReportAnalysis(
         report_type=report_type,
         marketplace_id=marketplace_id,
+        source_system=source_system,
         raw_file_path=str(path),
         encoding=encoding,
         delimiter=delimiter,
@@ -715,6 +758,7 @@ def analyze_json_report_text(
     raw_file_path: str | Path,
     report_type: str,
     marketplace_id: str | None,
+    source_system: str,
     encoding: str,
     sample_value_limit: int,
     redact_sample_values: bool,
@@ -752,6 +796,7 @@ def analyze_json_report_text(
     return ReportAnalysis(
         report_type=report_type,
         marketplace_id=marketplace_id,
+        source_system=source_system,
         raw_file_path=str(path),
         encoding=encoding,
         delimiter=None,
@@ -778,7 +823,7 @@ def render_report_analysis_markdown(analysis: ReportAnalysis) -> str:
         "",
         "| 项目 | 值 |",
         "|---|---|",
-        "| source_system | `sp_api_reports` |",
+        f"| source_system | `{analysis.source_system}` |",
         f"| report_type | `{analysis.report_type}` |",
         f"| marketplace_id | `{analysis.marketplace_id or 'unknown'}` |",
         f"| raw_file_path | `{analysis.raw_file_path}` |",
@@ -826,8 +871,80 @@ def render_report_analysis_markdown(analysis: ReportAnalysis) -> str:
     return "\n".join(lines) + "\n"
 
 
+ADS_REPORT_TARGET_TABLES = {
+    "spCampaigns": (
+        "amazon_ads_sp_campaign_daily",
+        "Campaign-level Sponsored Products daily metrics for spend, clicks, sales and orders.",
+    ),
+    "spTargeting": (
+        "amazon_ads_sp_targeting_daily",
+        "Keyword/target-level Sponsored Products daily metrics for bid and targeting optimization.",
+    ),
+    "spSearchTerm": (
+        "amazon_ads_sp_search_term_daily",
+        "Customer search term daily metrics for keyword mining and negative keyword decisions.",
+    ),
+    "spAdvertisedProduct": (
+        "amazon_ads_sp_advertised_product_daily",
+        "Advertised SKU/ASIN daily metrics for product-level advertising analysis.",
+    ),
+    "spPurchasedProduct": (
+        "amazon_ads_sp_purchased_product_daily",
+        "Purchased ASIN attribution after ad clicks for halo-sales analysis.",
+    ),
+}
+
+
 def render_report_specific_notes(analysis: ReportAnalysis) -> list[str]:
     report_type = analysis.report_type
+    if analysis.source_system == "amazon_ads" and report_type in ADS_REPORT_TARGET_TABLES:
+        target_table, table_note = ADS_REPORT_TARGET_TABLES[report_type]
+        if report_type in {"spCampaigns", "spTargeting", "spSearchTerm", "spAdvertisedProduct"}:
+            status = "sampling_confirmed"
+            first_note = (
+                f"本报告已通过真实 Amazon Ads API canary 下载并解析，"
+                f"本次样例包含 {analysis.row_count} 行。"
+            )
+        elif report_type == "spPurchasedProduct" and analysis.row_count == 0:
+            status = "sampling_confirmed_empty"
+            first_note = (
+                "本报告已通过真实 Amazon Ads API canary 提交和下载，"
+                "但当前 3 天窗口返回空数组，说明本窗口没有可观测的 purchased product "
+                "归因行；这不是 API 或 parser 失败。"
+            )
+        elif report_type == "spPurchasedProduct":
+            status = "sampling_confirmed"
+            first_note = (
+                f"本报告已通过真实 Amazon Ads API canary 下载并解析，"
+                f"本次样例包含 {analysis.row_count} 行。"
+            )
+        else:
+            status = "sampling"
+            first_note = (
+                f"本报告字段统计已完成或等待 canary；"
+                f"当前样例行数为 {analysis.row_count}。"
+            )
+        return [
+            "",
+            "## 4. 初步结论",
+            "",
+            f"1. {first_note}",
+            (
+                "2. Ads API 是广告运营归因口径，适合解释 campaign、关键词、"
+                "搜索词或 ASIN 维度表现；利润核算中的广告真实扣费仍优先以 "
+                "Settlement V2 为财务口径。"
+            ),
+            (
+                "3. 本报告第一版 parser 采用通用 Ads normalized row，"
+                "正式入库前再按 reportTypeId 拆到目标明细表。"
+            ),
+            "",
+            "## 5. 建议目标表",
+            "",
+            "| 目标表 | 设计状态 | 说明 |",
+            "|---|---|---|",
+            f"| `{target_table}` | `{status}` | {table_note} 暂不执行 SQL |",
+        ]
     if report_type == "GET_MERCHANT_LISTINGS_ALL_DATA":
         return [
             "",
@@ -1239,6 +1356,7 @@ def suggest_mapping_status(field_name: str, values: list[str]) -> str:
         or field_name in SETTLEMENT_V2_MAPPED_FIELDS
         or field_name in PROMOTION_PERFORMANCE_MAPPED_FIELDS
         or field_name in COUPON_PERFORMANCE_MAPPED_FIELDS
+        or field_name in ADS_REPORT_MAPPED_FIELDS
     ):
         return "mapped_candidate"
     if not values:
@@ -1329,6 +1447,8 @@ def _ensure_json_stat(stats: dict[str, dict[str, Any]], field_name: str) -> dict
 
 
 def _json_primary_row_count(payload: Any) -> int:
+    if isinstance(payload, list):
+        return len(payload)
     if not isinstance(payload, dict):
         return 0
     candidates = [
@@ -1340,6 +1460,8 @@ def _json_primary_row_count(payload: Any) -> int:
 
 
 def _json_report_notes(payload: Any) -> list[str]:
+    if isinstance(payload, list):
+        return [f"top-level array length = {len(payload)}"]
     if not isinstance(payload, dict):
         return []
     notes = []
