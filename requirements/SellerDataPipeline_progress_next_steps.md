@@ -1,6 +1,7 @@
 # SellerDataPipeline 当前进展与下一步计划
 
-> 更新时间：2026-05-14  
+> 更新时间：2026-05-15  
+> 当前更新：v1.13 Amazon Ads 入库前 dry-run 守门链路已完成；SQL 仍未执行。  
 > 文档用途：记录项目真实进展、阶段结论、后续计划和注意事项。长期架构以 `requirements/amazon_profit_report_serverless_design_plan_v1_1.md` 为参考；数据库唯一事实以 `requirements/database_spec.md` 为准；本文件负责说明“现在做到哪里、下一步做什么”。
 
 ---
@@ -31,7 +32,21 @@ SP-API 授权/连接测试
 控制表先稳定，业务表边取样边确认。
 ```
 
-Amazon Ads API 相关取样代码已经准备，但用户确认 **Ads API 尚未开通**，因此 Ads 数据源先暂停，不影响 SP-API 主线继续推进。
+Amazon Ads API 已经开通，用户已取得 Ads API 相关环境变量。当前主线临时从 SQL 执行切回 Ads：只读连接自检、profile 选择、`spCampaigns`、`spTargeting`、`spSearchTerm`、`spAdvertisedProduct` 四个 3 天 canary 均已完成并下载 raw JSON，已生成脱敏字段样例。SQL 执行继续搁置。
+
+本轮 v1.13 已完成：
+
+```text
+Amazon Ads US profile=3917953989967300 已确认 valid_payment=true
+spCampaigns / spTargeting / spSearchTerm / spAdvertisedProduct 四个核心 Ads canary 均已完成
+spPurchasedProduct API 已接受且下载成功，但当前 3 天窗口为空，暂不建表
+schema validation 已覆盖 Ads 已下载 raw reports，四个核心报表均为 ok
+新增 prepare_ads_ingestion.py，可把已下载 Ads raw 转成 DB-ready preview JSONL
+新增 ingestion/ads_table_mapping.py，集中管理 Ads 目标表、字段、业务唯一键和 business_key_hash
+新增 ingestion/ads_ingestion_dry_run.py，生成 ads_ingestion_summary.json、task_audit_event.json、schema_validation_events.jsonl
+SQL migration 草案已为 Ads 四张核心表补充 business_key_hash 和唯一索引，但仍不执行 Azure SQL
+下一步建议：审查 dry-run preview；然后执行 Azure SQL 建表；再实现真实 repository/upsert 与邮件通知
+```
 
 ---
 
@@ -443,45 +458,105 @@ spAdvertisedProduct
 spPurchasedProduct
 ```
 
-### 7.2 当前暂停原因
+### 7.2 当前恢复条件已满足
 
-用户确认：
-
-```text
-Amazon Ads API 尚未开通
-```
-
-因此 Ads 取样暂时停止，不继续运行 Ads 脚本，也暂不根据 Ads 数据设计正式表。
-
-当前 `database_spec.md` 中 Ads 相关表应保持：
+用户确认 Ads API 申请已经通过，并已准备以下变量：
 
 ```text
-draft
+AMAZON_ADS_REGION
+AMAZON_ADS_API_ENDPOINT
+AMAZON_ADS_CLIENT_ID
+AMAZON_ADS_CLIENT_SECRET
+AMAZON_ADS_REFRESH_TOKEN
+AMAZON_ADS_PROFILE_ID
+AMAZON_ADS_USER_AGENT
 ```
 
-### 7.3 后续恢复条件
+因此 Ads 取样从“暂停”切换为“sampling”。不过在下载真实 Ads raw report 前，`database_spec.md` 中 Ads normalized 表仍保持 `draft/sampling candidate`，暂不进入 SQL migration。
 
-等 Ads API 开通后再执行：
+### 7.3 当前 Ads 最短执行顺序
+
+第一步，只读自检，不提交报告：
 
 ```powershell
-python scripts/discover_ads_profiles.py
+PYTHONPATH=src python scripts/test_ads_api_connection.py --json
 ```
 
-选择 US 广告 profile 后写入 `.env`：
+如果还没确定 profile，先查看 profiles：
+
+```powershell
+PYTHONPATH=src python scripts/test_ads_api_connection.py
+```
+
+选择 US / Amazon.com 对应 profile 后写入 `.env`：
 
 ```text
 AMAZON_ADS_PROFILE_ID='...'
 ```
 
-再运行：
+第二步，先看计划，不请求 Amazon：
 
 ```powershell
-python scripts/run_ads_sampling_plan.py --dry-run
-python scripts/run_ads_sampling_plan.py
-python scripts/collect_ads_reports.py --limit 20
+PYTHONPATH=src python scripts/run_ads_sampling_plan.py --dry-run --limit 1 --days 3
+```
+
+第三步，只提交一个 canary 报告，优先 `spCampaigns`：
+
+```powershell
+PYTHONPATH=src python scripts/run_ads_sampling_plan.py --only-report-type-id spCampaigns --limit 1 --days 3
+```
+
+第四步，轮询并下载：
+
+```powershell
+PYTHONPATH=src python scripts/collect_ads_reports.py --limit 5
+```
+
+第五步，对下载到的 raw JSON 生成脱敏字段样例：
+
+```powershell
+PYTHONPATH=src python scripts/analyze_ads_raw_report.py `
+  --raw-file reports/raw/amazon_ads/{profile_id}/spCampaigns/{date}/{ads_report_id}.json `
+  --profile-id {profile_id} `
+  --report-type-id spCampaigns `
+  --output-md requirements/data_samples/ADS_spCampaigns.md `
+  --validate-parser
 ```
 
 注意：Ads API 用于 campaign / targeting / search term 运营分析；利润核算中的广告真实扣费仍优先使用 Settlement V2。
+
+### 7.4 当前 Ads 取样结果
+
+已完成：
+
+```text
+US profile = 3917953989967300
+spCampaigns: COMPLETED / DOWNLOADED / normalized_rows=8
+spTargeting: COMPLETED / DOWNLOADED / normalized_rows=99
+spSearchTerm: COMPLETED / DOWNLOADED / normalized_rows=61
+```
+
+已生成或应生成：
+
+```text
+requirements/data_samples/ADS_spCampaigns.md
+requirements/data_samples/ADS_spTargeting.md
+requirements/data_samples/ADS_spSearchTerm.md
+```
+
+新增批量分析命令：
+
+```powershell
+python scripts/analyze_ads_downloaded_reports.py --profile-id 3917953989967300 --report-type-id spCampaigns --report-type-id spTargeting --report-type-id spSearchTerm --validate-parser
+```
+
+下一步优先：
+
+```powershell
+python scripts/run_ads_sampling_plan.py --only-report-type-id spSearchTerm --limit 1 --days 3
+python scripts/collect_ads_reports.py --limit 5
+python scripts/analyze_ads_downloaded_reports.py --profile-id 3917953989967300 --report-type-id spSearchTerm --validate-parser
+```
 
 ---
 
@@ -543,7 +618,12 @@ amazon_coupon_asin
 ```text
 amazon_return_request              # 当前只有 header-only 样例，建议保留但低优先级
 amazon_restock_inventory_recommendation
-amazon_ads_*                       # Ads API 未开通，保持 draft
+amazon_ads_profile
+amazon_ads_sp_campaign_daily
+amazon_ads_sp_targeting_daily
+amazon_ads_sp_search_term_daily
+# Ads 四张非空核心表已纳入 SQL 草案但当前仍不执行 SQL
+# amazon_ads_sp_purchased_product_daily 当前 3 天窗口为空，暂不进入第一批 SQL
 storage_fee / overage / stranded / removal 相关表 # 当前报告多为 CANCELLED，先低优先级
 ```
 
@@ -551,7 +631,7 @@ storage_fee / overage / stranded / removal 相关表 # 当前报告多为 CANCEL
 
 ## 9. 下一阶段推荐计划
 
-由于 Ads API 暂未开通，下一阶段不要继续 Ads，而应转向 **冻结 SP-API 数据库设计与准备建库**。
+Ads API 已经跑通 Sponsored Products 第一批 canary：四个非空 confirmed 报表，以及一个空窗口的 `spPurchasedProduct`。下一阶段不再继续追加同类 canary，优先冻结 Ads 四张非空核心表 schema，并准备 repository/upsert；SQL 执行仍按用户要求暂时搁置。
 
 ### Phase A：整理并冻结 database_spec.md 第一批表
 
@@ -857,7 +937,7 @@ amended
 | M8 SQL migration | 未开始/待重写 | 等 spec 冻结后重写 001/002 |
 | M9 Azure SQL 入库 | 未开始 | 等 SQL 建表后实现 repository/upsert |
 | M10 报表生成 | 未开始 | 等入库和利润逻辑完成后做 |
-| M11 Ads API 取样 | 暂停 | 代码已准备，但 Ads API 尚未开通 |
+| M11 Ads API 取样 | sampling_confirmed_core_sp | Ads API 已开通；SP 五个 canary 均已提交下载，其中四个非空，spPurchasedProduct 当前窗口为空 |
 | M12 云端部署 | 未开始 | 等本地链路稳定后再部署 |
 
 ---
@@ -867,16 +947,284 @@ amended
 下一步核心目标是：
 
 ```text
-暂停 Ads API，整理并冻结 SP-API 已取样数据源的 database_spec.md 第一批建库范围，随后重写 SQL migration，但在确认前仍不执行建表。
+继续 Ads API 取样，但仍搁置 SQL 执行；先补 spSearchTerm canary，确认搜索词字段和 parser，再决定是否把 Ads 第一批表加入下一版 SQL。
 ```
 
 推荐最近一次开发任务：
 
 ```text
-检查 database_spec.md
-  -> 标记第一批表 ready_for_sql
-  -> 重写 001_create_core_tables.sql / 002_create_indexes.sql
-  -> 代码暂不接数据库
-  -> 人工复核 SQL
-  -> 再决定是否执行 Azure SQL 建表
+提交 spSearchTerm 3 天 canary
+  -> collect_ads_reports.py 下载 raw JSON
+  -> analyze_ads_downloaded_reports.py 生成 ADS_spSearchTerm.md
+  -> 确认搜索词、花费、订单、销售字段是否稳定
+  -> 暂不执行 Azure SQL
 ```
+
+---
+
+## v1.10 Ads API 当前结果补充
+
+本节已被 v1.11 结果更新覆盖。`spPurchasedProduct` 已完成 canary，但当前 3 天窗口为空；以 v1.11 结论为准。
+
+## v1.11 Ads API 当前结果补充
+
+本阶段 SQL 执行继续搁置，Ads 主线完成 Sponsored Products 第一批 canary：
+
+| reportTypeId | 结果 | normalized_rows | 处理结论 |
+|---|---|---:|---|
+| `spCampaigns` | `COMPLETED / DOWNLOADED / PARSED` | 8 | campaign 表可进入第一批 SQL 草案 |
+| `spTargeting` | `COMPLETED / DOWNLOADED / PARSED` | 99 | targeting 表可进入第一批 SQL 草案 |
+| `spSearchTerm` | `COMPLETED / DOWNLOADED / PARSED` | 61 | search term 表可进入第一批 SQL 草案 |
+| `spAdvertisedProduct` | `COMPLETED / DOWNLOADED / PARSED` | 32 | advertised product 表可进入第一批 SQL 草案 |
+| `spPurchasedProduct` | `COMPLETED / DOWNLOADED / EMPTY` | 0 | API 与 parser 均正常，但当前窗口没有 purchased product 归因行；暂不建表 |
+
+关键判断：`spPurchasedProduct` 返回空数组不是失败。它说明当前 2026-05-12 至 2026-05-15 窗口没有可观测的点击后购买 ASIN 归因，或样本量不足。后续若要建 `amazon_ads_sp_purchased_product_daily`，建议先用 14/30 天窗口补一次非空样例。
+
+下一步建议二选一：
+
+1. 回到 SQL 执行前准备，人工复核当前 migration。
+2. 继续 Ads 入库开发，先实现四张非空 confirmed 表的 repository/upsert：campaign、targeting、search term、advertised product。
+
+
+---
+
+## v1.12 字段漂移守门与 raw file 留存规则
+
+本轮根据运营要求补充后续持续自动任务的稳定性设计：
+
+1. 所有 Amazon 下载文件必须先保存 raw file；即使 parser 失败、字段不匹配、报表为空，也必须保留。
+2. 下载后立即执行 schema validation，先比较 observed fields 与 expected fields，再进入 parser / upsert。
+3. 当前代码优先覆盖 Amazon Ads JSON reports：`spCampaigns`、`spTargeting`、`spSearchTerm`、`spAdvertisedProduct`、`spPurchasedProduct`。
+4. `spPurchasedProduct` 当前为空，标记为 `empty_report` / `sampling_confirmed_empty`，暂不据此建表。
+5. 新增 `amazon_schema_validation_event` SQL 草案，用于未来 Azure SQL 中记录字段漂移、缺失字段、新字段、通知状态。
+6. 后续自动任务如果出现 schema drift、parser failed、upsert failed，需要写任务审计并邮件通知检查 raw file 和更新表结构。
+7. 数据库创建完成后，`requirements/database_spec.md` 继续作为数据库唯一事实文档，所有表结构变更先改 spec，再写 migration。
+
+新增脚本：
+
+```powershell
+python scripts/validate_ads_downloaded_reports_schema.py --profile-id 3917953989967300 --report-type-id spCampaigns --report-type-id spTargeting --report-type-id spSearchTerm --report-type-id spAdvertisedProduct --report-type-id spPurchasedProduct
+```
+
+也可以在批量样例分析时顺带校验：
+
+```powershell
+python scripts/analyze_ads_downloaded_reports.py --profile-id 3917953989967300 --validate-parser --validate-schema
+```
+
+当前 SQL 仍然只是草案，不执行 Azure SQL。
+
+---
+
+## 16. v1.13 Ads 入库前 dry-run 守门链路
+
+本阶段不连接 Azure SQL、不执行 migration、不发送真实邮件，只把未来自动任务中最容易出问题的部分提前固化：
+
+```text
+已下载 raw file
+    -> schema validation
+    -> Ads parser
+    -> 目标表字段映射
+    -> business_key_hash
+    -> 本地 DB-ready preview JSONL
+    -> schema_validation_events.jsonl
+    -> task_audit_event.json
+```
+
+新增入口：
+
+```powershell
+python scripts/prepare_ads_ingestion.py --profile-id 3917953989967300 --marketplace-id ATVPDKIKX0DER
+```
+
+当前用真实已下载 Ads raw reports 验证结果：
+
+```text
+processed_files=4
+parsed_rows=200
+prepared_rows=200
+preview_files=4
+requires_review=False
+```
+
+输出位置：
+
+```text
+runtime/ingestion/amazon_ads/{profile_id}/{YYYYMMDD_HHMMSS}/
+    ads_ingestion_summary.json
+    task_audit_event.json
+    schema_validation_events.jsonl
+    previews/
+        amazon_ads_sp_campaign_daily.preview.jsonl
+        amazon_ads_sp_targeting_daily.preview.jsonl
+        amazon_ads_sp_search_term_daily.preview.jsonl
+        amazon_ads_sp_advertised_product_daily.preview.jsonl
+```
+
+### 16.1 business_key_hash 规则
+
+每个目标表都保留：
+
+```text
+source_row_hash      # 用于追溯 raw row，包含 source row index
+business_key_hash    # 用于未来 upsert，基于稳定业务键
+```
+
+`source_row_hash` 不适合作为长期 upsert 唯一键，因为同一日期范围重跑报表时，文件、行号或排序可能变化。`business_key_hash` 用目标表名 + 业务键字段生成，适合后续唯一索引和幂等 upsert。
+
+Ads 四张核心表第一版业务键：
+
+| 目标表 | 业务键字段 |
+|---|---|
+| `amazon_ads_sp_campaign_daily` | `profile_id + report_date + campaign_id` |
+| `amazon_ads_sp_targeting_daily` | `profile_id + report_date + campaign_id + ad_group_id + keyword_id + targeting + match_type` |
+| `amazon_ads_sp_search_term_daily` | `profile_id + report_date + campaign_id + ad_group_id + keyword_id + targeting + search_term + match_type` |
+| `amazon_ads_sp_advertised_product_daily` | `profile_id + report_date + campaign_id + ad_group_id + advertised_asin + advertised_sku` |
+
+### 16.2 入库前阻断规则
+
+以下 schema validation 状态会阻断 dry-run 入库准备，并在未来真实工作流里触发邮件通知：
+
+```text
+missing_fields
+new_fields
+schema_drift
+unmapped_fields
+validation_failed
+empty_report_unexpected
+```
+
+`empty_report` 本身不阻断，但不能据此设计新表。`spPurchasedProduct` 目前属于 `sampling_confirmed_empty`，不进入第一批 Ads 表。
+
+### 16.3 下一步计划
+
+1. 人工抽查四个 `.preview.jsonl`，确认字段、业务键和 row count 合理。
+2. 回到 Azure SQL 执行线，运行连接测试和 001/002 migration。
+3. 新增真实 repository/upsert，把 v1.13 的 preview rows 写入 Azure SQL。
+4. 将 `task_audit_event.json` 写入 `amazon_sync_run_log`。
+5. 将 `schema_validation_events.jsonl` 写入 `amazon_schema_validation_event`。
+6. 接入邮件通知：字段漂移、parser 失败、upsert 失败、任务异常退出时通知。
+
+
+## 17. v1.14 Ads repository/upsert 准备层
+
+本阶段继续保持 **不执行 Azure SQL**，但已经把未来真实入库所需的 repository/upsert 代码准备好，并保持默认 dry-run 安全模式。
+
+新增入口：
+
+```powershell
+python scripts/ingest_ads_reports.py --profile-id 3917953989967300 --marketplace-id ATVPDKIKX0DER
+```
+
+默认行为：
+
+```text
+1. 先复用 v1.13 dry-run guard：raw -> schema validation -> parser -> preview rows
+2. 如果 requires_review=True，则阻断数据库写入
+3. 如果未传 --execute，则不连接 Azure SQL，不写数据库
+4. 输出本次 dry-run 结果和 output_dir
+```
+
+真实写库入口，必须显式加 `--execute`：
+
+```powershell
+python scripts/ingest_ads_reports.py --profile-id 3917953989967300 --marketplace-id ATVPDKIKX0DER --execute
+```
+
+只有在以下前提全部满足后才允许执行：
+
+```text
+Azure SQL 连接测试成功
+001_create_core_tables.sql 已执行
+002_create_indexes.sql 已执行
+四张 Ads 目标表存在
+business_key_hash 唯一索引存在
+本地 dry-run requires_review=False
+```
+
+### 17.1 upsert 稳定性设计
+
+`AdsRepo` 只允许写入 allowlist 表：
+
+```text
+amazon_ads_sp_campaign_daily
+amazon_ads_sp_targeting_daily
+amazon_ads_sp_search_term_daily
+amazon_ads_sp_advertised_product_daily
+amazon_sync_run_log
+amazon_schema_validation_event
+```
+
+禁止 CLI 或外部参数直接拼接任意表名。Ads 数据表 upsert 使用：
+
+```text
+MERGE ... ON business_key_hash
+```
+
+原因：
+
+```text
+business_key_hash 表示同一天、同一 profile、同一 campaign/target/search term/product 的逻辑记录
+source_row_hash 只用于追溯 raw row，不适合作为幂等入库唯一键
+同一日期报表重跑后 report_id 或 row order 可能变化，但业务键应保持稳定
+```
+
+### 17.2 任务审计写入策略
+
+真实 `--execute` 模式下：
+
+```text
+1. 先向 amazon_sync_run_log 写入 running 记录并 commit，确保任务启动审计可留痕
+2. 后续 upsert 数据表
+3. 写入 amazon_schema_validation_event
+4. 成功后更新 amazon_sync_run_log 为 success
+5. 如果 upsert 阶段失败，rollback 数据写入，并把 amazon_sync_run_log 更新为 failed
+```
+
+这保证了后续自动任务即使失败，也能在任务审计表里留下可追踪结果。
+
+### 17.3 UTF-8 preview 查看方式
+
+Windows PowerShell 直接使用 `Get-Content` 查看 UTF-8 无 BOM JSONL 时，中文可能显示为乱码。这不是 raw 文件或 Python 解析错误，而是终端代码页显示问题。
+
+推荐使用新增脚本查看 preview：
+
+```powershell
+python scripts/inspect_ingestion_preview.py runtime\ingestion\amazon_ads\3917953989967300\<timestamp>\previews\amazon_ads_sp_campaign_daily.preview.jsonl --limit 2
+```
+
+默认会脱敏：
+
+```text
+campaign_name
+ad_group_name
+keyword
+targeting
+search_term
+advertised_asin
+advertised_sku
+purchased_asin
+raw_data
+```
+
+如需本地自己查看真实值，可加：
+
+```powershell
+python scripts/inspect_ingestion_preview.py <preview_file> --limit 2 --show-sensitive
+```
+
+注意：脱敏只用于命令行展示，raw 文件和 preview 文件仍保存真实值，供后续入库和审计使用。
+
+### 17.4 下一步
+
+下一步可以回到 Azure SQL 执行线：
+
+```text
+1. python scripts/test_azure_sql_connection.py --json
+2. python scripts/run_sql_migration.py --file sql/migrations/001_create_core_tables.sql --dry-run --show-batches
+3. python scripts/run_sql_migration.py --file sql/migrations/002_create_indexes.sql --dry-run --show-batches
+4. 确认无误后真实执行 001/002
+5. python scripts/ingest_ads_reports.py --profile-id 3917953989967300 --marketplace-id ATVPDKIKX0DER --execute
+```
+
+如果仍想继续搁置 SQL，也可以先开发邮件通知层。建议顺序仍是：先建表和 upsert 一次，再接通知和定时任务。

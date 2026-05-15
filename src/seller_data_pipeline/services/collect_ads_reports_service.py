@@ -5,9 +5,16 @@ from typing import Any
 
 from seller_data_pipeline.config.settings import Settings, get_settings
 from seller_data_pipeline.integrations.amazon.ads_api_client import AmazonAdsApiClient
+from seller_data_pipeline.parsers.amazon.ads_report_parser import AdsReportParser
 from seller_data_pipeline.sampling.ads_manifest_store import AdsManifestStore
 from seller_data_pipeline.sampling.ads_raw_report_files import AdsRawReportFileStore
 from seller_data_pipeline.sampling.local_manifest_store import utc_now_iso
+from seller_data_pipeline.sampling.raw_report_files import decode_report_content
+from seller_data_pipeline.sampling.report_analyzer import analyze_report_file
+from seller_data_pipeline.sampling.schema_drift import (
+    build_ads_expected_schema,
+    validate_report_schema,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -91,11 +98,34 @@ class CollectAdsReportsService:
     ) -> dict[str, Any]:
         report_id = str(manifest["ads_report_id"])
         downloaded = self.ads_api_client.download_report(document_url=report_url)
+        parse_status = "NOT_STARTED"
+        normalized_row_count: int | None = None
+        parse_error_message: str | None = None
+        try:
+            downloaded_text, _encoding = decode_report_content(downloaded.content)
+            normalized_row_count = len(
+                AdsReportParser().parse_text(
+                    text=downloaded_text,
+                    profile_id=str(manifest["profile_id"]),
+                    report_type_id=str(manifest["report_type_id"]),
+                    source_report_id=report_id,
+                )
+            )
+            parse_status = "PARSED"
+        except Exception as exc:  # noqa: BLE001 - local sampling should preserve raw file.
+            logger.warning("Amazon Ads downloaded report parse failed: report_id=%s", report_id)
+            parse_status = "FAILED"
+            parse_error_message = str(exc)
+
         saved = self.raw_file_store.save_report_bytes(
             profile_id=str(manifest["profile_id"]),
             report_type_id=str(manifest["report_type_id"]),
             report_id=report_id,
             content=downloaded.content,
+        )
+        schema_validation = self._validate_downloaded_schema(
+            manifest=manifest,
+            raw_file_path=str(saved.file_path),
         )
         raw_manifest = {
             "source_system": "amazon_ads",
@@ -115,6 +145,10 @@ class CollectAdsReportsService:
             "amazon_ads_get_report_response": _redact_report_url(report_status),
             "download_raw_size_bytes": downloaded.raw_size_bytes,
             "download_decompressed": downloaded.decompressed,
+            "parse_status": parse_status,
+            "normalized_row_count": normalized_row_count,
+            "parse_error_message": parse_error_message,
+            "schema_validation": schema_validation,
             "preview": {
                 "encoding": saved.preview.encoding,
                 "file_format": saved.preview.file_format,
@@ -140,9 +174,54 @@ class CollectAdsReportsService:
                 "raw_file_path": str(saved.file_path),
                 "raw_file_manifest_path": str(raw_manifest_path),
                 "checksum_sha256": saved.checksum_sha256,
-                "error_message": None,
+                "parse_status": parse_status,
+                "normalized_row_count": normalized_row_count,
+                "parse_error_message": parse_error_message,
+                "schema_validation_status": schema_validation.get("status"),
+                "schema_validation_severity": schema_validation.get("severity"),
+                "schema_validation_requires_review": schema_validation.get("requires_review"),
+                "schema_validation_message": schema_validation.get("message"),
+                "error_message": None if parse_status == "PARSED" else parse_error_message,
             },
         )
+
+    def _validate_downloaded_schema(
+        self,
+        *,
+        manifest: dict[str, Any],
+        raw_file_path: str,
+    ) -> dict[str, Any]:
+        report_type_id = str(manifest.get("report_type_id") or "UNKNOWN")
+        try:
+            analysis = analyze_report_file(
+                raw_file_path=raw_file_path,
+                report_type=report_type_id,
+                marketplace_id=str(manifest.get("profile_id") or "UNKNOWN"),
+                source_system="amazon_ads",
+                redact_sample_values=True,
+            )
+            result = validate_report_schema(
+                analysis=analysis,
+                expected_schema=build_ads_expected_schema(report_type_id),
+            )
+            payload = result.to_dict()
+            payload["requires_review"] = result.requires_review
+            return payload
+        except Exception as exc:  # noqa: BLE001 - raw file is already preserved for review.
+            logger.warning(
+                "Amazon Ads schema validation failed: report_type_id=%s raw_file_path=%s",
+                report_type_id,
+                raw_file_path,
+            )
+            return {
+                "source_system": "amazon_ads",
+                "report_type": report_type_id,
+                "raw_file_path": raw_file_path,
+                "status": "validation_failed",
+                "severity": "warning",
+                "requires_review": True,
+                "message": str(exc),
+            }
 
 
 def _extract_report_url(report_status: dict[str, Any]) -> str | None:

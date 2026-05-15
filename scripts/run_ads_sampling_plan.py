@@ -35,6 +35,12 @@ def main() -> None:
     )
     parser.add_argument("--limit", type=int, default=None, help="Maximum plan items to process.")
     parser.add_argument(
+        "--days",
+        type=int,
+        default=None,
+        help="Override each plan item's lookback window. Useful for a small canary run.",
+    )
+    parser.add_argument(
         "--dry-run",
         action="store_true",
         help="Print the plan without calling Ads API.",
@@ -70,7 +76,8 @@ def main() -> None:
 
     print(f"Amazon Ads sampling plan items: {len(items)}")
     for index, item in enumerate(items, start=1):
-        print(_format_plan_line(index=index, item=item))
+        effective_days = args.days or item.days
+        print(_format_plan_line(index=index, item=item, effective_days=effective_days))
         if args.dry_run:
             continue
         profile_id = args.profile_id or settings.amazon_ads_profile_id
@@ -93,7 +100,7 @@ def main() -> None:
                     ad_product=item.ad_product,
                     group_by=list(item.group_by),
                     columns=list(item.columns),
-                    days=item.days,
+                    days=effective_days,
                     time_unit=item.time_unit,
                 )
             )
@@ -118,12 +125,18 @@ def main() -> None:
         print(f"FAILED {item.report_type_id}: {message}")
 
 
-def _format_plan_line(*, index: int, item: AdsReportSamplingPlanItem) -> str:
+def _format_plan_line(
+    *,
+    index: int,
+    item: AdsReportSamplingPlanItem,
+    effective_days: int | None = None,
+) -> str:
+    days = effective_days if effective_days is not None else item.days
     details = [
         f"{index}.",
         item.ad_product,
         item.report_type_id,
-        f"days={item.days}",
+        f"days={days}",
         f"timeUnit={item.time_unit}",
         f"groupBy={list(item.group_by)}",
         f"columns={len(item.columns)}",

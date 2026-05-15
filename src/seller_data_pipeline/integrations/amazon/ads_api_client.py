@@ -35,6 +35,18 @@ class AdsReportRequestResult:
 
 
 @dataclass(frozen=True)
+class AdsConnectionCheckResult:
+    lwa_access_token_obtained: bool
+    token_type: str
+    token_expires_in: int
+    api_endpoint: str
+    profile_count: int
+    profiles: list[dict[str, Any]]
+    selected_profile_id: str | None
+    selected_profile_found: bool | None
+
+
+@dataclass(frozen=True)
 class DownloadedAdsReport:
     content: bytes
     raw_size_bytes: int
@@ -92,6 +104,34 @@ class AmazonAdsApiClient:
         self._cached_token = token
         self._cached_token_expires_at = monotonic() + max(token.expires_in - 60, 60)
         return token
+
+    def check_connection(self, *, profile_id: str | None = None) -> AdsConnectionCheckResult:
+        """Validate LWA credentials and list accessible Ads profiles.
+
+        This method is intentionally read-only and does not create any report request.
+        It is safe to run before setting AMAZON_ADS_PROFILE_ID.
+        """
+
+        token = self.get_lwa_access_token()
+        profiles = self.list_profiles()
+        selected_profile_id = profile_id or self.settings.amazon_ads_profile_id
+        selected_profile_found = None
+        if selected_profile_id:
+            selected_profile_found = any(
+                str(profile.get("profileId") or profile.get("profile_id"))
+                == str(selected_profile_id)
+                for profile in profiles
+            )
+        return AdsConnectionCheckResult(
+            lwa_access_token_obtained=True,
+            token_type=token.token_type,
+            token_expires_in=token.expires_in,
+            api_endpoint=self.settings.amazon_ads_api_endpoint,
+            profile_count=len(profiles),
+            profiles=[_summarize_profile(profile) for profile in profiles],
+            selected_profile_id=str(selected_profile_id) if selected_profile_id else None,
+            selected_profile_found=selected_profile_found,
+        )
 
     def list_profiles(self) -> list[dict[str, Any]]:
         """Return Amazon Ads profiles available to the authorized Ads user."""
@@ -249,6 +289,7 @@ class AmazonAdsApiClient:
                 "AMAZON_ADS_CLIENT_ID": self.settings.amazon_ads_client_id,
                 "AMAZON_ADS_CLIENT_SECRET": self.settings.amazon_ads_client_secret,
                 "AMAZON_ADS_REFRESH_TOKEN": self.settings.amazon_ads_refresh_token,
+                "AMAZON_ADS_API_ENDPOINT": self.settings.amazon_ads_api_endpoint,
             }.items()
             if not value
         ]
@@ -275,6 +316,25 @@ class AmazonAdsApiClient:
         if not isinstance(payload, dict | list):
             raise ExternalServiceError(f"Failed to {context}: JSON response was not an object/list")
         return payload
+
+
+def _summarize_profile(profile: dict[str, Any]) -> dict[str, Any]:
+    account_info = profile.get("accountInfo")
+    if not isinstance(account_info, dict):
+        account_info = {}
+    return {
+        "profileId": profile.get("profileId") or profile.get("profile_id"),
+        "countryCode": profile.get("countryCode"),
+        "currencyCode": profile.get("currencyCode"),
+        "timezone": profile.get("timezone"),
+        "accountInfo": {
+            "id": account_info.get("id"),
+            "type": account_info.get("type"),
+            "name": account_info.get("name"),
+            "validPaymentMethod": account_info.get("validPaymentMethod"),
+            "marketplaceStringId": account_info.get("marketplaceStringId"),
+        },
+    }
 
 
 def compact_json(payload: dict[str, Any]) -> str:

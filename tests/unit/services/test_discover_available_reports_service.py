@@ -37,7 +37,9 @@ def _settings(tmp_path) -> Settings:  # type: ignore[no-untyped-def]
     )
 
 
-def test_discover_available_reports_saves_report_request_manifest(tmp_path) -> None:  # type: ignore[no-untyped-def]
+def test_discover_available_reports_saves_report_request_manifest(
+    tmp_path,
+) -> None:  # type: ignore[no-untyped-def]
     client = FakeReportsClient()
     store = LocalManifestStore(root_dir=tmp_path / "runtime" / "sampling")
     service = DiscoverAvailableReportsService(
@@ -60,7 +62,9 @@ def test_discover_available_reports_saves_report_request_manifest(tmp_path) -> N
     assert manifest["amazon_get_reports_response_item"]["reportId"] == "settlement-1"
 
 
-def test_discover_available_reports_caps_lookback_to_safe_window(tmp_path) -> None:  # type: ignore[no-untyped-def]
+def test_discover_available_reports_caps_lookback_to_safe_window(
+    tmp_path,
+) -> None:  # type: ignore[no-untyped-def]
     client = FakeReportsClient()
     store = LocalManifestStore(root_dir=tmp_path / "runtime" / "sampling")
     service = DiscoverAvailableReportsService(

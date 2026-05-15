@@ -141,5 +141,11 @@ def test_collect_ads_reports_downloads_completed_report(tmp_path: Path) -> None:
     manifest = store.read_report_request("ads-report-123")
     assert manifest["processing_status"] == "COMPLETED"
     assert manifest["download_status"] == "DOWNLOADED"
+    assert manifest["parse_status"] == "PARSED"
+    assert manifest["normalized_row_count"] == 1
+    assert manifest["schema_validation_status"] == "missing_fields"
+    assert manifest["schema_validation_requires_review"] is True
     assert Path(manifest["raw_file_path"]).exists()
+    raw_manifest = store._read_json(Path(manifest["raw_file_manifest_path"]))
+    assert raw_manifest["schema_validation"]["status"] == "missing_fields"
     assert fake_client.download_calls == ["https://example.test/report"]
