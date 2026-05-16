@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+import time
 from collections.abc import Iterator
 from contextlib import contextmanager
 from typing import Any
@@ -10,6 +12,17 @@ from seller_data_pipeline.config.settings import Settings, get_settings
 SQL_PASSWORD_AUTH_MODE = "sql_password"
 ENTRA_MANAGED_IDENTITY_AUTH_MODE = "entra_managed_identity"
 SUPPORTED_AUTH_MODES = {SQL_PASSWORD_AUTH_MODE, ENTRA_MANAGED_IDENTITY_AUTH_MODE}
+_RETRYABLE_CONNECTION_MARKERS = (
+    "08001",  # SQLDriverConnect/login timeout, common during Azure SQL serverless resume.
+    "08S01",  # Communication link failure.
+    "HYT00",  # Timeout expired.
+    "HYT01",  # Connection timeout expired.
+    "40613",  # Database is not currently available.
+    "40197",  # Azure SQL transient service error.
+    "40501",  # Azure SQL service busy/throttling.
+)
+_WARMUP_SQL = "SELECT 1"
+logger = logging.getLogger(__name__)
 
 
 def _normalise_auth_mode(value: str | None) -> str:
@@ -82,20 +95,108 @@ def _import_pyodbc() -> Any:
     return pyodbc
 
 
+def _safe_max_attempts(settings: Settings) -> int:
+    return max(1, int(settings.azure_sql_connect_max_attempts))
+
+
+def _safe_retry_delay(settings: Settings) -> float:
+    return max(0.0, float(settings.azure_sql_connect_retry_delay_seconds))
+
+
+def _safe_retry_backoff(settings: Settings) -> float:
+    return max(1.0, float(settings.azure_sql_connect_retry_backoff))
+
+
+def is_retryable_connection_error(exc: BaseException) -> bool:
+    """Return True for transient Azure SQL connection/resume failures.
+
+    Keep this intentionally narrow. Authentication errors, SQL syntax errors, and
+    business query failures must fail fast rather than being retried blindly.
+    """
+
+    text = " ".join(str(arg) for arg in getattr(exc, "args", ())) or str(exc)
+    return any(marker in text for marker in _RETRYABLE_CONNECTION_MARKERS)
+
+
+def _warm_up_connection(connection: Any) -> None:
+    """Run a tiny query before yielding a connection to business code."""
+
+    cursor = connection.cursor()
+    try:
+        cursor.execute(_WARMUP_SQL)
+        cursor.fetchone()
+    finally:
+        cursor.close()
+
+
+def _close_quietly(connection: Any | None) -> None:
+    if connection is None:
+        return
+    try:
+        connection.close()
+    except Exception:  # pragma: no cover - defensive cleanup path
+        logger.debug("Failed to close Azure SQL connection after failed warm-up", exc_info=True)
+
+
+def _connect_with_retry(pyodbc: Any, settings: Settings, *, autocommit: bool) -> Any:
+    max_attempts = _safe_max_attempts(settings)
+    retry_delay = _safe_retry_delay(settings)
+    retry_backoff = _safe_retry_backoff(settings)
+    connection_string = build_connection_string(settings)
+    last_exception: BaseException | None = None
+
+    for attempt in range(1, max_attempts + 1):
+        connection = None
+        try:
+            connection = pyodbc.connect(connection_string, autocommit=autocommit)
+            _warm_up_connection(connection)
+            if attempt > 1:
+                logger.info(
+                    "Azure SQL connection warm-up succeeded after %s/%s attempts.",
+                    attempt,
+                    max_attempts,
+                )
+            return connection
+        except pyodbc.Error as exc:  # type: ignore[attr-defined]
+            _close_quietly(connection)
+            last_exception = exc
+            if not is_retryable_connection_error(exc) or attempt >= max_attempts:
+                raise
+            sleep_seconds = retry_delay * (retry_backoff ** (attempt - 1))
+            logger.warning(
+                "Azure SQL connection warm-up attempt %s/%s failed with a retryable "
+                "ODBC error; retrying in %.1f seconds. error=%s",
+                attempt,
+                max_attempts,
+                sleep_seconds,
+                exc,
+            )
+            if sleep_seconds > 0:
+                time.sleep(sleep_seconds)
+
+    if last_exception is not None:  # pragma: no cover - defensive branch
+        raise last_exception
+    raise RuntimeError("Azure SQL connection retry loop exited unexpectedly")
+
+
 @contextmanager
 def get_connection(
     settings: Settings | None = None,
     *,
     autocommit: bool = False,
 ) -> Iterator[Any]:
-    """Open an Azure SQL connection.
+    """Open an Azure SQL connection and verify it before business SQL runs.
 
-    pyodbc is imported lazily so unit tests and pure parser workflows can run on
-    machines that do not yet have the native ODBC driver installed.
+    Azure SQL serverless databases can be slow to accept the first login after an
+    idle period. The project therefore retries only the connection/warm-up phase
+    for known transient ODBC errors, then yields a verified connection to the
+    caller. Business SQL itself is not retried here; ingestion idempotency and
+    migration transaction rules remain the caller's responsibility.
     """
 
+    settings = settings or get_settings()
     pyodbc = _import_pyodbc()
-    conn = pyodbc.connect(build_connection_string(settings), autocommit=autocommit)
+    conn = _connect_with_retry(pyodbc, settings, autocommit=autocommit)
     try:
         yield conn
     finally:

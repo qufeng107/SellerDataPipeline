@@ -71,3 +71,97 @@ def test_unsupported_auth_mode_raises_configuration_error() -> None:
 
     with pytest.raises(ConfigurationError, match="Unsupported AZURE_SQL_AUTH_MODE"):
         build_connection_string(settings)
+
+class FakeOdbcError(Exception):
+    pass
+
+
+class FakeWarmupCursor:
+    def __init__(self) -> None:
+        self.executed: list[str] = []
+        self.closed = False
+
+    def execute(self, sql: str) -> None:
+        self.executed.append(sql)
+
+    def fetchone(self) -> list[int]:
+        return [1]
+
+    def close(self) -> None:
+        self.closed = True
+
+
+class FakeOdbcConnection:
+    def __init__(self) -> None:
+        self.cursor_instance = FakeWarmupCursor()
+        self.closed = False
+
+    def cursor(self) -> FakeWarmupCursor:
+        return self.cursor_instance
+
+    def close(self) -> None:
+        self.closed = True
+
+
+class FakePyodbcModule:
+    Error = FakeOdbcError
+
+    def __init__(self, failures_before_success: int = 0, error_text: str = "08001") -> None:
+        self.failures_before_success = failures_before_success
+        self.error_text = error_text
+        self.calls = 0
+        self.connections: list[FakeOdbcConnection] = []
+
+    def connect(self, connection_string: str, autocommit: bool) -> FakeOdbcConnection:
+        self.calls += 1
+        if self.calls <= self.failures_before_success:
+            raise FakeOdbcError(self.error_text, "Login timeout expired")
+        connection = FakeOdbcConnection()
+        self.connections.append(connection)
+        return connection
+
+
+def _complete_settings(**overrides: object) -> Settings:
+    base: dict[str, object] = {
+        "azure_sql_server": "tcp:test.database.windows.net,1433",
+        "azure_sql_database": "SellerDataPipeline",
+        "azure_sql_username": "sql_user",
+        "azure_sql_password": "secret",
+        "azure_sql_driver": "ODBC Driver 18 for SQL Server",
+        "azure_sql_auth_mode": "sql_password",
+        "azure_sql_connection_timeout": 30,
+        "azure_sql_connect_max_attempts": 2,
+        "azure_sql_connect_retry_delay_seconds": 0,
+        "azure_sql_connect_retry_backoff": 1,
+    }
+    base.update(overrides)
+    return Settings(**base)
+
+
+def test_get_connection_retries_retryable_login_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
+    from seller_data_pipeline.db import connection as connection_module
+
+    fake_pyodbc = FakePyodbcModule(failures_before_success=1, error_text="08001")
+    monkeypatch.setattr(connection_module, "_import_pyodbc", lambda: fake_pyodbc)
+
+    with connection_module.get_connection(settings=_complete_settings()) as conn:
+        assert isinstance(conn, FakeOdbcConnection)
+        assert conn.cursor_instance.executed == ["SELECT 1"]
+
+    assert fake_pyodbc.calls == 2
+    assert fake_pyodbc.connections[0].closed is True
+
+
+def test_get_connection_does_not_retry_non_retryable_login_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from seller_data_pipeline.db import connection as connection_module
+
+    fake_pyodbc = FakePyodbcModule(failures_before_success=2, error_text="28000")
+    monkeypatch.setattr(connection_module, "_import_pyodbc", lambda: fake_pyodbc)
+
+    with pytest.raises(FakeOdbcError):
+        with connection_module.get_connection(settings=_complete_settings()):
+            pass
+
+    assert fake_pyodbc.calls == 1
