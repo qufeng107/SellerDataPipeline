@@ -5,6 +5,7 @@ import json
 import logging
 from dataclasses import replace
 
+from seller_data_pipeline.common.cli import run_cli_main
 from seller_data_pipeline.common.logging import configure_logging
 from seller_data_pipeline.config.settings import get_settings
 from seller_data_pipeline.db.connection import list_user_tables, run_connection_diagnostics
@@ -84,4 +85,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    run_cli_main(main)

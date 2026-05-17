@@ -1,6 +1,6 @@
 # SellerDataPipeline 项目总览
 
-> 更新时间：2026-05-16  
+> 更新时间：2026-05-17  
 > 文档定位：说明项目目的、边界、阶段目标、整体架构和当前真实状态。详细进度见 `docs/project/progress_next_steps.md`；数据库真实结构见 `docs/database/database_current_schema_spec.md`。
 
 ## 1. 项目背景
@@ -111,7 +111,7 @@ tests/
 
 ## 7. 当前真实状态
 
-截至 2026-05-16：
+截至 2026-05-17：
 
 | 模块 | 状态 | 说明 |
 |---|---|---|
@@ -122,33 +122,33 @@ tests/
 | Ads normalized ingestion | 已完成第一条真实闭环 | 4 张 Ads SP 日表首次 inserted=200，重复执行 updated=200。 |
 | 数据库状态检查脚本 | 已实现 | `scripts/check_database_status.py`。 |
 | SP-API Listing normalized ingestion | 已完成 | Listing dry-run、execute、重复 execute 幂等性已通过：首次 inserted=6，第二次 updated=6。 |
-| SP-API Inventory normalized ingestion | 待设计/待开发 | 下一步优先 Inventory。 |
+| SP-API Inventory normalized ingestion | 已完成 | Inventory dry-run、execute、重复 execute 幂等性已通过：首次 inserted=5，第二次 updated=5。 |
+| SP-API Sales & Traffic normalized ingestion | Implemented | `feature_sales_traffic_ingestion.md` 已建立；005 migration、专用 CLI/repository、dry-run、execute 和幂等性验证已完成。 |
+| SP-API Settlement normalized ingestion | Implemented | Settlement dry-run、execute、重复 execute 幂等性已通过：首次 inserted=4911，第二次 updated=4911。 |
+| SP-API Orders normalized ingestion | Implemented | Orders dry-run、execute、重复 execute 幂等性已通过：首次 inserted=112，第二次 updated=112。 |
+| SP-API FBA Reimbursements normalized ingestion | Implemented | FBA Reimbursements dry-run、execute、重复 execute 幂等性已通过：首次 inserted=19，第二次 updated=19。 |
 | 周报/月报/清仓分析 | 待设计/待开发 | 依赖 normalized 数据沉淀后再做。 |
 | Azure Container Apps Jobs | 待开发 | 本地闭环稳定后再上云。 |
 
 ## 8. 下一阶段主线
 
-下一阶段不应先做自动任务或报表，而应继续扩展 SP-API normalized 入库闭环。Listing 已完成，下一条主线是 Inventory：
+下一阶段不应先做自动任务或报表，而应继续扩展 SP-API normalized 入库闭环。Listing、Inventory、Sales & Traffic、Settlement、Orders、FBA Reimbursements 已完成，下一条主线是 FBA Fee Preview：
 
 ```text
-GET_FBA_MYI_UNSUPPRESSED_INVENTORY_DATA
-  -> feature_inventory_ingestion.md
-  -> compare current schema spec
-  -> optional 004 migration
-  -> parser / schema guard / dry-run preview
-  -> amazon_inventory_daily repository upsert
-  -> Azure SQL
-  -> sync_run_log / schema_validation_event
-  -> 幂等性验证
+GET_FBA_ESTIMATED_FBA_FEES_TXT_DATA
+  -> feature_fba_fee_preview_ingestion.md 已建立
+  -> amazon_fba_fee_preview 已建表
+  -> 009_add_fba_fee_preview_business_key.sql 已执行，live schema 已导出
+  -> 专用 dry-run/schema guard/repository/CLI 已开发并通过 dry-run
+  -> dry-run / repository / execute 待开发
 ```
 
 建议顺序：
 
-1. `GET_FBA_MYI_UNSUPPRESSED_INVENTORY_DATA -> amazon_inventory_daily`
-2. `GET_SALES_AND_TRAFFIC_REPORT -> amazon_sales_traffic_daily / amazon_sales_traffic_asin_daily`
-3. `GET_V2_SETTLEMENT_REPORT_DATA_FLAT_FILE_V2 -> amazon_settlement_transaction`
-4. `GET_FLAT_FILE_ALL_ORDERS_DATA_BY_ORDER_DATE_GENERAL -> amazon_order_item`
-5. 财务利润计算、周报/月报、清仓决策支持。
+1. 完成 FBA Fee Preview execute 与幂等验证
+2. 通过后将 FBA Fee Preview 标记为 Implemented
+3. 开始利润核算功能设计
+4. 做财务利润计算、周报/月报、清仓决策支持。
 
 ## 9. 文档体系关系
 
@@ -161,3 +161,18 @@ GET_FBA_MYI_UNSUPPRESSED_INVENTORY_DATA
 - 长期架构决策：`docs/adr/`
 
 `requirements/` 下旧文档在迁移完成前仍可作为参考，但新开发不应继续把它作为唯一事实来源。
+
+
+## Promotion/Coupon 与 Inventory Ledger 补充数据
+
+2026-05-17 已新增两份功能设计并准备对应 migration：
+
+```text
+docs/features/feature_promotion_coupon_ingestion.md
+sql/migrations/010_add_promotion_coupon_business_keys.sql
+
+docs/features/feature_inventory_ledger_ingestion.md
+sql/migrations/011_add_inventory_ledger_business_keys.sql
+```
+
+Promotion/Coupon 用于优惠券、折扣、会员日/Prime Day 等活动效果分析；Inventory Ledger 用于库存 movement 与库存审计。周报中的当前库存余额仍优先来自 `amazon_inventory_daily`，Ledger 用于解释库存变化。

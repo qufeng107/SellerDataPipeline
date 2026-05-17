@@ -560,7 +560,7 @@ amazon_listing_snapshot target row count=6
 3. 需要把 raw file 正式登记到 `amazon_raw_report_file` 并关联 `source_raw_file_id`。
 4. 需要支持非 US marketplace，且字段结构或币种/日期规则与当前不同。
 
-下一条主线建议是 Inventory normalized ingestion，应先新建 `docs/features/feature_inventory_ingestion.md`，再判断 `amazon_inventory_daily` 是否需要 `004_xxx.sql` 结构变更。
+下一条主线 Inventory normalized ingestion 已进入实现阶段：`docs/features/feature_inventory_ingestion.md` 已建立，`sql/migrations/004_add_inventory_daily_business_key_hash.sql` 已执行并同步 current schema spec，专用入口、mapping、repository 和 dry-run 已完成。下一步应执行 Inventory 真实 `--execute` 和第二次幂等性验证。
 
 ## 19. 后续优化
 

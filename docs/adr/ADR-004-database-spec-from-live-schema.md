@@ -59,11 +59,12 @@ docs/database/database_current_schema_spec.md
 1. 运行 migration dry-run
 2. 正式执行 migration
 3. 运行连接和表检查脚本
-4. 执行 sys.tables / sys.columns / sys.indexes 查询
-5. 确认新增表、字段、索引、约束真实存在
-6. 更新 database_current_schema_spec.md
-7. 更新相关 feature 文档
-8. 更新 progress_next_steps.md
+4. 优先运行 scripts/export_database_schema_spec.py 导出 live schema snapshot
+5. 必要时执行 sys.tables / sys.columns / sys.indexes 查询精查
+6. 确认新增表、字段、索引、约束真实存在
+7. 更新 database_current_schema_spec.md
+8. 更新相关 feature 文档
+9. 更新 progress_next_steps.md
 ```
 
 参考查询写入：

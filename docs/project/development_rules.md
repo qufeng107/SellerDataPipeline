@@ -136,8 +136,9 @@ docs/project/iteration_workflow.md
 4. 先 dry-run 或人工检查 SQL；dry-run 不连接数据库，只验证 SQL batch 拆分。
 5. 执行真实 SQL 前，确认入口使用项目连接层 `get_connection()`；该连接层会处理 Azure SQL serverless idle/resume 的首次连接 timeout，并执行 `SELECT 1` warm-up。
 6. 执行成功后，必须按照 `docs/project/iteration_workflow.md` 查询真实 Azure SQL 字段、索引、约束。
-7. 根据真实查询结果更新 `docs/database/database_current_schema_spec.md`。
-8. 同步更新相关 feature 文档和 progress。
+7. 优先运行 `scripts/export_database_schema_spec.py` 导出 live schema snapshot；必要时再用手工 SQL 精查。
+8. 根据真实查询/导出结果更新 `docs/database/database_current_schema_spec.md`。
+9. 同步更新相关 feature 文档和 progress。
 
 ### 3.4 修改 ingestion 链路
 
@@ -178,7 +179,9 @@ pyodbc.connect retry for retryable connection errors
 1. 不要在脚本或 repository 中直接调用 `pyodbc.connect()`。
 2. 不要在业务层自行写重复的连接重试逻辑。
 3. 连接层只重试连接和 warm-up，不重试业务 SQL。
-4. 自动化任务可通过环境变量调整重试次数和等待时间：`AZURE_SQL_CONNECT_MAX_ATTEMPTS`、`AZURE_SQL_CONNECT_RETRY_DELAY_SECONDS`、`AZURE_SQL_CONNECT_RETRY_BACKOFF`。
+4. Azure SQL firewall/IP allowlist 错误不是 warm-up 问题，不能通过增加 retry 解决；应先在 Azure SQL Server firewall 放行当前公网 IP，或为云端任务配置稳定出站网络。
+5. 自动化任务可通过环境变量调整重试次数和等待时间：`AZURE_SQL_CONNECT_MAX_ATTEMPTS`、`AZURE_SQL_CONNECT_RETRY_DELAY_SECONDS`、`AZURE_SQL_CONNECT_RETRY_BACKOFF`。
+6. 连接问题排查见 `docs/database/azure_sql_connection_runbook.md`。
 
 ## 4. 代码结构规则
 

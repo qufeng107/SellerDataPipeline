@@ -1,6 +1,6 @@
 # 功能设计文档索引
 
-> 更新时间：2026-05-16  
+> 更新时间：2026-05-17  
 > 文档定位：本目录记录 SellerDataPipeline 的单功能设计、实现状态、验收标准和相关代码路径。每个功能文档必须以 `FEATURE_TEMPLATE.md` 为标准，不应把多个功能混在同一份文档里。
 
 ## 1. 功能文档维护规则
@@ -19,16 +19,20 @@
 | [`feature_azure_sql_foundation.md`](feature_azure_sql_foundation.md) | Implemented | Azure SQL 连接、初始 migration、数据库检查脚本和数据库治理规则。 |
 | [`feature_ads_ingestion.md`](feature_ads_ingestion.md) | Implemented | Amazon Ads Sponsored Products 四类日报入库闭环。 |
 | [`feature_listing_snapshot_ingestion.md`](feature_listing_snapshot_ingestion.md) | Implemented | SP-API `GET_MERCHANT_LISTINGS_ALL_DATA` -> `amazon_listing_snapshot`；dry-run、schema guard、repository、CLI、真实 Azure SQL execute 和幂等性验证已完成。 |
+| [`feature_inventory_ingestion.md`](feature_inventory_ingestion.md) | Implemented | SP-API `GET_FBA_MYI_UNSUPPRESSED_INVENTORY_DATA` -> `amazon_inventory_daily`；004、dry-run、execute 和第二次 execute 幂等性验证已完成。 |
+| [`feature_sales_traffic_ingestion.md`](feature_sales_traffic_ingestion.md) | Implemented | SP-API `GET_SALES_AND_TRAFFIC_REPORT` -> `amazon_sales_traffic_daily` / `amazon_sales_traffic_asin_daily`；005、dry-run、execute 和第二次 execute 幂等性验证已完成。 |
+| [`feature_settlement_ingestion.md`](feature_settlement_ingestion.md) | Implemented | SP-API `GET_V2_SETTLEMENT_REPORT_DATA_FLAT_FILE_V2` -> `amazon_settlement_transaction`；006、dry-run、execute 和第二次 execute 幂等性验证已完成。 |
+| [`feature_orders_ingestion.md`](feature_orders_ingestion.md) | Implemented | SP-API `GET_FLAT_FILE_ALL_ORDERS_DATA_BY_ORDER_DATE_GENERAL` -> `amazon_order_item`；007、dry-run、execute 和第二次 execute 幂等性验证已完成。 |
+| [`feature_fba_reimbursements_ingestion.md`](feature_fba_reimbursements_ingestion.md) | Implemented | SP-API `GET_FBA_REIMBURSEMENTS_DATA` -> `amazon_fba_reimbursement`；008、dry-run、execute 和第二次 execute 幂等性验证已完成。 |
+| [`feature_fba_fee_preview_ingestion.md`](feature_fba_fee_preview_ingestion.md) | Implementing | SP-API `GET_FBA_ESTIMATED_FBA_FEES_TXT_DATA` -> `amazon_fba_fee_preview`；009 已执行，专用 dry-run/schema guard/repository/CLI 已开发并通过 dry-run，待 execute/幂等验证。 |
 
-## 3. 下一批建议补充的功能文档
+## 3. 下一批建议
 
-按当前项目进度，后续应优先补充：
+按当前项目进度，后续应优先：
 
-1. `feature_inventory_ingestion.md`
-2. `feature_sales_traffic_ingestion.md`
-3. `feature_settlement_ingestion.md`
-4. `feature_profit_calculation.md`
-5. `feature_weekly_operations_report.md`
-6. `feature_clearance_decision_support.md`
+1. 执行 `010_add_promotion_coupon_business_keys.sql`，再开发 Promotion/Coupon 专用 ingestion。
+2. 执行 `011_add_inventory_ledger_business_keys.sql`，再开发 Inventory Ledger 专用 ingestion。
+3. 两组运营/库存补充数据完成后，再进入 `feature_profit_calculation.md`。
+4. 利润核算稳定后，再做 `feature_weekly_operations_report.md` 和 `feature_clearance_decision_support.md`。
 
-`feature_listing_snapshot_ingestion.md` 已完成当前阶段设计与实现，且 `sql/migrations/003_add_listing_snapshot_business_key_hash.sql` 已执行成功并同步到 current schema spec。Listing dry-run、schema guard、repository/upsert、CLI、首次 execute 和第二次 execute 幂等性均已完成。下一步应先补 `feature_inventory_ingestion.md`，再进入 Inventory 入库开发。
+`feature_listing_snapshot_ingestion.md`、`feature_inventory_ingestion.md`、`feature_sales_traffic_ingestion.md`、`feature_settlement_ingestion.md`、`feature_orders_ingestion.md`、`feature_fba_reimbursements_ingestion.md` 和 `feature_fba_fee_preview_ingestion.md` 均已完成当前阶段设计与实现；对应 `003/004/005/006/007/008/009` migration 已执行成功并同步到 current schema spec。七条 SP-API normalized ingestion 链路已经完成 dry-run、schema guard、repository/upsert、CLI、首次 execute 和第二次 execute 幂等性验证：Listing、Inventory、Sales & Traffic、Settlement、Orders、FBA Reimbursements、FBA Fee Preview。

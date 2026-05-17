@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from seller_data_pipeline.common.exceptions import ConfigurationError
+from seller_data_pipeline.common.exceptions import AzureSqlConnectionError, ConfigurationError
 from seller_data_pipeline.config.settings import Settings
 from seller_data_pipeline.db.connection import build_connection_string
 
@@ -71,6 +71,7 @@ def test_unsupported_auth_mode_raises_configuration_error() -> None:
 
     with pytest.raises(ConfigurationError, match="Unsupported AZURE_SQL_AUTH_MODE"):
         build_connection_string(settings)
+
 
 class FakeOdbcError(Exception):
     pass
@@ -160,8 +161,52 @@ def test_get_connection_does_not_retry_non_retryable_login_error(
     fake_pyodbc = FakePyodbcModule(failures_before_success=2, error_text="28000")
     monkeypatch.setattr(connection_module, "_import_pyodbc", lambda: fake_pyodbc)
 
-    with pytest.raises(FakeOdbcError):
+    with pytest.raises(AzureSqlConnectionError, match="login/authentication was rejected"):
         with connection_module.get_connection(settings=_complete_settings()):
             pass
 
     assert fake_pyodbc.calls == 1
+
+
+def test_firewall_error_is_not_retried_and_message_contains_blocked_ip(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from seller_data_pipeline.db import connection as connection_module
+
+    fake_pyodbc = FakePyodbcModule(
+        failures_before_success=2,
+        error_text=(
+            "42000 Cannot open server requested by the login. "
+            "Client with IP address '185.69.144.165' is not allowed to access the server. "
+            "Create a firewall rule. (40615)"
+        ),
+    )
+    monkeypatch.setattr(connection_module, "_import_pyodbc", lambda: fake_pyodbc)
+
+    with pytest.raises(AzureSqlConnectionError) as exc_info:
+        with connection_module.get_connection(settings=_complete_settings()):
+            pass
+
+    assert fake_pyodbc.calls == 1
+    message = str(exc_info.value)
+    assert "firewall" in message
+    assert "185.69.144.165" in message
+    assert "not an auto-pause warm-up failure" in message
+
+
+def test_retryable_error_after_max_attempts_has_actionable_message(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from seller_data_pipeline.db import connection as connection_module
+
+    fake_pyodbc = FakePyodbcModule(failures_before_success=3, error_text="08001")
+    monkeypatch.setattr(connection_module, "_import_pyodbc", lambda: fake_pyodbc)
+
+    with pytest.raises(AzureSqlConnectionError) as exc_info:
+        with connection_module.get_connection(settings=_complete_settings()):
+            pass
+
+    assert fake_pyodbc.calls == 2
+    message = str(exc_info.value)
+    assert "2/2 attempts" in message
+    assert "serverless database is resuming" in message

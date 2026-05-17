@@ -56,4 +56,4 @@ SellerDataPipeline 后续会有多条相似的数据入库链路，例如 Ads、
 
 - Ads 入库：`scripts/ingest_ads_reports.py`，已完成。
 - Listing 入库：`scripts/ingest_listing_snapshot.py`，已完成。
-- 下一步 Inventory 入库：仍建议先使用专用入口，例如 `scripts/ingest_inventory_daily.py`，等 Inventory 与 Sales & Traffic 稳定后再评估通用 SP-API ingestion 框架。
+- Listing、Inventory、Sales & Traffic 已按专用入口模式跑通；Settlement 仍应优先使用专用入口。等 Settlement / Orders / FBA fees 等链路稳定后，再评估通用 SP-API ingestion 框架。

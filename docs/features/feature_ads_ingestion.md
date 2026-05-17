@@ -247,7 +247,7 @@ business_key_hash = sha256(canonical JSON of target_table + business_key fields)
 
 | 变化 | 原因 | migration 文件 | 状态 |
 |---|---|---|---|
-| 给 `amazon_sync_run_log` 增加 `rows_inserted` / `rows_updated` | 数据库审计细分 insert/update，而不只记录 rows_written | `004_add_sync_run_upsert_counts.sql` | optional/planned |
+| 给 `amazon_sync_run_log` 增加 `rows_inserted` / `rows_updated` | 数据库审计细分 insert/update，而不只记录 rows_written | `008_add_sync_run_upsert_counts.sql` 或后续编号 | optional/planned |
 | 关联 `amazon_raw_report_file.id` 到 schema event 和 normalized rows | 提高 raw file 追溯稳定性 | 待定 | optional/planned |
 | 新增 `amazon_ads_sp_purchased_product_daily` | 支持 `spPurchasedProduct` 非空样例后入库 | 待定 | wait for non-empty sample |
 

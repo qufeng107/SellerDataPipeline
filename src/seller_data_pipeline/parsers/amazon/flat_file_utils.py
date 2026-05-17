@@ -145,7 +145,7 @@ def parse_int(value: str | None) -> int | None:
 
 def parse_decimal(value: str | None) -> Decimal | None:
     value = (value or "").strip().replace(",", "")
-    if not value:
+    if not value or value in {"--", "—", "N/A", "n/a", "NA", "na"}:
         return None
     try:
         return Decimal(value)

@@ -16,14 +16,20 @@ Amazon SP-API / Amazon Ads API / Seller Central raw exports
 
 ## 当前真实进展
 
-截至 2026-05-16：
+截至 2026-05-17：
 
 - Azure SQL `amazon_ops` 已完成初始建表与索引：`001_create_core_tables.sql` 29/29 batches，`002_create_indexes.sql` 54/54 batches。
 - 当前真实数据库有 28 张用户表。
 - Amazon Ads Sponsored Products 四类报表已完成真实入库：首次 inserted=200，重复执行 inserted=0、updated=200，幂等性验证通过。
 - 已新增数据库检查脚本 `scripts/check_database_status.py`。
 - SP-API Listing 快照入库已完成 dry-run、schema guard、repository/upsert、CLI、真实 Azure SQL execute 和幂等性验证：首次 inserted=6，重复执行 inserted=0、updated=6。
-- Azure SQL 连接层已新增 retry + `SELECT 1` warm-up，用于处理 serverless 长时间 idle 后首次连接 timeout，自动化任务无需人工先手动唤醒数据库。
+- Azure SQL 连接层已新增 retry + `SELECT 1` warm-up，用于处理 serverless 长时间 idle 后首次连接 timeout；同时对 firewall/IP 未放行等非重试类错误输出更明确的操作提示。
+- 已新增真实数据库 schema 导出工具 `scripts/export_database_schema_spec.py`，用于 migration 后从 Azure SQL 系统 catalog 导出当前表、字段、索引和约束，辅助更新 current schema spec。
+- SP-API Inventory 入库已完成 dry-run、schema guard、repository/upsert、CLI、真实 Azure SQL execute 和幂等性验证：首次 inserted=5，重复执行 inserted=0、updated=5。
+- SP-API Sales & Traffic 入库已完成 dry-run、schema guard、repository/upsert、CLI、真实 Azure SQL execute 和幂等性验证：首次 inserted=7，重复执行 inserted=0、updated=7。
+- SP-API Settlement 入库已完成 dry-run、schema guard、repository/upsert、CLI、真实 Azure SQL execute 和幂等性验证：首次 inserted=4911，重复执行 inserted=0、updated=4911。
+- SP-API Orders 入库已完成 dry-run、schema guard、repository/upsert、CLI、真实 Azure SQL execute 和幂等性验证：首次 inserted=112，重复执行 inserted=0、updated=112。
+- FBA Reimbursements `008` migration 已执行并导出 live schema，专用 ingestion 已完成 dry-run、execute 与第二次 execute 幂等验证。
 
 详细进展见：[`docs/project/progress_next_steps.md`](docs/project/progress_next_steps.md)。
 
@@ -46,8 +52,16 @@ Amazon SP-API / Amazon Ads API / Seller Central raw exports
 | [`docs/features/feature_azure_sql_foundation.md`](docs/features/feature_azure_sql_foundation.md) | Azure SQL 数据库基础设施功能文档。 |
 | [`docs/features/feature_ads_ingestion.md`](docs/features/feature_ads_ingestion.md) | Amazon Ads Sponsored Products 报表入库功能文档。 |
 | [`docs/features/feature_listing_snapshot_ingestion.md`](docs/features/feature_listing_snapshot_ingestion.md) | SP-API Listing 快照入库功能文档，已完成真实 execute 和幂等性验证。 |
+| [`docs/features/feature_inventory_ingestion.md`](docs/features/feature_inventory_ingestion.md) | SP-API FBA Inventory 快照入库功能文档，已完成真实 execute 和幂等性验证。 |
+| [`docs/features/feature_sales_traffic_ingestion.md`](docs/features/feature_sales_traffic_ingestion.md) | SP-API Sales & Traffic 入库功能文档；`005` migration、dry-run、真实 execute 和幂等性验证已完成。 |
+| [`docs/features/feature_settlement_ingestion.md`](docs/features/feature_settlement_ingestion.md) | SP-API Settlement 入库功能文档；`006` migration、dry-run、真实 execute 和幂等性验证已完成。 |
+| [`docs/features/feature_orders_ingestion.md`](docs/features/feature_orders_ingestion.md) | SP-API Orders 入库功能文档；007、dry-run、真实 execute 和幂等性验证已完成。 |
+| [`docs/features/feature_fba_reimbursements_ingestion.md`](docs/features/feature_fba_reimbursements_ingestion.md) | SP-API FBA Reimbursements 入库功能文档；`008` 已执行，dry-run、execute 和幂等性验证已完成。 |
+| [`docs/features/feature_fba_fee_preview_ingestion.md`](docs/features/feature_fba_fee_preview_ingestion.md) | SP-API FBA Fee Preview 入库功能文档；009 已执行，专用 dry-run 已完成，待 execute/幂等验证。 |
 | [`docs/database/database_current_schema_spec.md`](docs/database/database_current_schema_spec.md) | 当前真实 Azure SQL 表结构、字段、索引与数据来源。 |
 | [`docs/database/database_migration_policy.md`](docs/database/database_migration_policy.md) | 数据库变更和 migration 规则。 |
+| [`docs/database/database_schema_export_tool.md`](docs/database/database_schema_export_tool.md) | 从真实 Azure SQL 导出 schema snapshot 的工具说明。 |
+| [`docs/database/azure_sql_connection_runbook.md`](docs/database/azure_sql_connection_runbook.md) | Azure SQL idle/resume、firewall/IP、账号密码等连接问题排查。 |
 | [`docs/adr/`](docs/adr/) | 架构决策记录。 |
 
 ## 目录结构
@@ -120,7 +134,7 @@ Azure SQL 连接测试：
 ```bash
 python scripts/test_azure_sql_connection.py --json
 python scripts/test_azure_sql_connection.py --list-tables
-python scripts/test_azure_sql_connection.py --json --max-attempts 5 --retry-delay-seconds 5
+python scripts/test_azure_sql_connection.py --json --max-attempts 8 --retry-delay-seconds 8
 ```
 
 连接层默认会先 retry 已知 transient login timeout，并执行 `SELECT 1` warm-up，再把连接交给业务 SQL。
@@ -133,14 +147,22 @@ python scripts/check_database_status.py --json
 python scripts/check_database_status.py --all-tables
 ```
 
-执行新 SQL migration 时使用以下模式。注意当前 `001/002/003` 已经执行成功，后续新结构变化应从 `004_xxx.sql` 开始：
+真实 schema 导出，用于 migration 后更新 current spec：
 
 ```bash
-python scripts/run_sql_migration.py --file sql/migrations/004_xxx.sql --dry-run --show-batches
-python scripts/run_sql_migration.py --file sql/migrations/004_xxx.sql
+python scripts/export_database_schema_spec.py
+python scripts/export_database_schema_spec.py --output-prefix after_004_xxx --include-row-counts
+python scripts/export_database_schema_spec.py --stdout-markdown
 ```
 
-注意：`001_create_core_tables.sql`、`002_create_indexes.sql` 和 `003_add_listing_snapshot_business_key_hash.sql` 已经执行成功，后续不要修改这些历史 migration。任何结构变化都必须新增 `004_xxx.sql`、`005_xxx.sql`。当前 `docs/database/database_current_schema_spec.md` 已记录 003 带来的 Listing `business_key_hash` 字段和唯一过滤索引。
+执行新 SQL migration 时使用以下模式。当前 `001/002/003/004/005/006/007/008/009` 已经执行成功并锁定；后续结构变化必须从 `010_xxx.sql` 开始。
+
+```bash
+python scripts/run_sql_migration.py --file sql/migrations/010_xxx.sql --dry-run --show-batches
+python scripts/run_sql_migration.py --file sql/migrations/010_xxx.sql
+```
+
+注意：已执行过的 migration 不允许修改。后续任何结构变化都必须新增 migration。migration 执行成功并导出 live schema 后，才可把新字段或新索引写入 current schema spec。
 
 Amazon Ads 真实入库：
 
@@ -196,3 +218,38 @@ PYTHONPATH=src python scripts/collect_ready_reports.py --limit 10
 
 新需求到开发验收的完整 SOP 见：[`docs/project/iteration_workflow.md`](docs/project/iteration_workflow.md)。
 更完整规则见：[`docs/project/development_rules.md`](docs/project/development_rules.md)。
+
+
+SP-API Inventory 快照真实入库，`004_add_inventory_daily_business_key_hash.sql` 已执行成功且当前已完成验收；后续如需重跑可执行：
+
+```bash
+python scripts/ingest_inventory_snapshot.py \
+  --marketplace-id ATVPDKIKX0DER \
+  --execute
+```
+
+当前计划链路已经切换为 FBA Fee Preview。Orders 与 FBA Reimbursements 均已完成真实 execute 和幂等性验证；下一步为 FBA Fee Preview 执行真实入库与第二次 execute 幂等验证，为后续利润核算提供预估 referral fee / FBA fulfillment fee 参考口径：
+
+```text
+GET_FBA_ESTIMATED_FBA_FEES_TXT_DATA
+  -> feature_fba_fee_preview_ingestion.md
+  -> amazon_fba_fee_preview 已建表
+  -> 009_add_fba_fee_preview_business_key.sql 已执行，live schema 已导出
+  -> 专用 dry-run/schema guard/repository/CLI 已开发并通过 dry-run
+```
+
+
+
+## Promotion/Coupon 与 Inventory Ledger 补充数据
+
+2026-05-17 已新增两份功能设计并准备对应 migration：
+
+```text
+docs/features/feature_promotion_coupon_ingestion.md
+sql/migrations/010_add_promotion_coupon_business_keys.sql
+
+docs/features/feature_inventory_ledger_ingestion.md
+sql/migrations/011_add_inventory_ledger_business_keys.sql
+```
+
+Promotion/Coupon 用于优惠券、折扣、会员日/Prime Day 等活动效果分析；Inventory Ledger 用于库存 movement 与库存审计。周报中的当前库存余额仍优先来自 `amazon_inventory_daily`，Ledger 用于解释库存变化。

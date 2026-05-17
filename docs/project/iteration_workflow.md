@@ -200,8 +200,8 @@ docs/features/feature_xxx.md
 4. dry-run migration；只检查 SQL batch 拆分，不连接数据库
 5. 连接 warm-up / 状态确认；手动可跑 test_azure_sql_connection，自动化依赖 get_connection 内置 retry
 6. 正式执行 migration
-7. 查询真实 Azure SQL 结构确认字段/索引/约束存在
-8. 更新 docs/database/database_current_schema_spec.md
+7. 优先运行 `scripts/export_database_schema_spec.py` 导出真实 Azure SQL schema；必要时再用手工 SQL 精查字段/索引/约束
+8. 根据导出结果和人工确认更新 docs/database/database_current_schema_spec.md
 9. 更新相关 feature 文档 migration 状态
 10. 更新 docs/project/progress_next_steps.md
 11. 必要时更新 README.md 和 docs/README.md
@@ -241,14 +241,54 @@ docs/features/feature_xxx.md
 
 ```bash
 python scripts/test_azure_sql_connection.py --json
-python scripts/test_azure_sql_connection.py --json --max-attempts 5 --retry-delay-seconds 5
+python scripts/test_azure_sql_connection.py --json --max-attempts 8 --retry-delay-seconds 8
 python scripts/test_azure_sql_connection.py --list-tables
 python scripts/check_database_status.py --all-tables
 ```
 
 这些命令用于快速确认连接、表数量和重点表行数，但不足以完整导出字段和索引。`test_azure_sql_connection.py` 和所有使用 `get_connection()` 的真实 SQL 入口都会先执行连接 retry + `SELECT 1` warm-up。
 
-### 9.2 完整字段结构 SQL
+### 9.2 推荐方式：导出真实 schema snapshot
+
+日常更新 `database_current_schema_spec.md` 时，优先使用项目脚本导出完整 live schema：
+
+```bash
+python scripts/export_database_schema_spec.py
+python scripts/export_database_schema_spec.py --output-prefix after_004_xxx --include-row-counts
+python scripts/export_database_schema_spec.py --stdout-markdown
+```
+
+该脚本会读取：
+
+```text
+sys.tables / sys.columns / sys.types / sys.default_constraints
+sys.indexes / sys.index_columns
+sys.key_constraints
+sys.foreign_keys / sys.foreign_key_columns
+可选 sys.dm_db_partition_stats 行数
+```
+
+默认输出到：
+
+```text
+runtime/schema_exports/
+```
+
+导出文件用途：
+
+1. 确认 migration 目标字段、索引、约束真实存在。
+2. 对比 `docs/database/database_current_schema_spec.md` 是否滞后。
+3. 辅助 AI 或开发者更新正式 current spec。
+
+注意：导出的 Markdown/JSON 是 live schema snapshot，不是正式 spec。正式 spec 仍然是 `docs/database/database_current_schema_spec.md`，因为它还需要包含人工字段说明、数据来源、真实入库状态和限制说明。
+
+详细说明见：
+
+```text
+docs/database/database_schema_export_tool.md
+```
+
+### 9.3 手工方式：完整字段结构 SQL
 
 在 Azure Portal Query editor、Azure Data Studio、SSMS 或其他 SQL 客户端执行：
 
@@ -288,7 +328,7 @@ BIGINT IDENTITY
 
 注意 `max_length` 对 `NVARCHAR` 是字节数，`NVARCHAR(100)` 在 `sys.columns.max_length` 中通常显示为 `200`。
 
-### 9.3 完整索引结构 SQL
+### 9.4 手工方式：完整索引结构 SQL
 
 ```sql
 SELECT
@@ -325,7 +365,7 @@ ORDER BY t.name, i.name;
 
 如果 SQL Server 版本或兼容级别导致 `STRING_AGG ... WITHIN GROUP` 不可用，可改用客户端导出或分表查询。
 
-### 9.4 主键和外键查询
+### 9.5 手工方式：主键和外键查询
 
 ```sql
 SELECT
@@ -377,7 +417,7 @@ WHERE s.name = 'dbo'
 ORDER BY parent_t.name, fk.name;
 ```
 
-### 9.5 单表变更后的快速确认 SQL
+### 9.6 单表变更后的快速确认 SQL
 
 新增字段后：
 
@@ -502,6 +542,8 @@ Execute 只有在 schema guard 通过后才能写库。
 
 Azure SQL serverless 长时间没有 SQL 请求后可能自动暂停，恢复期间第一次 `pyodbc.connect()` 可能出现 `08001 Login timeout expired` 或 `Unable to complete login process due to delay in login response`。这不是业务 SQL 错误，但会影响自动化定时任务。
 
+还需要区分另一类常见连接失败：Azure SQL Server firewall 未放行当前客户端 IP，例如 `40615` / `Client with IP address ... is not allowed to access the server`。这不是 idle/resume，不能靠 retry 解决，必须先放行 IP 或配置云端固定出站网络。
+
 项目统一处理方式：
 
 ```text
@@ -514,7 +556,7 @@ get_connection()
 配置项：
 
 ```env
-AZURE_SQL_CONNECT_MAX_ATTEMPTS='4'
+AZURE_SQL_CONNECT_MAX_ATTEMPTS='6'
 AZURE_SQL_CONNECT_RETRY_DELAY_SECONDS='5'
 AZURE_SQL_CONNECT_RETRY_BACKOFF='1.8'
 ```
@@ -524,7 +566,10 @@ AZURE_SQL_CONNECT_RETRY_BACKOFF='1.8'
 1. 自动化任务不要直接使用 `pyodbc.connect()`，必须使用项目的 `get_connection()`。
 2. retry 只覆盖连接和 warm-up 阶段，不覆盖 parser、MERGE、migration batch 或业务 SQL。
 3. 业务 SQL 出错时应按功能验收和 transaction 规则处理，不应盲目重试。
-4. 如果连接长期失败，任务应失败并暴露日志，而不是静默跳过。
+4. firewall/IP allowlist、账号密码、权限等非 transient 错误必须 fail fast，并输出明确错误；不要通过增加 retry 掩盖。
+5. 如果连接长期失败，任务应失败并暴露日志，而不是静默跳过。
+
+连接问题排查顺序见 `docs/database/azure_sql_connection_runbook.md`。
 
 ## 13. 验收流程
 
@@ -562,7 +607,7 @@ ruff format src tests scripts
 python scripts/run_sql_migration.py --file sql/migrations/NNN_xxx.sql --dry-run --show-batches
 python scripts/run_sql_migration.py --file sql/migrations/NNN_xxx.sql
 python scripts/test_azure_sql_connection.py --json
-python scripts/test_azure_sql_connection.py --json --max-attempts 5 --retry-delay-seconds 5
+python scripts/test_azure_sql_connection.py --json --max-attempts 8 --retry-delay-seconds 8
 python scripts/test_azure_sql_connection.py --list-tables
 python scripts/check_database_status.py
 ```
@@ -631,22 +676,24 @@ Progress 文档只记录真实进展和近期计划，不写长篇设计。应�
 
 ## 17. 当前下一步建议
 
-截至 2026-05-16，文档和数据库治理规则已经进入最终体系；Ads 与 Listing 两条 normalized ingestion 已完成真实写库和幂等性验证。下一步建议按本 SOP 进入 Inventory ingestion：
+截至 2026-05-17，文档和数据库治理规则已经进入最终体系；Ads、Listing、Inventory、Sales & Traffic、Settlement、Orders、FBA Reimbursements 等 normalized ingestion 链路均已完成真实写库和第二次 execute 幂等性验证。下一步建议按本 SOP 先做 FBA Fee Preview 的数据库 migration，再进入代码实现：
 
 ```text
-先创建/更新 docs/features/feature_inventory_ingestion.md
--> 对比 docs/database/database_current_schema_spec.md
--> 如需结构变化，从 004_xxx.sql 开始新增 migration
--> dry-run migration
--> 连接 warm-up / execute migration
--> 查询真实 schema 并更新 current spec
--> 按专用入口模式开发 Inventory dry-run / execute / 幂等性验证
+读取 docs/features/feature_fba_fee_preview_ingestion.md
+-> 确认 009_add_fba_fee_preview_business_key.sql 已准备
+-> 用户本地 dry-run / execute 009
+-> 运行 export_database_schema_spec.py 导出 after_009_fba_fee_preview_business_key live schema
+-> 更新 database_current_schema_spec.md
+-> 开发 scripts/ingest_fba_fee_preview_report.py 专用入口
+-> dry-run 验证 prepared_rows=8 requires_review=False
+-> execute + 第二次 execute 幂等性验证
+-> 更新 feature_fba_fee_preview_ingestion.md 和 progress_next_steps.md 为 Implemented
 ```
 
-在进入 Inventory 代码开发前，AI 应再次确认：
+在进入 FBA Fee Preview 代码开发前，AI 应再次确认：
 
-1. 数据源字段来自 `docs/data_access/sp_api_reports_catalog.md`。
-2. 当前 `amazon_inventory_daily` 真实表结构是否已经满足幂等 upsert。
-3. 如果需要 `business_key_hash` 或唯一索引，必须新增 `004_xxx.sql`，不得回改 `001/002/003`。
+1. 数据源字段来自 `docs/data_access/sp_api_reports_catalog.md` 和 `docs/features/feature_fba_fee_preview_ingestion.md`。
+2. 当前 `amazon_fba_fee_preview` 真实表尚未包含 `source_row_index`、`business_key_hash` 与唯一过滤索引；必须先执行 `009` 并导出 live schema。
+3. `001-008` 已执行成功，不得回改；后续结构变化从 `009_xxx.sql` 开始。
 4. 所有真实 SQL 入口必须使用 `get_connection()`，不得绕开连接 warm-up retry。
 5. 本轮是否允许改代码和新增测试。

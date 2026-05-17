@@ -6,7 +6,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from typing import Any
 
-from seller_data_pipeline.common.exceptions import ConfigurationError
+from seller_data_pipeline.common.exceptions import AzureSqlConnectionError, ConfigurationError
 from seller_data_pipeline.config.settings import Settings, get_settings
 
 SQL_PASSWORD_AUTH_MODE = "sql_password"
@@ -20,6 +20,16 @@ _RETRYABLE_CONNECTION_MARKERS = (
     "40613",  # Database is not currently available.
     "40197",  # Azure SQL transient service error.
     "40501",  # Azure SQL service busy/throttling.
+)
+_FIREWALL_DENIED_MARKERS = (
+    "40615",
+    "not allowed to access the server",
+    "create a firewall rule",
+)
+_LOGIN_AUTH_FAILURE_MARKERS = (
+    "18456",
+    "Login failed",
+    "28000",
 )
 _WARMUP_SQL = "SELECT 1"
 logger = logging.getLogger(__name__)
@@ -118,6 +128,97 @@ def is_retryable_connection_error(exc: BaseException) -> bool:
     return any(marker in text for marker in _RETRYABLE_CONNECTION_MARKERS)
 
 
+def _odbc_error_text(exc: BaseException) -> str:
+    return " ".join(str(arg) for arg in getattr(exc, "args", ())) or str(exc)
+
+
+def _contains_any_marker(text: str, markers: tuple[str, ...]) -> bool:
+    lower_text = text.lower()
+    return any(marker.lower() in lower_text for marker in markers)
+
+
+def is_azure_sql_firewall_error(exc: BaseException) -> bool:
+    """Return True when Azure SQL rejected the client IP before login."""
+
+    return _contains_any_marker(_odbc_error_text(exc), _FIREWALL_DENIED_MARKERS)
+
+
+def is_login_authentication_error(exc: BaseException) -> bool:
+    """Return True for obvious SQL login/authentication failures."""
+
+    return _contains_any_marker(_odbc_error_text(exc), _LOGIN_AUTH_FAILURE_MARKERS)
+
+
+def extract_azure_sql_blocked_client_ip(exc: BaseException) -> str | None:
+    """Extract the blocked client IP from Azure SQL firewall error text, when present."""
+
+    import re
+
+    text = _odbc_error_text(exc)
+    match = re.search(r"Client with IP address '([^']+)'", text)
+    if match:
+        return match.group(1)
+    return None
+
+
+def build_azure_sql_connection_error_message(
+    exc: BaseException,
+    *,
+    attempt: int,
+    max_attempts: int,
+) -> str:
+    """Build an actionable connection error message for CLI users and automation logs."""
+
+    if is_azure_sql_firewall_error(exc):
+        client_ip = extract_azure_sql_blocked_client_ip(exc)
+        ip_suffix = f" Current client IP: {client_ip}." if client_ip else ""
+        return (
+            "Azure SQL connection failed because the current client IP is not allowed by "
+            "the Azure SQL Server firewall. This is not an auto-pause warm-up failure and "
+            f"should not be fixed by retrying.{ip_suffix} Add this IP to the Azure SQL "
+            "firewall allowlist in Azure Portal, or run sp_set_firewall_rule on the master "
+            "database, then wait a few minutes and retry."
+        )
+
+    if is_login_authentication_error(exc):
+        return (
+            "Azure SQL connection failed because SQL login/authentication was rejected. "
+            "Check AZURE_SQL_USERNAME, AZURE_SQL_PASSWORD, AZURE_SQL_AUTH_MODE, and whether "
+            "the login has access to the configured database."
+        )
+
+    if is_retryable_connection_error(exc):
+        return (
+            "Azure SQL connection warm-up failed after "
+            f"{attempt}/{max_attempts} attempts with a retryable ODBC error. This can happen "
+            "while an Azure SQL serverless database is resuming from idle. Retry later or "
+            "increase AZURE_SQL_CONNECT_MAX_ATTEMPTS / AZURE_SQL_CONNECT_RETRY_DELAY_SECONDS "
+            "if the database needs longer to resume. Last ODBC error: "
+            f"{exc}"
+        )
+
+    return (
+        "Azure SQL connection failed with a non-retryable ODBC error. Check Azure SQL "
+        "server/database settings, network access, firewall, credentials, and ODBC Driver 18 "
+        f"installation. ODBC error: {exc}"
+    )
+
+
+def _raise_azure_sql_connection_error(
+    exc: BaseException,
+    *,
+    attempt: int,
+    max_attempts: int,
+) -> None:
+    raise AzureSqlConnectionError(
+        build_azure_sql_connection_error_message(
+            exc,
+            attempt=attempt,
+            max_attempts=max_attempts,
+        )
+    ) from exc
+
+
 def _warm_up_connection(connection: Any) -> None:
     """Run a tiny query before yielding a connection to business code."""
 
@@ -161,7 +262,11 @@ def _connect_with_retry(pyodbc: Any, settings: Settings, *, autocommit: bool) ->
             _close_quietly(connection)
             last_exception = exc
             if not is_retryable_connection_error(exc) or attempt >= max_attempts:
-                raise
+                _raise_azure_sql_connection_error(
+                    exc,
+                    attempt=attempt,
+                    max_attempts=max_attempts,
+                )
             sleep_seconds = retry_delay * (retry_backoff ** (attempt - 1))
             logger.warning(
                 "Azure SQL connection warm-up attempt %s/%s failed with a retryable "

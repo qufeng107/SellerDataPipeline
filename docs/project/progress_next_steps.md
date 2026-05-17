@@ -1,37 +1,58 @@
 # SellerDataPipeline 当前进展与下一步计划
 
-> 更新时间：2026-05-16  
-> 当前版本：v1.24 Azure SQL warm-up retry + Listing ingestion verified  
+> 更新时间：2026-05-17  
+> 当前版本：v1.46 promotion/coupon and inventory ledger design/migrations prepared  
 > 文档定位：记录项目真实进展、已完成里程碑、当前非阻塞问题和下一步开发顺序。本文档只记录真实状态和近期计划，不承载详细功能设计。
 
 ## 1. 当前一句话状态
 
-项目已经完成第一条端到端真实入库闭环：
+项目已经从“取样和数据库设计阶段”进入 **SP-API normalized ingestion 扩展阶段**。当前已完成并通过真实 Azure SQL execute + 第二次 execute 幂等性验证的链路包括：
 
 ```text
-Amazon Ads raw report
-  -> parser
-  -> schema guard
-  -> dry-run preview
-  -> Azure SQL MERGE/upsert
-  -> normalized Ads tables
-  -> sync_run_log / schema_validation_event audit
-  -> idempotency verified
-```
-
-当前阶段已从“取样和数据库设计阶段”进入 **SP-API normalized ingestion 扩展阶段**。下一条主线 Listing 快照入库已经完成 schema foundation、代码侧 dry-run、真实写库和重复 execute 幂等性验证：
-
-```text
+Amazon Ads SP reports -> 4 张 Ads daily 表
 GET_MERCHANT_LISTINGS_ALL_DATA -> amazon_listing_snapshot
-sql/migrations/003_add_listing_snapshot_business_key_hash.sql -> executed, 3/3 batches
-scripts/ingest_listing_snapshot.py -> execute verified
-首次 execute: sync_run_id=3, inserted=6, updated=0
-第二次 execute: sync_run_id=4, inserted=0, updated=6
+GET_FBA_MYI_UNSUPPRESSED_INVENTORY_DATA -> amazon_inventory_daily
+GET_SALES_AND_TRAFFIC_REPORT -> amazon_sales_traffic_daily / amazon_sales_traffic_asin_daily
+GET_V2_SETTLEMENT_REPORT_DATA_FLAT_FILE_V2 -> amazon_settlement_transaction
+GET_FLAT_FILE_ALL_ORDERS_DATA_BY_ORDER_DATE_GENERAL -> amazon_order_item
+GET_FBA_REIMBURSEMENTS_DATA -> amazon_fba_reimbursement
+GET_FBA_ESTIMATED_FBA_FEES_TXT_DATA -> amazon_fba_fee_preview
 ```
 
-当前新增了 Azure SQL connection warm-up retry：所有通过 `get_connection()` 打开的数据库连接都会先进行连接重试和 `SELECT 1` warm-up，避免 Azure SQL serverless 长时间 idle 后第一次 login timeout 直接打断 migration 或 ingestion。
+最新 FBA Reimbursements 验收结果：
+
+```text
+Dry-run: prepared_rows=19 requires_review=False
+首次 execute: sync_run_id=13, attempted=19 inserted=19 updated=0 written=19 skipped=0
+第二次 execute: sync_run_id=14, attempted=19 inserted=0 updated=19 written=19 skipped=0
+```
+
+当前基础设施状态：
+
+```text
+001/002/003/004/005/006/007/008/009 migration 已执行成功
+FBA Reimbursements 专用 ingestion 已完成 execute/幂等验证
+FBA Fee Preview 专用 ingestion 已完成 execute/幂等验证：sync_run_id=15 inserted=8；sync_run_id=16 updated=8
+Azure SQL connection warm-up retry 已启用，默认 max_attempts=6
+scripts/export_database_schema_spec.py 已可导出 live schema snapshot
+```
+
+下一条主线切换到 FBA Fee Preview normalized ingestion：
+
+```text
+GET_PROMOTION_PERFORMANCE_REPORT / GET_COUPON_PERFORMANCE_REPORT
+  -> docs/features/feature_promotion_coupon_ingestion.md 已建立
+  -> amazon_promotion_performance / amazon_promotion_product_performance / amazon_coupon_performance / amazon_coupon_asin 已建表
+  -> 010_add_promotion_coupon_business_keys.sql 已准备，待 dry-run/execute/live schema export
+
+GET_LEDGER_SUMMARY_VIEW_DATA / GET_LEDGER_DETAIL_VIEW_DATA
+  -> docs/features/feature_inventory_ledger_ingestion.md 已建立
+  -> amazon_inventory_ledger_summary_daily / amazon_inventory_ledger_detail 已建表
+  -> 011_add_inventory_ledger_business_keys.sql 已准备，待 dry-run/execute/live schema export
+```
 
 ## 2. 已完成里程碑
+
 
 ### 2.1 SP-API 基础连接
 
@@ -110,7 +131,7 @@ User tables: 28
 docs/database/database_current_schema_spec.md
 ```
 
-重要维护规则：`001_create_core_tables.sql`、`002_create_indexes.sql` 和 `003_add_listing_snapshot_business_key_hash.sql` 已经执行成功，后续不允许修改这些历史 migration；结构变化必须新增 `004_xxx.sql`、`005_xxx.sql`。
+重要维护规则：`001_create_core_tables.sql`、`002_create_indexes.sql`、`003_add_listing_snapshot_business_key_hash.sql`、`004_add_inventory_daily_business_key_hash.sql`、`005_add_sales_traffic_business_key_hashes.sql`、`006_add_settlement_transaction_business_key.sql`、`007_add_order_item_business_key.sql` 和 `008_add_fba_reimbursement_business_key.sql` 已经执行成功，后续不允许修改这些历史 migration。
 
 ### 2.5 Amazon Ads 真实入库
 
@@ -223,7 +244,7 @@ get_connection()
 已新增配置：
 
 ```env
-AZURE_SQL_CONNECT_MAX_ATTEMPTS='4'
+AZURE_SQL_CONNECT_MAX_ATTEMPTS='6'
 AZURE_SQL_CONNECT_RETRY_DELAY_SECONDS='5'
 AZURE_SQL_CONNECT_RETRY_BACKOFF='1.8'
 ```
@@ -231,8 +252,43 @@ AZURE_SQL_CONNECT_RETRY_BACKOFF='1.8'
 也可对连接测试命令临时覆盖：
 
 ```powershell
-python scripts/test_azure_sql_connection.py --json --max-attempts 5 --retry-delay-seconds 5
+python scripts/test_azure_sql_connection.py --json --max-attempts 8 --retry-delay-seconds 8
 ```
+
+### 2.7.1 Azure SQL firewall/IP allowlist 观察
+
+2026-05-17 运行 `scripts/export_database_schema_spec.py` 时，前两次连接出现 serverless resume 类 timeout，随后返回 `40615` / 当前客户端 IP 未被 Azure SQL Server firewall 放行。该场景已经确认不是 warm-up retry 能解决的问题。
+
+处理策略已固化：
+
+```text
+08001 / timeout / delay in login response
+  -> 连接层 retry + SELECT 1 warm-up
+
+40615 / client IP not allowed
+  -> fail fast，提示放行当前公网 IP 或配置云端稳定出站网络
+```
+
+相关文档：`docs/database/azure_sql_connection_runbook.md` 与 `docs/adr/ADR-006-azure-sql-connection-warmup.md`。
+
+### 2.7.2 Schema export identity column compatibility fix
+
+2026-05-17 用户放行 firewall 后，`scripts/export_database_schema_spec.py --include-row-counts` 连接预热已在第 3 次尝试成功，但随后读取 `sys.identity_columns.seed_value / increment_value` 时触发 pyodbc 错误：
+
+```text
+ODBC SQL type -150 is not yet supported
+```
+
+根因：SQL Server 的 `sys.identity_columns.seed_value` 和 `increment_value` 是 `sql_variant` 类型，部分 pyodbc / ODBC Driver 组合无法直接 fetch。
+
+处理：schema export 的 columns catalog 查询已改为：
+
+```sql
+CONVERT(nvarchar(100), ic.seed_value) AS identity_seed,
+CONVERT(nvarchar(100), ic.increment_value) AS identity_increment
+```
+
+并新增 `AzureSqlSchemaExportError`，后续如果 schema export catalog 查询失败，CLI 会输出带 query context 的友好错误，而不是直接甩完整 traceback。
 
 ### 2.8 SP-API Listing 入库代码准备
 
@@ -274,6 +330,41 @@ python -m compileall -q scripts src tests
 ruff check src tests scripts
 ruff format src tests scripts
 ```
+
+
+### 2.9 SP-API Inventory 入库验收
+
+Inventory normalized ingestion 已完成开发和用户本地 Azure SQL 验证，当前功能状态为 `Implemented`：
+
+```text
+GET_FBA_MYI_UNSUPPRESSED_INVENTORY_DATA -> amazon_inventory_daily
+004_add_inventory_daily_business_key_hash.sql -> executed, 3/3 batches
+dry-run: prepared_rows=5, requires_review=False
+first execute: sync_run_id=5, inserted=5, updated=0
+second execute: sync_run_id=6, inserted=0, updated=5
+```
+
+当前 `amazon_inventory_daily` 已验证业务幂等键有效，第二次执行未重复插入。后续如果源字段变化，应先更新 `docs/features/feature_inventory_ingestion.md`，必要时新增 migration，不得回改 `001/002/003/004`。
+
+### 2.10 Orders 007 migration 与 dry-run 开发
+
+已准备：
+
+```text
+sql/migrations/007_add_order_item_business_key.sql
+-> local dry-run parse: 4 executable batches
+```
+
+该 migration 计划给 `dbo.amazon_order_item` 增加：
+
+```text
+source_row_index INT NULL
+business_key_hash NVARCHAR(100) NULL
+UX_amazon_order_item_business_key_hash filtered unique index
+```
+
+尚未在 Azure SQL 执行，因此 `database_current_schema_spec.md` 不把这些字段写成当前真实字段。
+
 
 ## 3. 文档体系更新进展
 
@@ -407,7 +498,7 @@ rows_read / rows_written / rows_skipped / rows_failed
 如需要补强，应该新增 migration，例如：
 
 ```text
-004_add_sync_run_upsert_counts.sql
+008_add_sync_run_upsert_counts.sql 或后续编号
 ```
 
 ### 4.2 Ads schema_validation_event.raw_file_id 仍为 NULL
@@ -426,7 +517,7 @@ raw file 先登记 amazon_raw_report_file
 
 ### 4.3 requirements 历史文档尚未全部迁移
 
-`requirements/database_design.md` 仍包含上一版整合设计内容。数据接入部分已经拆入 `docs/data_access/`，已实现功能部分已经开始拆入 `docs/features/`。后续还需要继续把待开发功能拆成独立 feature 文档，例如 Inventory、Sales & Traffic、Settlement、Profit、Weekly Report、Clearance Decision Support。Listing 功能设计已完成第一版。
+`requirements/database_design.md` 仍包含上一版整合设计内容。数据接入部分已经拆入 `docs/data_access/`，已实现功能部分已经开始拆入 `docs/features/`。后续还需要继续把待开发功能拆成独立 feature 文档，例如 Orders、Profit、Weekly Report、Clearance Decision Support。Listing、Inventory、Sales & Traffic、Settlement 入库功能已经完成当前阶段设计与实现。
 
 迁移完成前，避免同时维护两套详细设计。新的设计应优先进入 `docs/`，旧 `requirements/` 文档只作为迁移来源和历史参考。
 
@@ -481,21 +572,135 @@ second execute: sync_run_id=4, inserted=0, updated=6
 
 后续如果 Listing 源字段出现变化，应按 schema guard 结果更新 `docs/features/feature_listing_snapshot_ingestion.md`，必要时新增 migration，不要回改 `001/002/003`。
 
-### 5.5 下一主线：Inventory normalized ingestion
+### 5.5 已完成：Inventory normalized ingestion
 
-下一步建议先写功能文档，再开发代码：
+Inventory normalized ingestion 已完成开发和用户本地 Azure SQL 验证。当前功能状态为 `Implemented`：
 
 ```text
-docs/features/feature_inventory_ingestion.md
 GET_FBA_MYI_UNSUPPRESSED_INVENTORY_DATA -> amazon_inventory_daily
+dry-run: prepared_rows=5, requires_review=False
+first execute: sync_run_id=5, inserted=5, updated=0
+second execute: sync_run_id=6, inserted=0, updated=5
 ```
 
-建议顺序：
+后续如果 Inventory 源字段出现变化，应按 schema guard 结果更新 `docs/features/feature_inventory_ingestion.md`，必要时新增 migration，不要回改 `001/002/003/004`。
 
-1. 读取 `docs/data_access/sp_api_reports_catalog.md` 中库存 report 字段。
-2. 创建 `docs/features/feature_inventory_ingestion.md`，先写清业务目标、字段映射、目标表、幂等键和验收标准。
-3. 对比 `docs/database/database_current_schema_spec.md`，判断 `amazon_inventory_daily` 是否需要新增 `business_key_hash` 或其他字段/索引。
-4. 如需结构变化，从 `004_xxx.sql` 开始新增 migration。
-5. 按 Listing 模式开发专用入口，完成 dry-run、execute、第二次 execute 幂等性验证。
+### 5.6 已完成：Sales & Traffic normalized ingestion
 
-注意：暂时不急于抽象通用 SP-API ingestion 入口。按 `ADR-005-progressive-generalization.md`，至少两个相似 ingestion 功能稳定后，再评估通用化。
+当前链路已经完成：
+
+```text
+GET_SALES_AND_TRAFFIC_REPORT
+  -> amazon_sales_traffic_daily
+  -> amazon_sales_traffic_asin_daily
+```
+
+验收结果：
+
+```text
+Dry-run: prepared_rows=7 requires_review=False
+首次 execute: sync_run_id=7, attempted=7 inserted=7 updated=0 written=7 skipped=0
+  amazon_sales_traffic_daily: attempted=6 inserted=6 updated=0 skipped=0
+  amazon_sales_traffic_asin_daily: attempted=1 inserted=1 updated=0 skipped=0
+第二次 execute: sync_run_id=8, attempted=7 inserted=0 updated=7 written=7 skipped=0
+  amazon_sales_traffic_daily: attempted=6 inserted=0 updated=6 skipped=0
+  amazon_sales_traffic_asin_daily: attempted=1 inserted=0 updated=1 skipped=0
+```
+
+### 5.7 已完成：Settlement normalized ingestion
+
+当前链路已经完成：
+
+```text
+GET_V2_SETTLEMENT_REPORT_DATA_FLAT_FILE_V2
+  -> amazon_settlement_transaction
+```
+
+验收结果：
+
+```text
+Dry-run: prepared_rows=4911 processed_files=8 skipped_files=0 requires_review=False
+首次 execute: sync_run_id=9, attempted=4911 inserted=4911 updated=0 written=4911 skipped=0
+第二次 execute: sync_run_id=10, attempted=4911 inserted=0 updated=4911 written=4911 skipped=0
+```
+
+Settlement 是利润核算的核心财务入账事实表。首版 ingestion 只负责保存逐行结算明细和保守分类，不直接生成最终会计利润结论。
+
+### 5.8 已完成：Orders normalized ingestion
+
+已完成链路：
+
+```text
+GET_FLAT_FILE_ALL_ORDERS_DATA_BY_ORDER_DATE_GENERAL
+  -> amazon_order_item
+```
+
+当前状态：
+
+1. Orders 样例已存在：1 份 raw file，112 行，33 个源字段。
+2. `007_add_order_item_business_key.sql` 已执行并导出 `after_007_order_item_business_key` live schema。
+3. 专用 parser / schema guard / dry-run / repository / CLI 已开发完成。
+4. 用户本地已完成 dry-run、首次 execute 和第二次 execute 幂等性验证。
+
+验收证据：
+
+```text
+Dry-run: prepared_rows=112 requires_review=False
+首次 execute: sync_run_id=11 inserted=112 updated=0
+第二次 execute: sync_run_id=12 inserted=0 updated=112
+```
+
+注意：Orders 是订单行项目事实表，用于订单/SKU 维度分析和对账。它不是最终利润口径，利润计算仍以后续 Settlement、Ads、SKU cost、FBA fee、Reimbursements 等综合模型为准。
+
+### 5.9 已完成：FBA Reimbursements normalized ingestion
+
+已完成链路：
+
+```text
+GET_FBA_REIMBURSEMENTS_DATA
+  -> amazon_fba_reimbursement
+```
+
+验收结果：
+
+```text
+Dry-run: prepared_rows=19 requires_review=False
+首次 execute: sync_run_id=13 attempted=19 inserted=19 updated=0 written=19 skipped=0
+第二次 execute: sync_run_id=14 attempted=19 inserted=0 updated=19 written=19 skipped=0
+```
+
+状态说明：
+
+1. `008_add_fba_reimbursement_business_key.sql` 已 dry-run、execute 成功，并导出 `after_008_fba_reimbursement_business_key` live schema。
+2. `database_current_schema_spec.md` 已记录 `source_row_index`、`business_key_hash` 和 `UX_amazon_fba_reimbursement_business_key_hash`。
+3. 专用 parser / schema guard / dry-run / repository / CLI 已开发完成。
+4. 真实 Azure SQL execute 与第二次 execute 幂等性验证均已完成。
+5. `feature_fba_reimbursements_ingestion.md` 已更新为 `Implemented`。
+
+### 5.10 当前主线：FBA Fee Preview ingestion
+
+下一条主线切换到：
+
+```text
+GET_FBA_ESTIMATED_FBA_FEES_TXT_DATA
+  -> amazon_fba_fee_preview
+```
+
+当前状态：
+
+1. FBA Fee Preview 样例已存在：1 份 raw file，8 行，31 个源字段。
+2. 目标表 `amazon_fba_fee_preview` 已由 `001_create_core_tables.sql` 创建。
+3. Parser 已存在：`src/seller_data_pipeline/parsers/amazon/fba_estimated_fees_parser.py`。
+4. 功能设计文档已建立：`docs/features/feature_fba_fee_preview_ingestion.md`。
+5. `009_add_fba_fee_preview_business_key.sql` 已执行成功，`database_current_schema_spec.md` 已同步 live schema。
+6. 专用 ingestion 已开发完成并通过 dry-run：prepared_rows=8 requires_review=False。
+
+下一步：
+
+```text
+1. 用户本地执行 python scripts/ingest_fba_fee_preview_report.py --marketplace-id ATVPDKIKX0DER --execute
+2. 重复执行同一命令验证幂等性
+3. 预期首次 inserted=8 updated=0，第二次 inserted=0 updated=8
+4. 通过后将 FBA Fee Preview 更新为 Implemented
+5. 开始利润核算功能设计
+```

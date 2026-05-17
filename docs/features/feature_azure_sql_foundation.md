@@ -14,7 +14,7 @@
 
 本功能负责为 SellerDataPipeline 建立 Azure SQL 数据库基础设施，包括连接配置、migration 执行、当前 schema 记录、数据库状态检查和后续 schema 变更治理规则。它不直接处理 Amazon 原始报表，但为 SP-API Reports、Amazon Ads API、后续利润核算和周期报表提供统一结构化数据仓库。
 
-当前该功能已完成第一阶段验收：Azure SQL `amazon_ops` 可连接，`001_create_core_tables.sql` 和 `002_create_indexes.sql` 已执行成功，数据库中存在 28 张用户表，`scripts/check_database_status.py` 可输出表行数、最新 sync run 和最新 schema validation event。针对 Azure SQL serverless 长时间 idle 后首次连接可能 login timeout 的情况，连接层已新增 retry + `SELECT 1` warm-up，业务 SQL 只会在连接预热成功后执行。
+当前该功能已完成第一阶段验收：Azure SQL `amazon_ops` 可连接，`001_create_core_tables.sql` 和 `002_create_indexes.sql` 已执行成功，数据库中存在 28 张用户表，`scripts/check_database_status.py` 可输出表行数、最新 sync run 和最新 schema validation event，`scripts/export_database_schema_spec.py` 可从真实系统 catalog 导出表、字段、索引和约束，用于 migration 后更新 current schema spec。针对 Azure SQL serverless 长时间 idle 后首次连接可能 login timeout 的情况，连接层已新增 retry + `SELECT 1` warm-up，业务 SQL 只会在连接预热成功后执行。
 
 ## 2. 功能状态
 
@@ -27,6 +27,7 @@
 | 初始索引 migration | 已执行 |
 | 当前 schema spec | 已完成第一版 |
 | 数据库检查脚本 | 已完成 |
+| Live schema export 工具 | 已完成 |
 | Azure SQL connection warm-up retry | 已完成 |
 | 单元测试 | 已完成 |
 | 文档同步 | 已完成本功能文档第一版 |
@@ -91,7 +92,7 @@ AZURE_SQL_DRIVER='ODBC Driver 18 for SQL Server'
 AZURE_SQL_ENCRYPT='yes'
 AZURE_SQL_TRUST_SERVER_CERTIFICATE='no'
 AZURE_SQL_CONNECTION_TIMEOUT='30'
-AZURE_SQL_CONNECT_MAX_ATTEMPTS='4'
+AZURE_SQL_CONNECT_MAX_ATTEMPTS='6'
 AZURE_SQL_CONNECT_RETRY_DELAY_SECONDS='5'
 AZURE_SQL_CONNECT_RETRY_BACKOFF='1.8'
 AZURE_SQL_MANAGED_IDENTITY_CLIENT_ID=''
@@ -107,6 +108,7 @@ AZURE_SQL_MANAGED_IDENTITY_CLIENT_ID=''
 | Schema spec | `docs/database/database_current_schema_spec.md` | 记录真实数据库当前状态。 |
 | Migration policy | `docs/database/database_migration_policy.md` | 约束后续 schema 变更流程。 |
 | Status check output | `scripts/check_database_status.py` | 快速检查数据库连接、表行数和最新审计记录。 |
+| Live schema export | `scripts/export_database_schema_spec.py` | 从真实 Azure SQL 系统 catalog 导出当前 schema snapshot，辅助维护 current schema spec。 |
 
 ## 7. 处理流程
 
@@ -134,7 +136,8 @@ AZURE_SQL_MANAGED_IDENTITY_CLIENT_ID=''
   -> dry-run / 人工检查 batch
   -> 执行 migration
   -> 运行数据库检查脚本
-  -> 更新 current schema spec
+  -> 运行 scripts/export_database_schema_spec.py 导出 live schema
+  -> 根据真实导出结果更新 current schema spec
   -> 更新 progress_next_steps
 ```
 
@@ -211,7 +214,7 @@ AZURE_SQL_MANAGED_IDENTITY_CLIENT_ID=''
 |---|---|---|
 | 缺少 Azure SQL 环境变量 | `ConfigurationError` | 是 |
 | 未安装 `pyodbc` | `ConfigurationError`，提示安装依赖和 ODBC Driver | 是 |
-| Azure firewall 未放行 | 连接测试失败 | 是 |
+| Azure firewall/IP 未放行 | fail fast，提示当前 IP 未放行；先在 Azure SQL Server firewall 添加 allowlist | 是 |
 | migration 某 batch 执行失败 | 当前 run 报错；不要继续后续 migration | 是 |
 | 运行 `002` 前 `001` 未完成 | 可能出现目标表不存在导致索引失败 | 是 |
 
@@ -233,10 +236,12 @@ AZURE_SQL_MANAGED_IDENTITY_CLIENT_ID=''
 ```bash
 python scripts/test_azure_sql_connection.py --json
 python scripts/test_azure_sql_connection.py --list-tables
-python scripts/test_azure_sql_connection.py --json --max-attempts 5 --retry-delay-seconds 5
+python scripts/test_azure_sql_connection.py --json --max-attempts 8 --retry-delay-seconds 8
 ```
 
-连接层默认会重试以下类型的连接/预热错误：`08001`、`08S01`、`HYT00`、`HYT01`、`40613`、`40197`、`40501`。这些主要覆盖 Azure SQL serverless 恢复、登录超时、暂时不可用和服务忙。认证错误、SQL 语法错误、业务 SQL 错误不在这里重试。
+连接层默认会重试以下类型的连接/预热错误：`08001`、`08S01`、`HYT00`、`HYT01`、`40613`、`40197`、`40501`。这些主要覆盖 Azure SQL serverless 恢复、登录超时、暂时不可用和服务忙。
+
+以下错误不重试：`40615` / client IP not allowed、账号密码错误、权限错误、SQL 语法错误、业务 SQL 错误。若看到当前 IP 未放行，应按 `docs/database/azure_sql_connection_runbook.md` 处理 firewall allowlist，而不是提高 retry 次数。
 
 ### 13.2 Migration
 
