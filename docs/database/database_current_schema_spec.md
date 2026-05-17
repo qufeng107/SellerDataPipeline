@@ -1,7 +1,7 @@
 # SellerDataPipeline 当前真实数据库 Schema Spec
 
-> 文档版本：v1.11  
-> 更新日期：2026-05-17  
+> 文档版本：v1.12  
+> 更新日期：2026-05-18  
 > 文档定位：**当前真实实现记录**。本文件只记录已经在 Azure SQL `amazon_ops` 执行成功的表、字段、索引与数据来源；不写未来设计。设计变更请先更新对应的 `docs/features/feature_*.md` 或 `docs/data_access/*.md`；如涉及库结构变化，先对比本文件，再新增 migration；migration 执行成功后优先运行 `scripts/export_database_schema_spec.py` 导出 live schema snapshot，再更新本文件。
 
 ## 1. 当前数据库状态
@@ -13,7 +13,18 @@
 | 已执行 migration | `001_create_core_tables.sql` 29/29 batches；`002_create_indexes.sql` 54/54 batches；`003_add_listing_snapshot_business_key_hash.sql` 3/3 batches；`004_add_inventory_daily_business_key_hash.sql` 3/3 batches；`005_add_sales_traffic_business_key_hashes.sql` 5/5 batches；`006_add_settlement_transaction_business_key.sql` 4/4 batches；`007_add_order_item_business_key.sql` 4/4 batches；`008_add_fba_reimbursement_business_key.sql` 4/4 batches；`009_add_fba_fee_preview_business_key.sql` 4/4 batches；`010_add_promotion_coupon_business_keys.sql` 8/8 batches；`011_add_inventory_ledger_business_keys.sql` 4/4 batches |
 | 用户表数量 | 28 |
 | 已真实入库验证 | Amazon Ads 4 张 SP 日表，首次 inserted=200、重复执行 inserted=0/updated=200；Listing 快照表首次 inserted=6、重复执行 inserted=0/updated=6；Inventory 快照表首次 inserted=5、重复执行 inserted=0/updated=5；Sales & Traffic 首次 inserted=7、重复执行 inserted=0/updated=7；Settlement 首次 inserted=4911、重复执行 inserted=0/updated=4911；Orders 首次 inserted=112、重复执行 inserted=0/updated=112；FBA Reimbursements 首次 inserted=19、重复执行 inserted=0/updated=19；FBA Fee Preview 首次 inserted=8、重复执行 inserted=0/updated=8；Promotion/Coupon 首次 inserted=10、重复执行 inserted=0/updated=10；Inventory Ledger 首次 inserted=357、重复执行 inserted=0/updated=357 |
-| 当前限制 | `amazon_sync_run_log` 尚无 rows_inserted / rows_updated 字段；Ads/Listing/Inventory/Sales & Traffic/Settlement/Orders/FBA Reimbursements/FBA Fee Preview/Promotion/Coupon 当前 `raw_file_id` 仍可能为 NULL；Inventory Ledger 已完成 execute/幂等验证；当前 `raw_file_id` 仍可能为 NULL |
+| 当前限制 | `amazon_sync_run_log` 尚无 rows_inserted / rows_updated 字段；normalized 表当前 `source_raw_file_id` 仍可能为 NULL；`pipeline_job_config` 仍为 planned，012 尚未执行 |
+
+## 1.1 Planned but Not Yet Executed
+
+以下数据库变更已准备，但**尚未在 Azure SQL 执行**，所以不能写入本 spec 的真实字段清单：
+
+```text
+sql/migrations/012_create_ingestion_job_config.sql
+sql/seeds/001_seed_ingestion_job_config_core_jobs.sql
+```
+
+目标是新增 `pipeline_job_config` 表，用于记录手动和未来自动化任务的执行周期、默认回看窗口、脚本路径和执行阶段。执行成功并导出 live schema 后，再把该表写入本文件的真实表结构。
 
 ## 1.1 Schema 更新辅助工具
 
@@ -196,8 +207,6 @@ python scripts/export_database_schema_spec.py --output-prefix after_NNN_xxx --in
 | `source_row_hash` | `NVARCHAR(100)` | NOT NULL | `` | 原始行 hash，用于追溯，不作为业务 upsert 主键。 |
 | `business_key_hash` | `NVARCHAR(100)` | NOT NULL | `` | 业务幂等键 hash，用于 MERGE/upsert。 |
 | `raw_data` | `NVARCHAR(MAX)` | NOT NULL | `` | 保留原始行 JSON，便于重放和排查。 |
-| `source_row_index` | `INT` | NULL | `` | raw file 内 1-based 数据行号，用于行级追溯。 |
-| `business_key_hash` | `NVARCHAR(100)` | NULL | `` | 稳定业务键 hash，用于 MERGE/upsert 幂等。 |
 | `created_at` | `DATETIME2(7)` | NOT NULL | `(sysutcdatetime())` | 数据库记录创建时间 UTC。 |
 | `updated_at` | `DATETIME2(7)` | NOT NULL | `(sysutcdatetime())` | 数据库记录最后更新时间 UTC。 |
 

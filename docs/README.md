@@ -1,7 +1,7 @@
 # SellerDataPipeline 文档总索引
 
-> 更新时间：2026-05-17  
-> 文档定位：本目录是 SellerDataPipeline 的正式文档入口。未来新需求、新设计、新数据库变更和开发进度都应优先维护在 `docs/` 下。`requirements/` 中历史文档只作为迁移来源或兼容参考。
+> 更新时间：2026-05-18  
+> 文档定位：本目录是 SellerDataPipeline 的正式文档入口。未来新需求、新设计、新数据库变更和开发进度都应优先维护在 `docs/` 下。`requirements_to_be_deprecated/` 中历史文档只作为迁移来源或兼容参考，暂不直接删除。
 
 ## 1. 文档体系目标
 
@@ -24,6 +24,13 @@ docs/
     development_rules.md          # 开发、文档、测试、数据库维护规则
     iteration_workflow.md          # 新需求 -> 设计 -> migration -> 开发 -> 验收 -> 文档同步 SOP
     progress_next_steps.md        # 当前真实进度和下一步计划
+    core_ingestion_completion_review.md
+    requirements_deprecation_plan.md
+
+  operations/
+    README.md
+    manual_execution_workflow.md
+    ingestion_job_cadence_catalog.md
 
   data_access/
     README.md
@@ -54,6 +61,8 @@ docs/
     ADR-004-database-spec-from-live-schema.md
     ADR-005-progressive-generalization.md
     ADR-006-azure-sql-connection-warmup.md
+    ADR-007-manual-first-before-automation.md
+    ADR-008-ingestion-job-config-table.md
 ```
 
 ## 3. 文档职责边界
@@ -62,6 +71,7 @@ docs/
 |---|---|---|
 | `project/` | 项目是什么、当前在哪一步、开发规则是什么 | 不写具体字段映射和长篇源数据结构 |
 | `data_access/` | Amazon / Ads / Seller Central 能拿到什么数据、如何获取、样例结构和源字段 | 不写利润计算、周报口径、业务功能实现 |
+| `operations/` | 手动执行流程、每类数据项建议周期、未来自动化 runbook | 不定义利润公式，不替代 feature 文档 |
 | `features/` | 某个具体功能如何设计、如何实现、如何验收 | 不替代当前真实数据库 spec |
 | `database/` | 当前数据库真实结构、migration 规则、真实 schema 导出工具 | 不写未执行的未来表结构为事实 |
 | `adr/` | 为什么做出某个长期架构决策 | 不写临时 TODO 或日常进度 |
@@ -75,7 +85,10 @@ docs/
 3. [`project/development_rules.md`](project/development_rules.md)
 4. [`project/iteration_workflow.md`](project/iteration_workflow.md)
 5. [`project/progress_next_steps.md`](project/progress_next_steps.md)
-6. [`data_access/amazon_data_access_catalog.md`](data_access/amazon_data_access_catalog.md)
+6. [`project/core_ingestion_completion_review.md`](project/core_ingestion_completion_review.md)
+7. [`operations/manual_execution_workflow.md`](operations/manual_execution_workflow.md)
+8. [`operations/ingestion_job_cadence_catalog.md`](operations/ingestion_job_cadence_catalog.md)
+9. [`data_access/amazon_data_access_catalog.md`](data_access/amazon_data_access_catalog.md)
 7. [`database/database_migration_policy.md`](database/database_migration_policy.md)
 8. [`database/database_schema_export_tool.md`](database/database_schema_export_tool.md)
 9. [`database/azure_sql_connection_runbook.md`](database/azure_sql_connection_runbook.md)
@@ -111,7 +124,9 @@ docs/
 14. FBA Fee Preview 功能已完成 dry-run、execute 和第二次 execute 幂等性验证。
 15. Promotion/Coupon 功能已完成 `010`、dry-run、execute 和第二次 execute 幂等性验证。
 16. Inventory Ledger 功能已完成 `011`、专用 dry-run/schema guard/repository/CLI，已完成 execute/幂等验证。
-15. 后续再补充利润、周报、清仓决策等业务分析功能文档。
+17. 新增 operations runbooks：手动执行流程和数据周期目录。
+18. 新增 job config 设计：`feature_ingestion_job_config.md`，`012_create_ingestion_job_config.sql` 已准备但尚未执行。
+19. 后续进入利润、周报、清仓决策等业务分析功能文档。
 
 ## 6. 维护硬规则
 

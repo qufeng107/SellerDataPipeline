@@ -85,7 +85,7 @@ Listing 快照是后续几乎所有运营分析的基础维度表之一。它帮
 | delimiter | tab |
 | row_count | `6` |
 | column_count | `29` |
-| sample doc | `requirements/data_samples/GET_MERCHANT_LISTINGS_ALL_DATA.md` |
+| sample doc | `requirements_to_be_deprecated/data_samples/GET_MERCHANT_LISTINGS_ALL_DATA.md` |
 
 当前 raw 路径约定：
 
@@ -541,7 +541,7 @@ amazon_listing_snapshot target row count=6
 
 | 日期 | 进展 | 证据/命令 | 备注 |
 |---|---|---|---|
-| 2026-05-13 | `GET_MERCHANT_LISTINGS_ALL_DATA` 已取样 | `requirements/data_samples/GET_MERCHANT_LISTINGS_ALL_DATA.md` | 6 行，29 列。 |
+| 2026-05-13 | `GET_MERCHANT_LISTINGS_ALL_DATA` 已取样 | `requirements_to_be_deprecated/data_samples/GET_MERCHANT_LISTINGS_ALL_DATA.md` | 6 行，29 列。 |
 | 2026-05-16 | Azure SQL 目标表已存在 | `docs/database/database_current_schema_spec.md` | 由 `001_create_core_tables.sql` 创建。 |
 | 2026-05-16 | Parser 已有单元测试 | `tests/unit/parsers/amazon/test_listings_all_data_parser.py` | 覆盖核心字段和缺字段。 |
 | 2026-05-16 | 本功能设计文档完成第一版 | `docs/features/feature_listing_snapshot_ingestion.md` | 本文档。 |

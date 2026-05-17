@@ -16,26 +16,20 @@ Amazon SP-API / Amazon Ads API / Seller Central raw exports
 
 ## 当前真实进展
 
-截至 2026-05-17：
+截至 2026-05-18：
 
-- Azure SQL `amazon_ops` 已完成初始建表与索引：`001_create_core_tables.sql` 29/29 batches，`002_create_indexes.sql` 54/54 batches。
-- 当前真实数据库有 28 张用户表。
-- Amazon Ads Sponsored Products 四类报表已完成真实入库：首次 inserted=200，重复执行 inserted=0、updated=200，幂等性验证通过。
-- 已新增数据库检查脚本 `scripts/check_database_status.py`。
-- SP-API Listing 快照入库已完成 dry-run、schema guard、repository/upsert、CLI、真实 Azure SQL execute 和幂等性验证：首次 inserted=6，重复执行 inserted=0、updated=6。
-- Azure SQL 连接层已新增 retry + `SELECT 1` warm-up，用于处理 serverless 长时间 idle 后首次连接 timeout；同时对 firewall/IP 未放行等非重试类错误输出更明确的操作提示。
-- 已新增真实数据库 schema 导出工具 `scripts/export_database_schema_spec.py`，用于 migration 后从 Azure SQL 系统 catalog 导出当前表、字段、索引和约束，辅助更新 current schema spec。
-- SP-API Inventory 入库已完成 dry-run、schema guard、repository/upsert、CLI、真实 Azure SQL execute 和幂等性验证：首次 inserted=5，重复执行 inserted=0、updated=5。
-- SP-API Sales & Traffic 入库已完成 dry-run、schema guard、repository/upsert、CLI、真实 Azure SQL execute 和幂等性验证：首次 inserted=7，重复执行 inserted=0、updated=7。
-- SP-API Settlement 入库已完成 dry-run、schema guard、repository/upsert、CLI、真实 Azure SQL execute 和幂等性验证：首次 inserted=4911，重复执行 inserted=0、updated=4911。
-- SP-API Orders 入库已完成 dry-run、schema guard、repository/upsert、CLI、真实 Azure SQL execute 和幂等性验证：首次 inserted=112，重复执行 inserted=0、updated=112。
-- FBA Reimbursements `008` migration 已执行并导出 live schema，专用 ingestion 已完成 dry-run、execute 与第二次 execute 幂等验证。
+- Azure SQL `amazon_ops` 已完成核心建表、索引和 001-011 migration，当前真实数据库有 28 张用户表。
+- 核心 normalized ingestion 已完成真实 Azure SQL execute 和第二次 execute 幂等性验证：Ads、Listing、Inventory、Sales & Traffic、Settlement、Orders、FBA Reimbursements、FBA Fee Preview、Promotion/Coupon、Inventory Ledger。
+- Azure SQL 连接层已支持 retry + `SELECT 1` warm-up，并能区分 idle/resume、firewall/IP allowlist 和登录错误。
+- 已新增 `scripts/check_database_status.py` 与 `scripts/export_database_schema_spec.py`，用于检查运行状态和从 live schema 更新数据库 spec。
+- 当前主线从“继续扩 ingestion”转为“手动运营流程 + 利润核算 + 周报/月报”。
+- 已新增 manual-first operations 文档，并准备 `012_create_ingestion_job_config.sql`，用于后续把数据下载/入库/加工/报表任务周期写入数据库配置表。
 
 详细进展见：[`docs/project/progress_next_steps.md`](docs/project/progress_next_steps.md)。
 
 ## 文档入口
 
-本项目从现在开始以 `docs/` 作为正式文档目录。`requirements/` 中的历史文档只作为迁移来源或兼容入口，不再作为新设计的主要维护位置。
+本项目从现在开始以 `docs/` 作为正式文档目录。`requirements_to_be_deprecated/` 中的历史文档只作为迁移来源或兼容参考，不再作为新设计的主要维护位置；暂不建议直接删除，详见 `docs/project/requirements_deprecation_plan.md`。
 
 | 文档 | 用途 |
 |---|---|
@@ -44,6 +38,11 @@ Amazon SP-API / Amazon Ads API / Seller Central raw exports
 | [`docs/project/development_rules.md`](docs/project/development_rules.md) | 开发和文档维护规则，尤其面向 AI 迭代。 |
 | [`docs/project/iteration_workflow.md`](docs/project/iteration_workflow.md) | 新需求到设计、migration、开发、验收和文档同步的端到端 SOP。 |
 | [`docs/project/progress_next_steps.md`](docs/project/progress_next_steps.md) | 当前真实进度、已完成里程碑和下一步。 |
+| [`docs/operations/README.md`](docs/operations/README.md) | 手动执行流程、数据更新周期和未来自动化运行手册入口。 |
+| [`docs/operations/manual_execution_workflow.md`](docs/operations/manual_execution_workflow.md) | 手动下载、入库、加工、复核和邮件发送流程。 |
+| [`docs/operations/ingestion_job_cadence_catalog.md`](docs/operations/ingestion_job_cadence_catalog.md) | 每类数据源的建议下载/入库周期，未来自动化 Jobs 的调度依据。 |
+| [`docs/project/core_ingestion_completion_review.md`](docs/project/core_ingestion_completion_review.md) | 核心入库阶段收尾检查。 |
+| [`docs/project/requirements_deprecation_plan.md`](docs/project/requirements_deprecation_plan.md) | 旧 requirements 目录保留/删除规则。 |
 | [`docs/data_access/amazon_data_access_catalog.md`](docs/data_access/amazon_data_access_catalog.md) | Amazon 数据接入总目录，汇总 SP-API、Ads API、手动导出。 |
 | [`docs/data_access/sp_api_reports_catalog.md`](docs/data_access/sp_api_reports_catalog.md) | SP-API Reports report type、获取方式、样例字段和状态。 |
 | [`docs/data_access/amazon_ads_reports_catalog.md`](docs/data_access/amazon_ads_reports_catalog.md) | Amazon Ads API profile 和 Sponsored Products 报告接入目录。 |
@@ -60,6 +59,7 @@ Amazon SP-API / Amazon Ads API / Seller Central raw exports
 | [`docs/features/feature_fba_fee_preview_ingestion.md`](docs/features/feature_fba_fee_preview_ingestion.md) | SP-API FBA Fee Preview 入库功能文档；009、dry-run、execute 与幂等验证已完成。 |
 | [`docs/features/feature_promotion_coupon_ingestion.md`](docs/features/feature_promotion_coupon_ingestion.md) | Promotion/Coupon 入库功能文档；010、dry-run、execute 与幂等验证已完成。 |
 | [`docs/features/feature_inventory_ledger_ingestion.md`](docs/features/feature_inventory_ledger_ingestion.md) | Inventory Ledger 入库功能文档；011 已执行，专用 dry-run 已完成，已完成 execute/幂等验证。 |
+| [`docs/features/feature_ingestion_job_config.md`](docs/features/feature_ingestion_job_config.md) | 数据下载/入库/加工/报表任务周期配置表设计；012 migration 已准备，尚未执行。 |
 | [`docs/database/database_current_schema_spec.md`](docs/database/database_current_schema_spec.md) | 当前真实 Azure SQL 表结构、字段、索引与数据来源。 |
 | [`docs/database/database_migration_policy.md`](docs/database/database_migration_policy.md) | 数据库变更和 migration 规则。 |
 | [`docs/database/database_schema_export_tool.md`](docs/database/database_schema_export_tool.md) | 从真实 Azure SQL 导出 schema snapshot 的工具说明。 |
@@ -81,6 +81,7 @@ SellerDataPipeline/
     data_access/                # 数据接入目录：SP-API / Ads / 手动导出能拿到什么
     features/                   # 单功能设计文档
     database/                   # 当前 schema spec、migration policy、字段命名规范
+    operations/                 # 手动运行流程、任务周期、未来自动化 runbook
     adr/                        # Architecture Decision Records
 
   sql/

@@ -37,8 +37,7 @@ def main() -> None:
         action="append",
         default=[],
         help=(
-            "Optional Amazon reportOptions entry in KEY=VALUE form. "
-            "Can be passed multiple times."
+            "Optional Amazon reportOptions entry in KEY=VALUE form. Can be passed multiple times."
         ),
     )
     args = parser.parse_args()

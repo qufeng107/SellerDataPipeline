@@ -1,6 +1,6 @@
 # SellerDataPipeline 项目总览
 
-> 更新时间：2026-05-17  
+> 更新时间：2026-05-18  
 > 文档定位：说明项目目的、边界、阶段目标、整体架构和当前真实状态。详细进度见 `docs/project/progress_next_steps.md`；数据库真实结构见 `docs/database/database_current_schema_spec.md`。
 
 ## 1. 项目背景
@@ -111,45 +111,49 @@ tests/
 
 ## 7. 当前真实状态
 
-截至 2026-05-17：
+截至 2026-05-18，核心数据底座已经完成。已通过真实 Azure SQL execute 和第二次 execute 幂等性验证的模块包括：
 
 | 模块 | 状态 | 说明 |
 |---|---|---|
 | SP-API 连接测试 | 已实现 | 可验证 `marketplaceParticipations`。 |
-| SP-API Reports sampling | 已实现一批 | 已下载和分析多类 report，样例文档在 `requirements/data_samples/`。 |
+| SP-API Reports sampling | 已实现一批 | 已下载和分析多类 report，历史样例在 `requirements_to_be_deprecated/data_samples/`。 |
 | Amazon Ads sampling | 已实现 | 已获取 profile，并下载 Sponsored Products 多类报表。 |
-| Azure SQL 初始建表 | 已完成 | `001` 和 `002` 已执行成功，当前 28 张表；连接层已支持 retry + `SELECT 1` warm-up。 |
-| Ads normalized ingestion | 已完成第一条真实闭环 | 4 张 Ads SP 日表首次 inserted=200，重复执行 updated=200。 |
-| 数据库状态检查脚本 | 已实现 | `scripts/check_database_status.py`。 |
-| SP-API Listing normalized ingestion | 已完成 | Listing dry-run、execute、重复 execute 幂等性已通过：首次 inserted=6，第二次 updated=6。 |
-| SP-API Inventory normalized ingestion | 已完成 | Inventory dry-run、execute、重复 execute 幂等性已通过：首次 inserted=5，第二次 updated=5。 |
-| SP-API Sales & Traffic normalized ingestion | Implemented | `feature_sales_traffic_ingestion.md` 已建立；005 migration、专用 CLI/repository、dry-run、execute 和幂等性验证已完成。 |
-| SP-API Settlement normalized ingestion | Implemented | Settlement dry-run、execute、重复 execute 幂等性已通过：首次 inserted=4911，第二次 updated=4911。 |
-| SP-API Orders normalized ingestion | Implemented | Orders dry-run、execute、重复 execute 幂等性已通过：首次 inserted=112，第二次 updated=112。 |
-| SP-API FBA Reimbursements normalized ingestion | Implemented | FBA Reimbursements dry-run、execute、重复 execute 幂等性已通过：首次 inserted=19，第二次 updated=19。 |
-| SP-API FBA Fee Preview normalized ingestion | Implemented | FBA Fee Preview dry-run、execute、重复 execute 幂等性已通过：首次 inserted=8，第二次 updated=8。 |
-| SP-API Promotion/Coupon normalized ingestion | Implemented | Promotion/Coupon dry-run、execute、重复 execute 幂等性已通过：首次 inserted=10，第二次 updated=10。 |
-| SP-API Inventory Ledger normalized ingestion | Implemented | Inventory Ledger summary/detail 专用 dry-run 已通过：150 + 207 rows，已完成 execute/幂等验证。 |
-| 周报/月报/清仓分析 | 待设计/待开发 | 依赖 normalized 数据沉淀后再做。 |
-| Azure Container Apps Jobs | 待开发 | 本地闭环稳定后再上云。 |
+| Azure SQL 基础设施 | 已完成 | `001`-`011` 已执行成功，当前 28 张用户表；连接层支持 retry + warm-up。 |
+| Ads normalized ingestion | Implemented | 4 张 Ads SP 日表首次 inserted=200，重复执行 updated=200。 |
+| Listing normalized ingestion | Implemented | 首次 inserted=6，重复执行 updated=6。 |
+| Inventory snapshot ingestion | Implemented | 首次 inserted=5，重复执行 updated=5。 |
+| Sales & Traffic ingestion | Implemented | 首次 inserted=7，重复执行 updated=7。 |
+| Settlement ingestion | Implemented | 首次 inserted=4911，重复执行 updated=4911。 |
+| Orders ingestion | Implemented | 首次 inserted=112，重复执行 updated=112。 |
+| FBA Reimbursements ingestion | Implemented | 首次 inserted=19，重复执行 updated=19。 |
+| FBA Fee Preview ingestion | Implemented | 首次 inserted=8，重复执行 updated=8。 |
+| Promotion/Coupon ingestion | Implemented | 首次 inserted=10，重复执行 updated=10。 |
+| Inventory Ledger ingestion | Implemented | Summary + Detail 首次 inserted=357，重复执行 updated=357。 |
+| Manual operations workflow | Planned / documented | 已建立手动执行流程和数据更新周期目录。 |
+| Job cadence config table | Planned | `012_create_ingestion_job_config.sql` 已准备，尚未执行。 |
+| 周报/月报/清仓分析 | 待设计/待开发 | 依赖利润核算设计。 |
+| Azure Container Apps Jobs | 待开发 | 手动流程稳定后再上云。 |
 
 ## 8. 下一阶段主线
 
-核心 normalized ingestion 与两组运营/库存补充数据已经完成真实 execute 和幂等验证。下一阶段不应先上自动任务，而应进入利润核算设计：
+核心 normalized ingestion 已收尾。下一阶段采用 manual-first 策略：
 
 ```text
-feature_profit_calculation.md
-  -> 定义收入、退款、广告费、促销折扣、FBA 费用、赔偿、货款成本、头程成本等口径
-  -> 确认 SKU / 周 / 月维度的汇总规则
-  -> 判断是否需要新增 profit fact 表、视图或报表输出表
+手动下载 raw data
+-> 手动入库 normalized tables
+-> 手动加工利润和周报
+-> 手动复核并发送邮件
+-> 再迁移到 Azure Container Apps Jobs
 ```
 
 建议顺序：
 
-1. 编写 `docs/features/feature_profit_calculation.md`。
-2. 设计 SKU 成本与头程/海运成本导入方式。
-3. 设计利润核算输出表或视图。
-4. 开发财务利润计算、周报/月报、清仓决策支持。
+1. 执行 `012_create_ingestion_job_config.sql`，把任务周期写入数据库配置表。
+2. 编写 `docs/features/feature_profit_calculation.md`。
+3. 设计 SKU 成本与头程/海运成本导入方式。
+4. 开发手动利润计算脚本。
+5. 开发手动周报/月报输出。
+6. 先人工复核和邮件发送，再自动化 Jobs。
 
 ## 9. 文档体系关系
 
@@ -161,19 +165,4 @@ feature_profit_calculation.md
 - 当前数据库事实和 migration 规则：`docs/database/`
 - 长期架构决策：`docs/adr/`
 
-`requirements/` 下旧文档在迁移完成前仍可作为参考，但新开发不应继续把它作为唯一事实来源。
-
-
-## Promotion/Coupon 与 Inventory Ledger 补充数据
-
-2026-05-17 已新增两份功能设计并准备对应 migration：
-
-```text
-docs/features/feature_promotion_coupon_ingestion.md
-sql/migrations/010_add_promotion_coupon_business_keys.sql
-
-docs/features/feature_inventory_ledger_ingestion.md
-sql/migrations/011_add_inventory_ledger_business_keys.sql
-```
-
-Promotion/Coupon 用于优惠券、折扣、会员日/Prime Day 等活动效果分析；Inventory Ledger 用于库存 movement 与库存审计。周报中的当前库存余额仍优先来自 `amazon_inventory_daily`，Ledger 用于解释库存变化。
+`requirements_to_be_deprecated/` 下旧文档暂时作为历史取样和旧设计参考；新开发不应继续把它作为唯一事实来源，删除计划见 `docs/project/requirements_deprecation_plan.md`。

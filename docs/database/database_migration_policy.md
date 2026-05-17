@@ -310,3 +310,32 @@ python scripts/export_database_schema_spec.py --output-prefix after_011_inventor
 ```
 
 并据 live schema 更新 `docs/database/database_current_schema_spec.md`。
+
+## 9. 012 Job Config Migration Status
+
+当前已准备但尚未执行：
+
+```text
+sql/migrations/012_create_ingestion_job_config.sql
+sql/seeds/001_seed_ingestion_job_config_core_jobs.sql
+```
+
+用途：新增 `pipeline_job_config` 表，用于记录手动和未来自动化任务的执行周期、默认回看窗口、脚本路径和执行阶段。
+
+执行顺序：
+
+```powershell
+python scripts/run_sql_migration.py --file sql/migrations/012_create_ingestion_job_config.sql --dry-run --show-batches
+python scripts/run_sql_migration.py --file sql/migrations/012_create_ingestion_job_config.sql
+python scripts/run_sql_migration.py --file sql/seeds/001_seed_ingestion_job_config_core_jobs.sql --dry-run --show-batches
+python scripts/run_sql_migration.py --file sql/seeds/001_seed_ingestion_job_config_core_jobs.sql
+python scripts/export_database_schema_spec.py --output-prefix after_012_job_config --include-row-counts
+```
+
+执行成功后，必须更新：
+
+```text
+docs/database/database_current_schema_spec.md
+docs/operations/ingestion_job_cadence_catalog.md
+docs/project/progress_next_steps.md
+```

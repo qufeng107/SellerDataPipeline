@@ -6,7 +6,7 @@
 
 ## 背景
 
-SellerDataPipeline 项目已经从初始取样和草案阶段进入真实 Azure SQL 入库验证阶段。早期文档主要集中在 `requirements/` 下，其中混合了：
+SellerDataPipeline 项目已经从初始取样和草案阶段进入真实 Azure SQL 入库验证阶段。早期文档主要集中在旧 `requirements/` 目录下，现在已迁移为 `requirements_to_be_deprecated/`，其中混合了：
 
 - 项目目标。
 - 数据接入取样计划。
@@ -96,15 +96,15 @@ docs/adr/ADR-002-do-not-edit-executed-migrations.md
 
 需要付出的代价：
 
-1. 旧的 `requirements/` 文档需要分批迁移。
-2. 迁移期间会短期存在 `requirements/` 和 `docs/` 并存。
+1. 旧的 `requirements_to_be_deprecated/` 文档需要分批迁移。
+2. 迁移期间会短期存在 `requirements_to_be_deprecated/` 和 `docs/` 并存。
 3. 每次功能开发前需要先更新文档，短期看起来更慢，但长期减少返工。
 
 ## 迁移规则
 
 1. 新设计、新功能、新进度优先写入 `docs/`。
-2. `requirements/` 中历史文档暂时作为迁移来源和兼容参考。
-3. 不再在 `requirements/database_design.md` 中追加新的长期设计。
+2. `requirements_to_be_deprecated/` 中历史文档暂时作为迁移来源和兼容参考。
+3. 不再在 `requirements_to_be_deprecated/database_design.md` 中追加新的长期设计。
 4. 每批迁移完成后，应更新 `docs/project/progress_next_steps.md`。
 5. 若旧文档与新 `docs/` 冲突，以 `docs/` 为准。
 

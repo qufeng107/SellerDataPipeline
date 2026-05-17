@@ -1,6 +1,6 @@
 # Amazon Ads API 数据接入目录
 
-> 更新时间：2026-05-16  
+> 更新时间：2026-05-18  
 > 文档定位：记录本项目通过 Amazon Ads API 可以接入的 profile 与 Sponsored Products 报告。本文只描述数据接入能力，不定义广告优化功能或数据库设计。
 
 ## 1. 账号与认证维度
@@ -51,7 +51,7 @@ scripts/analyze_ads_downloaded_reports.py
 | reportTypeId | `spCampaigns` |
 | groupBy used in current sampling | `campaign` |
 | timeUnit | `DAILY` |
-| Current sample file | `requirements/data_samples/ADS_spCampaigns.md` |
+| Current sample file | `requirements_to_be_deprecated/data_samples/ADS_spCampaigns.md` |
 | Format | `json` top-level array |
 | Current sample rows | `8` |
 | Observed field/path count | `10` |
@@ -71,7 +71,7 @@ Observed source fields:
 | reportTypeId | `spTargeting` |
 | groupBy used in current sampling | `targeting` |
 | timeUnit | `DAILY` |
-| Current sample file | `requirements/data_samples/ADS_spTargeting.md` |
+| Current sample file | `requirements_to_be_deprecated/data_samples/ADS_spTargeting.md` |
 | Format | `json` top-level array |
 | Current sample rows | `99` |
 | Observed field/path count | `15` |
@@ -91,7 +91,7 @@ Observed source fields:
 | reportTypeId | `spSearchTerm` |
 | groupBy used in current sampling | `searchTerm` |
 | timeUnit | `DAILY` |
-| Current sample file | `requirements/data_samples/ADS_spSearchTerm.md` |
+| Current sample file | `requirements_to_be_deprecated/data_samples/ADS_spSearchTerm.md` |
 | Format | `json` top-level array |
 | Current sample rows | `61` |
 | Observed field/path count | `16` |
@@ -111,7 +111,7 @@ Observed source fields:
 | reportTypeId | `spAdvertisedProduct` |
 | groupBy used in current sampling | `advertiser` |
 | timeUnit | `DAILY` |
-| Current sample file | `requirements/data_samples/ADS_spAdvertisedProduct.md` |
+| Current sample file | `requirements_to_be_deprecated/data_samples/ADS_spAdvertisedProduct.md` |
 | Format | `json` top-level array |
 | Current sample rows | `32` |
 | Observed field/path count | `13` |
@@ -131,7 +131,7 @@ Observed source fields:
 | reportTypeId | `spPurchasedProduct` |
 | groupBy used in current sampling | `asin` |
 | timeUnit | `DAILY` |
-| Current sample file | `requirements/data_samples/ADS_spPurchasedProduct.md` |
+| Current sample file | `requirements_to_be_deprecated/data_samples/ADS_spPurchasedProduct.md` |
 | Format | `json` top-level array |
 | Current sample rows | `0` |
 | Observed field/path count | `1` |

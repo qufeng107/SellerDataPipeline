@@ -29,8 +29,7 @@ def main() -> None:
         "--show-raw-sample-values",
         action="store_true",
         help=(
-            "Show raw sample values instead of redacted values. "
-            "Do not use this for committed docs."
+            "Show raw sample values instead of redacted values. Do not use this for committed docs."
         ),
     )
     args = parser.parse_args()

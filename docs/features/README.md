@@ -1,6 +1,6 @@
 # 功能设计文档索引
 
-> 更新时间：2026-05-17  
+> 更新时间：2026-05-18  
 > 文档定位：本目录记录 SellerDataPipeline 的单功能设计、实现状态、验收标准和相关代码路径。每个功能文档必须以 `FEATURE_TEMPLATE.md` 为标准，不应把多个功能混在同一份文档里。
 
 ## 1. 功能文档维护规则
@@ -27,14 +27,16 @@
 | [`feature_fba_fee_preview_ingestion.md`](feature_fba_fee_preview_ingestion.md) | Implemented | SP-API `GET_FBA_ESTIMATED_FBA_FEES_TXT_DATA` -> `amazon_fba_fee_preview`；009、dry-run、execute 和第二次 execute 幂等性验证已完成。 |
 | [`feature_promotion_coupon_ingestion.md`](feature_promotion_coupon_ingestion.md) | Implemented | SP-API Promotion/Coupon reports -> 4 张促销/优惠券表；010、dry-run、execute 和第二次 execute 幂等性验证已完成。 |
 | [`feature_inventory_ledger_ingestion.md`](feature_inventory_ledger_ingestion.md) | Implemented | SP-API Inventory Ledger summary/detail -> 2 张库存流水表；011 已执行，专用 ingestion 已完成 execute/幂等验证。 |
+| [`feature_ingestion_job_config.md`](feature_ingestion_job_config.md) | Planned | 数据下载/入库/加工/报表任务周期配置表；012 migration 和 seed 已准备，尚未执行。 |
 
 ## 3. 下一批建议
 
-按当前项目进度，后续应优先：
+当前核心 ingestion 功能已全部完成。后续优先级应切换为：
 
-1. 进入 `feature_profit_calculation.md`，先定义利润核算口径。
-2. 设计 SKU 成本与头程/海运成本导入方式。
-3. 判断是否需要新增利润 fact 表、视图或报表输出表。
-4. 利润核算稳定后，再做 `feature_weekly_operations_report.md` 和 `feature_clearance_decision_support.md`。
+1. 执行 `012_create_ingestion_job_config.sql` 和 seed，把任务周期写入数据库。
+2. 进入 `feature_profit_calculation.md`，先定义利润核算口径。
+3. 设计 SKU 成本与头程/海运成本导入方式。
+4. 判断是否需要新增利润 fact 表、视图或报表输出表。
+5. 利润核算稳定后，再做 `feature_weekly_operations_report.md` 和 `feature_clearance_decision_support.md`。
 
-`feature_listing_snapshot_ingestion.md`、`feature_inventory_ingestion.md`、`feature_sales_traffic_ingestion.md`、`feature_settlement_ingestion.md`、`feature_orders_ingestion.md`、`feature_fba_reimbursements_ingestion.md`、`feature_fba_fee_preview_ingestion.md`、`feature_promotion_coupon_ingestion.md` 和 `feature_inventory_ledger_ingestion.md` 均已完成当前阶段设计与实现；对应 `003`-`011` migration 已执行成功并同步到 current schema spec。SP-API normalized ingestion 链路已经完成 dry-run、schema guard、repository/upsert、CLI、首次 execute 和第二次 execute 幂等性验证：Listing、Inventory、Sales & Traffic、Settlement、Orders、FBA Reimbursements、FBA Fee Preview、Promotion/Coupon、Inventory Ledger。
+已完成当前阶段设计与实现的 ingestion 功能包括：Listing、Inventory、Sales & Traffic、Settlement、Orders、FBA Reimbursements、FBA Fee Preview、Promotion/Coupon、Inventory Ledger 和 Ads。对应 migration `003`-`011` 已执行成功并同步到 current schema spec。

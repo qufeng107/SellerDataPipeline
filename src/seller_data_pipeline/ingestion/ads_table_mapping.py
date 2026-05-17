@@ -16,7 +16,8 @@ class AdsTargetTableSpec:
 
     This contract is intentionally independent from pyodbc/repository code so it can be tested and
     used in local dry-runs before the Azure SQL schema exists. The same fields should be mirrored in
-    requirements/database_spec.md and sql/migrations before a real upsert repository is enabled.
+    docs/database/database_current_schema_spec.md and sql/migrations before a real upsert
+    repository is enabled.
     """
 
     report_type_id: str

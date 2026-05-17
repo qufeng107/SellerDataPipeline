@@ -39,7 +39,7 @@ SP-API / Ads API 取样
 | 3 | 已执行 migration 文件和 progress 记录 | 数据库演进历史，已执行 migration 不可回改。 |
 | 4 | `docs/features/feature_*.md` | 功能设计、字段映射、实现状态和验收标准。 |
 | 5 | `docs/data_access/*.md` | 能从 Amazon / Ads / Seller Central 拿到的数据目录。 |
-| 6 | `requirements/` 历史文档 | 只作为迁移来源或旧背景参考，不再作为新设计的唯一事实。 |
+| 6 | `requirements_to_be_deprecated/` 历史文档 | 只作为迁移来源或旧背景参考，不再作为新设计的唯一事实。 |
 | 7 | 聊天记录 | 仅作补充背景；重要结论必须沉淀到 `docs/`。 |
 
 ## 3. 一次标准迭代的总流程
@@ -577,7 +577,7 @@ AZURE_SQL_CONNECT_RETRY_BACKOFF='1.8'
 
 文档类变更完成后检查：
 
-1. 是否更新了正确的 `docs/` 文件，而不是继续在旧 `requirements/` 里新增长期设计。
+1. 是否更新了正确的 `docs/` 文件，而不是继续在旧 `requirements_to_be_deprecated/` 里新增长期设计。
 2. README / docs index 是否需要新增链接。
 3. progress 是否记录了真实进度。
 4. 是否没有把 planned 内容写成 implemented。
@@ -697,3 +697,64 @@ Progress 文档只记录真实进展和近期计划，不写长篇设计。应�
 3. `001-008` 已执行成功，不得回改；后续结构变化从 `009_xxx.sql` 开始。
 4. 所有真实 SQL 入口必须使用 `get_connection()`，不得绕开连接 warm-up retry。
 5. 本轮是否允许改代码和新增测试。
+
+## 11. Manual-first Operations Workflow
+
+新增报表、利润核算、邮件发送或自动化 Jobs 前，先判断它是否已经可以手动执行。
+
+标准顺序：
+
+```text
+1. 写 feature 文档
+2. 写或更新手动执行 runbook
+3. 实现 CLI
+4. 手动 dry-run
+5. 手动 execute
+6. 手动复核输出
+7. 更新 progress 和 cadence catalog
+8. 再评估是否进入 automation
+```
+
+对应文档：
+
+```text
+docs/operations/manual_execution_workflow.md
+docs/operations/ingestion_job_cadence_catalog.md
+```
+
+## 12. Job Cadence Change Workflow
+
+如果需求涉及“多久下载一次数据”“多久入库一次”“未来自动化如何判断是否该运行”，按以下流程：
+
+```text
+1. 更新 docs/operations/ingestion_job_cadence_catalog.md
+2. 如需程序读取，更新 docs/features/feature_ingestion_job_config.md
+3. 如需数据库结构变化，新增 migration
+4. 如需修改配置数据，新增或更新 seed SQL
+5. 执行 migration/seed 后，导出 live schema
+6. 更新 docs/database/database_current_schema_spec.md
+7. 更新 docs/project/progress_next_steps.md
+```
+
+当前准备中的配置表：
+
+```text
+sql/migrations/012_create_ingestion_job_config.sql
+sql/seeds/001_seed_ingestion_job_config_core_jobs.sql
+```
+
+## 13. requirements_to_be_deprecated Cleanup Workflow
+
+旧 `requirements_to_be_deprecated/` 不能在仍有引用时直接删除。清理流程见：
+
+```text
+docs/project/requirements_deprecation_plan.md
+```
+
+删除前必须先确认：
+
+```powershell
+rg "requirements_to_be_deprecated|requirements/data_samples|requirements/"
+```
+
+没有仍需保留的引用。

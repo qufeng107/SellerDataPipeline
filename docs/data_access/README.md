@@ -1,6 +1,6 @@
 # 数据接入文档索引
 
-> 更新时间：2026-05-16  
+> 更新时间：2026-05-18  
 > 文档定位：本目录只记录 SellerDataPipeline 可以从 Amazon 相关系统接入哪些原始数据、每类数据如何获取、文件结构和已观察到的源字段。这里不定义利润口径、周报口径或业务功能实现。
 
 ## 1. 文档边界
@@ -43,3 +43,17 @@ Amazon / Ads / Seller Central 能给我们什么原始数据？
 3. 源字段必须来自脱敏样例、代码常量或已验证的下载记录；不确定字段必须标记为 `not_sampled` 或 `needs_resampling`。
 4. 真实 raw file 不提交 GitHub，只提交脱敏字段记录。
 5. 若 Amazon 返回新字段、缺字段或结构变化，应先更新样例记录和本目录，再决定是否改 parser、feature 文档或数据库 migration。
+
+## 4. 执行周期
+
+数据接入目录只记录“能拿到什么”。每类数据的建议下载/入库周期记录在：
+
+```text
+docs/operations/ingestion_job_cadence_catalog.md
+```
+
+未来可执行调度配置见：
+
+```text
+docs/features/feature_ingestion_job_config.md
+```

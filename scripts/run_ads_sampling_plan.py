@@ -81,10 +81,14 @@ def main() -> None:
         if args.dry_run:
             continue
         profile_id = args.profile_id or settings.amazon_ads_profile_id
-        if not args.force and profile_id and _has_matching_manifest(
-            store=store,
-            item=item,
-            profile_id=profile_id,
+        if (
+            not args.force
+            and profile_id
+            and _has_matching_manifest(
+                store=store,
+                item=item,
+                profile_id=profile_id,
+            )
         ):
             logger.info(
                 "Skipping existing Amazon Ads sample: report_type_id=%s",

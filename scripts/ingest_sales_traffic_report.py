@@ -39,8 +39,7 @@ def main() -> None:
         "--execute",
         action="store_true",
         help=(
-            "Actually connect to Azure SQL and upsert rows. "
-            "Without this flag, no DB writes occur."
+            "Actually connect to Azure SQL and upsert rows. Without this flag, no DB writes occur."
         ),
     )
     parser.add_argument(
@@ -87,32 +86,16 @@ def main() -> None:
     print(result.message)
     print(f"dry_run_output_dir={result.dry_run_result.output_dir}")
     print(
-        "prepared_rows={prepared} requires_review={review} sync_run_id={run_id}".format(
-            prepared=result.dry_run_result.prepared_row_count,
-            review=result.requires_review,
-            run_id=result.sync_run_id,
-        )
+        f"prepared_rows={result.dry_run_result.prepared_row_count} requires_review={result.requires_review} sync_run_id={result.sync_run_id}"
     )
     if result.upsert_result is not None:
         print(
-            "upsert attempted={attempted} inserted={inserted} updated={updated} "
-            "written={written} skipped={skipped}".format(
-                attempted=result.upsert_result.attempted_rows,
-                inserted=result.upsert_result.inserted_rows,
-                updated=result.upsert_result.updated_rows,
-                written=result.upsert_result.written_rows,
-                skipped=result.upsert_result.skipped_rows,
-            )
+            f"upsert attempted={result.upsert_result.attempted_rows} inserted={result.upsert_result.inserted_rows} updated={result.upsert_result.updated_rows} "
+            f"written={result.upsert_result.written_rows} skipped={result.upsert_result.skipped_rows}"
         )
         for table_result in result.upsert_result.table_results:
             print(
-                "{table}: attempted={attempted} inserted={inserted} updated={updated} skipped={skipped}".format(
-                    table=table_result.table_name,
-                    attempted=table_result.attempted_rows,
-                    inserted=table_result.inserted_rows,
-                    updated=table_result.updated_rows,
-                    skipped=table_result.skipped_rows,
-                )
+                f"{table_result.table_name}: attempted={table_result.attempted_rows} inserted={table_result.inserted_rows} updated={table_result.updated_rows} skipped={table_result.skipped_rows}"
             )
     if result.requires_review and not args.allow_review:
         raise SystemExit(2)

@@ -190,10 +190,7 @@ def print_table(title: str, rows: list[dict[str, Any]]) -> None:
     print(header)
     print(separator)
     for row in rows:
-        values = [
-            _display_value(row.get(column)).ljust(widths[column])
-            for column in columns
-        ]
+        values = [_display_value(row.get(column)).ljust(widths[column]) for column in columns]
         print(" | ".join(values))
 
 
