@@ -212,8 +212,6 @@ def build_final_audit_event(
     return event
 
 
-
-
 def build_failure_audit_event(
     *,
     dry_run_result: AdsIngestionDryRunResult,

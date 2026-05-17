@@ -139,21 +139,14 @@ class AdsRepo:
             raise RuntimeError("Azure SQL did not return amazon_sync_run_log.id")
         return int(row[0])
 
-
     def update_sync_run_log(self, sync_run_id: int, event: dict[str, Any]) -> None:
         """Update the final status of one task-audit row."""
 
         update_columns = tuple(
-            column
-            for column in _SYNC_RUN_LOG_COLUMNS
-            if column not in {"started_at"}
+            column for column in _SYNC_RUN_LOG_COLUMNS if column not in {"started_at"}
         )
-        set_sql = ", ".join(
-            f"{_quote_identifier(column)} = ?" for column in update_columns
-        )
-        sql = (
-            f"UPDATE dbo.[amazon_sync_run_log] SET {set_sql} WHERE [id] = ?;"
-        )
+        set_sql = ", ".join(f"{_quote_identifier(column)} = ?" for column in update_columns)
+        sql = f"UPDATE dbo.[amazon_sync_run_log] SET {set_sql} WHERE [id] = ?;"
         params = tuple(_db_value(event.get(column)) for column in update_columns) + (sync_run_id,)
         cursor = self.connection.cursor()
         cursor.execute(sql, params)
@@ -182,8 +175,7 @@ class AdsRepo:
             payload = dict(event)
             payload["source_run_id"] = source_run_id
             params = tuple(
-                _db_value(payload.get(column))
-                for column in _SCHEMA_VALIDATION_EVENT_COLUMNS
+                _db_value(payload.get(column)) for column in _SCHEMA_VALIDATION_EVENT_COLUMNS
             )
             cursor.execute(sql, params)
             inserted += 1
@@ -295,11 +287,7 @@ def build_ads_merge_sql(*, table_spec: AdsTargetTableSpec) -> str:
     validate_ads_table_spec(table_spec)
     columns = table_spec.table_columns
     source_select = ", ".join(f"? AS {_quote_identifier(column)}" for column in columns)
-    update_columns = [
-        column
-        for column in columns
-        if column not in {"business_key_hash"}
-    ]
+    update_columns = [column for column in columns if column not in {"business_key_hash"}]
     update_set = ",\n        ".join(
         f"target.{_quote_identifier(column)} = source.{_quote_identifier(column)}"
         for column in update_columns
@@ -325,8 +313,7 @@ def build_insert_sql(*, table_name: str, columns: tuple[str, ...]) -> str:
     column_sql = ", ".join(_quote_identifier(column) for column in columns)
     placeholders = ", ".join("?" for _ in columns)
     return (
-        f"INSERT INTO dbo.{_quote_identifier(table_name)} ({column_sql}) "
-        f"VALUES ({placeholders});"
+        f"INSERT INTO dbo.{_quote_identifier(table_name)} ({column_sql}) VALUES ({placeholders});"
     )
 
 

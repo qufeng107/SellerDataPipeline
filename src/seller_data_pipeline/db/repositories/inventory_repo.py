@@ -244,7 +244,9 @@ def validate_inventory_table_spec(table_spec: InventoryTargetTableSpec) -> None:
     if table_spec.target_table != INVENTORY_TARGET_TABLE:
         raise ValueError(f"Inventory target table is not allowlisted: {table_spec.target_table}")
     if "business_key_hash" not in table_spec.table_columns:
-        raise ValueError(f"Inventory target table lacks business_key_hash: {table_spec.target_table}")
+        raise ValueError(
+            f"Inventory target table lacks business_key_hash: {table_spec.target_table}"
+        )
 
 
 def build_inventory_merge_sql(*, table_spec: InventoryTargetTableSpec) -> str:
@@ -277,8 +279,7 @@ def build_insert_sql(*, table_name: str, columns: tuple[str, ...]) -> str:
     column_sql = ", ".join(_quote_identifier(column) for column in columns)
     placeholders = ", ".join("?" for _ in columns)
     return (
-        f"INSERT INTO dbo.{_quote_identifier(table_name)} ({column_sql}) "
-        f"VALUES ({placeholders});"
+        f"INSERT INTO dbo.{_quote_identifier(table_name)} ({column_sql}) VALUES ({placeholders});"
     )
 
 

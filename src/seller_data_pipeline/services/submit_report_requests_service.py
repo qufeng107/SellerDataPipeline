@@ -114,7 +114,6 @@ class SubmitReportRequestsService:
         )
 
 
-
 def _resolve_report_options(
     *,
     report_options: dict[str, str] | None,
@@ -137,6 +136,7 @@ def _resolve_report_options(
         else:
             resolved[key] = value
     return resolved
+
 
 def _dt_to_iso(value: datetime | None) -> str | None:
     if value is None:

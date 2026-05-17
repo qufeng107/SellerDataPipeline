@@ -186,8 +186,7 @@ CORE_SAMPLING_PLAN: tuple[ReportSamplingPlanItem, ...] = (
         mode="discover",
         label="Settlement V2 reports, 89 days",
         purpose=(
-            "Actual financial ledger: sales, fees, refunds, reimbursements, ads, "
-            "coupons, deals."
+            "Actual financial ledger: sales, fees, refunds, reimbursements, ads, coupons, deals."
         ),
         days=89,
         priority=130,
@@ -236,8 +235,7 @@ CORE_SAMPLING_PLAN: tuple[ReportSamplingPlanItem, ...] = (
         priority=160,
         sensitive=True,
         notes=(
-            "Can include buyer/contact/address fields. "
-            "Excluded unless --include-sensitive is used."
+            "Can include buyer/contact/address fields. Excluded unless --include-sensitive is used."
         ),
     ),
 )

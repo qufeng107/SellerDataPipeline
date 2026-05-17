@@ -141,9 +141,7 @@ class FbaEstimatedFeesParser(AmazonFlatFileParser):
             estimated_referral_fee_per_unit=parse_decimal(
                 row.get("estimated-referral-fee-per-unit")
             ),
-            estimated_variable_closing_fee=parse_decimal(
-                row.get("estimated-variable-closing-fee")
-            ),
+            estimated_variable_closing_fee=parse_decimal(row.get("estimated-variable-closing-fee")),
             estimated_order_handling_fee_per_order=parse_decimal(
                 row.get("estimated-order-handling-fee-per-order")
             ),

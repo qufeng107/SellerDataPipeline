@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-from collections import defaultdict
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from pathlib import Path
@@ -383,7 +382,10 @@ def render_schema_markdown(snapshot: dict[str, Any]) -> str:
         "",
         "> This file is generated from the live Azure SQL system catalog. ",
         "> Use it as an input when updating `docs/database/database_current_schema_spec.md`; ",
-        "> it is not a replacement for the curated spec because it does not contain all human field descriptions.",
+        (
+            "> it is not a replacement for the curated spec because it does not "
+            "contain all human field descriptions."
+        ),
         "",
         "## Database",
         "",
@@ -499,7 +501,10 @@ def render_schema_markdown(snapshot: dict[str, Any]) -> str:
                     "",
                     "#### Foreign keys",
                     "",
-                    "| Foreign key | Columns | References | Delete | Update | Disabled | Not trusted |",
+                    (
+                        "| Foreign key | Columns | References | Delete | Update | "
+                        "Disabled | Not trusted |"
+                    ),
                     "|---|---|---|---|---|---|---|",
                 ]
             )

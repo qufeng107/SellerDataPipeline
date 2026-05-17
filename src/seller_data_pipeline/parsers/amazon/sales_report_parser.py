@@ -244,9 +244,7 @@ class SalesReportParser:
         ordered_product_sales = _parse_money(sales.get("orderedProductSales"))
         ordered_product_sales_b2b = _parse_money(sales.get("orderedProductSalesB2B"))
         average_sales_per_order_item = _parse_money(sales.get("averageSalesPerOrderItem"))
-        average_sales_per_order_item_b2b = _parse_money(
-            sales.get("averageSalesPerOrderItemB2B")
-        )
+        average_sales_per_order_item_b2b = _parse_money(sales.get("averageSalesPerOrderItemB2B"))
         average_selling_price = _parse_money(sales.get("averageSellingPrice"))
         average_selling_price_b2b = _parse_money(sales.get("averageSellingPriceB2B"))
         claims_amount = _parse_money(sales.get("claimsAmount"))
@@ -293,9 +291,7 @@ class SalesReportParser:
             mobile_app_sessions=_parse_int(traffic.get("mobileAppSessions")),
             sessions=_parse_int(traffic.get("sessions")),
             buy_box_percentage=_parse_decimal(traffic.get("buyBoxPercentage")),
-            order_item_session_percentage=_parse_decimal(
-                traffic.get("orderItemSessionPercentage")
-            ),
+            order_item_session_percentage=_parse_decimal(traffic.get("orderItemSessionPercentage")),
             unit_session_percentage=_parse_decimal(traffic.get("unitSessionPercentage")),
             average_offer_count=_parse_decimal(traffic.get("averageOfferCount")),
             average_parent_items=_parse_decimal(traffic.get("averageParentItems")),
@@ -347,9 +343,7 @@ class SalesReportParser:
             total_order_items_b2b=_parse_int(sales.get("totalOrderItemsB2B")),
             browser_page_views=_parse_int(traffic.get("browserPageViews")),
             browser_page_views_b2b=_parse_int(traffic.get("browserPageViewsB2B")),
-            browser_page_views_percentage=_parse_decimal(
-                traffic.get("browserPageViewsPercentage")
-            ),
+            browser_page_views_percentage=_parse_decimal(traffic.get("browserPageViewsPercentage")),
             browser_page_views_percentage_b2b=_parse_decimal(
                 traffic.get("browserPageViewsPercentageB2B")
             ),
@@ -373,9 +367,7 @@ class SalesReportParser:
             ),
             mobile_app_sessions=_parse_int(traffic.get("mobileAppSessions")),
             mobile_app_sessions_b2b=_parse_int(traffic.get("mobileAppSessionsB2B")),
-            mobile_app_session_percentage=_parse_decimal(
-                traffic.get("mobileAppSessionPercentage")
-            ),
+            mobile_app_session_percentage=_parse_decimal(traffic.get("mobileAppSessionPercentage")),
             mobile_app_session_percentage_b2b=_parse_decimal(
                 traffic.get("mobileAppSessionPercentageB2B")
             ),
@@ -386,9 +378,7 @@ class SalesReportParser:
             buy_box_percentage=_parse_decimal(traffic.get("buyBoxPercentage")),
             buy_box_percentage_b2b=_parse_decimal(traffic.get("buyBoxPercentageB2B")),
             unit_session_percentage=_parse_decimal(traffic.get("unitSessionPercentage")),
-            unit_session_percentage_b2b=_parse_decimal(
-                traffic.get("unitSessionPercentageB2B")
-            ),
+            unit_session_percentage_b2b=_parse_decimal(traffic.get("unitSessionPercentageB2B")),
             source_system="sp_api_reports",
             source_report_type=SALES_AND_TRAFFIC_REPORT_TYPE,
             source_report_id=source_report_id,

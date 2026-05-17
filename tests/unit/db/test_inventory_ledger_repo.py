@@ -5,8 +5,8 @@ from seller_data_pipeline.db.repositories.inventory_ledger_repo import (
     validate_inventory_ledger_table_spec,
 )
 from seller_data_pipeline.ingestion.inventory_ledger_table_mapping import (
-    InventoryLedgerTargetTableSpec,
     LEDGER_SUMMARY_TARGET_TABLE_SPEC,
+    InventoryLedgerTargetTableSpec,
 )
 
 

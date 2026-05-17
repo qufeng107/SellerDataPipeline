@@ -47,7 +47,6 @@ def test_ads_report_parser_accepts_object_with_rows_key() -> None:
     assert records[0].clicks == 2
 
 
-
 def test_ads_report_parser_normalizes_advertised_product_fields() -> None:
     records = AdsReportParser().parse_text(
         text=(
@@ -71,6 +70,7 @@ def test_ads_report_parser_normalizes_advertised_product_fields() -> None:
     assert record.clicks == 2
     assert str(record.cost) == "1.25"
 
+
 def test_ads_report_parser_accepts_empty_array() -> None:
     records = AdsReportParser().parse_text(
         text="[]",
@@ -79,4 +79,3 @@ def test_ads_report_parser_accepts_empty_array() -> None:
     )
 
     assert records == []
-

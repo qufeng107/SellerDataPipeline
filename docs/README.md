@@ -88,7 +88,7 @@ docs/
 16. 已实现功能：[`features/feature_settlement_ingestion.md`](features/feature_settlement_ingestion.md)，006 已执行，Settlement 专用 dry-run / repository / CLI / execute / 幂等性已完成
 17. 已实现功能：[`features/feature_orders_ingestion.md`](features/feature_orders_ingestion.md)，Orders 007 已执行，专用 ingestion、真实 execute 和幂等性验证均已完成
 18. 已实现功能：[`features/feature_fba_reimbursements_ingestion.md`](features/feature_fba_reimbursements_ingestion.md)，`008` 已执行，dry-run / execute / 幂等性验证已完成
-19. 当前功能：[`features/feature_fba_fee_preview_ingestion.md`](features/feature_fba_fee_preview_ingestion.md)，009 已执行，专用 dry-run 已完成，待 execute/幂等验证
+19. 当前功能：[`features/feature_fba_fee_preview_ingestion.md`](features/feature_fba_fee_preview_ingestion.md)，009 已执行，专用 dry-run 已完成，已完成 execute/幂等验证
 19. 相关 ADR，尤其 `ADR-005-progressive-generalization.md` 与 `ADR-006-azure-sql-connection-warmup.md`
 
 ## 5. 当前迁移与治理进展
@@ -110,7 +110,7 @@ docs/
 13. FBA Reimbursements 功能文档 `feature_fba_reimbursements_ingestion.md` 已完成验收：`008_add_fba_reimbursement_business_key.sql` 已执行，专用 dry-run / repository / CLI / execute / 幂等性验证均已完成。
 14. FBA Fee Preview 功能已完成 dry-run、execute 和第二次 execute 幂等性验证。
 15. Promotion/Coupon 功能已完成 `010`、dry-run、execute 和第二次 execute 幂等性验证。
-16. Inventory Ledger 功能已完成 `011`、专用 dry-run/schema guard/repository/CLI，待 execute/幂等验证。
+16. Inventory Ledger 功能已完成 `011`、专用 dry-run/schema guard/repository/CLI，已完成 execute/幂等验证。
 15. 后续再补充利润、周报、清仓决策等业务分析功能文档。
 
 ## 6. 维护硬规则
@@ -138,4 +138,4 @@ docs/features/feature_inventory_ledger_ingestion.md
 sql/migrations/011_add_inventory_ledger_business_keys.sql
 ```
 
-Promotion/Coupon 用于优惠券、折扣、会员日/Prime Day 等活动效果分析，已完成入库验收；Inventory Ledger 用于库存 movement 与库存审计，当前已完成专用 dry-run，待 execute/幂等验证。周报中的当前库存余额仍优先来自 `amazon_inventory_daily`，Ledger 用于解释库存变化。
+Promotion/Coupon 用于优惠券、折扣、会员日/Prime Day 等活动效果分析，已完成入库验收；Inventory Ledger 用于库存 movement 与库存审计，已完成 execute/幂等验证。周报中的当前库存余额仍优先来自 `amazon_inventory_daily`，Ledger 用于解释库存变化。

@@ -1,7 +1,7 @@
 # SellerDataPipeline 当前进展与下一步计划
 
 > 更新时间：2026-05-17  
-> 当前版本：v1.48 promotion/coupon implemented; inventory ledger dry-run implemented  
+> 当前版本：v1.49 core ingestion implemented; action lint fixed  
 > 文档定位：记录项目真实进展、已完成里程碑、当前非阻塞问题和下一步开发顺序。本文档只记录真实状态和近期计划，不承载详细功能设计。
 
 ## 1. 当前一句话状态
@@ -34,19 +34,26 @@ Dry-run: prepared_rows=10 requires_review=False
 001/002/003/004/005/006/007/008/009/010/011 migration 已执行成功
 FBA Fee Preview 专用 ingestion 已完成 execute/幂等验证：sync_run_id=15 inserted=8；sync_run_id=16 updated=8
 Promotion/Coupon 专用 ingestion 已完成 execute/幂等验证：sync_run_id=17 inserted=10；sync_run_id=18 updated=10
-Inventory Ledger 专用 ingestion 已完成代码开发和 dry-run 验证：prepared_rows=357 requires_review=False
+Inventory Ledger 专用 ingestion 已完成 execute/幂等验证：sync_run_id=19 inserted=357；sync_run_id=20 updated=357
 Azure SQL connection warm-up retry 已启用，默认 max_attempts=6
 scripts/export_database_schema_spec.py 已可导出 live schema snapshot
 ```
 
-下一条主线切换到 Inventory Ledger execute 验证：
+下一条主线切换到利润核算设计：
 
 ```text
-GET_LEDGER_SUMMARY_VIEW_DATA / GET_LEDGER_DETAIL_VIEW_DATA
-  -> docs/features/feature_inventory_ledger_ingestion.md 已建立
-  -> amazon_inventory_ledger_summary_daily / amazon_inventory_ledger_detail 已建表
-  -> 011_add_inventory_ledger_business_keys.sql 已执行成功：dry-run 4 batches，execute 4/4，live schema export after_011_inventory_ledger_business_keys
-  -> scripts/ingest_inventory_ledger_reports.py 已开发并通过 dry-run：150 summary rows + 207 detail rows
+feature_profit_calculation.md
+  -> 定义利润核算口径
+  -> 设计 SKU 成本 / 头程海运成本 / 广告费 / 促销折扣 / 退款赔偿等归因规则
+  -> 再决定是否需要新的 fact 表、视图或报表输出表
+```
+
+最新 Inventory Ledger 验收结果：
+
+```text
+Dry-run: prepared_rows=357 requires_review=False
+首次 execute: sync_run_id=19, attempted=357 inserted=357 updated=0 written=357 skipped=0
+第二次 execute: sync_run_id=20, attempted=357 inserted=0 updated=357 written=357 skipped=0
 ```
 
 ## 2. 已完成里程碑

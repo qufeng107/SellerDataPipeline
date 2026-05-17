@@ -80,7 +80,9 @@ def test_orders_repo_upsert_counts_merge_actions() -> None:
     assert result.inserted_rows == 1
     assert result.updated_rows == 1
     assert len(cursor.executed) == 2
-    assert cursor.executed[0][1][ORDERS_TARGET_TABLE_SPEC.table_columns.index("source_run_id")] == 42
+    assert (
+        cursor.executed[0][1][ORDERS_TARGET_TABLE_SPEC.table_columns.index("source_run_id")] == 42
+    )
 
 
 def test_orders_repo_insert_and_update_sync_run_log() -> None:

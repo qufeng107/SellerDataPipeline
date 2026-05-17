@@ -26,15 +26,15 @@
 | [`feature_fba_reimbursements_ingestion.md`](feature_fba_reimbursements_ingestion.md) | Implemented | SP-API `GET_FBA_REIMBURSEMENTS_DATA` -> `amazon_fba_reimbursement`；008、dry-run、execute 和第二次 execute 幂等性验证已完成。 |
 | [`feature_fba_fee_preview_ingestion.md`](feature_fba_fee_preview_ingestion.md) | Implemented | SP-API `GET_FBA_ESTIMATED_FBA_FEES_TXT_DATA` -> `amazon_fba_fee_preview`；009、dry-run、execute 和第二次 execute 幂等性验证已完成。 |
 | [`feature_promotion_coupon_ingestion.md`](feature_promotion_coupon_ingestion.md) | Implemented | SP-API Promotion/Coupon reports -> 4 张促销/优惠券表；010、dry-run、execute 和第二次 execute 幂等性验证已完成。 |
-| [`feature_inventory_ledger_ingestion.md`](feature_inventory_ledger_ingestion.md) | Implementing | SP-API Inventory Ledger summary/detail -> 2 张库存流水表；011 已执行，专用 dry-run/schema guard/repository/CLI 已开发并通过 dry-run，待 execute/幂等验证。 |
+| [`feature_inventory_ledger_ingestion.md`](feature_inventory_ledger_ingestion.md) | Implemented | SP-API Inventory Ledger summary/detail -> 2 张库存流水表；011 已执行，专用 ingestion 已完成 execute/幂等验证。 |
 
 ## 3. 下一批建议
 
 按当前项目进度，后续应优先：
 
-1. 用户本地执行 `scripts/ingest_inventory_ledger_reports.py` dry-run / execute / 第二次 execute，完成 Inventory Ledger 幂等性验收。
-2. 通过后将 Inventory Ledger 更新为 `Implemented`。
-3. 两组运营/库存补充数据完成后，进入 `feature_profit_calculation.md`。
+1. 进入 `feature_profit_calculation.md`，先定义利润核算口径。
+2. 设计 SKU 成本与头程/海运成本导入方式。
+3. 判断是否需要新增利润 fact 表、视图或报表输出表。
 4. 利润核算稳定后，再做 `feature_weekly_operations_report.md` 和 `feature_clearance_decision_support.md`。
 
-`feature_listing_snapshot_ingestion.md`、`feature_inventory_ingestion.md`、`feature_sales_traffic_ingestion.md`、`feature_settlement_ingestion.md`、`feature_orders_ingestion.md`、`feature_fba_reimbursements_ingestion.md`、`feature_fba_fee_preview_ingestion.md` 和 `feature_promotion_coupon_ingestion.md` 均已完成当前阶段设计与实现；对应 `003`-`010` migration 已执行成功并同步到 current schema spec。八条 SP-API normalized ingestion 链路已经完成 dry-run、schema guard、repository/upsert、CLI、首次 execute 和第二次 execute 幂等性验证：Listing、Inventory、Sales & Traffic、Settlement、Orders、FBA Reimbursements、FBA Fee Preview、Promotion/Coupon。
+`feature_listing_snapshot_ingestion.md`、`feature_inventory_ingestion.md`、`feature_sales_traffic_ingestion.md`、`feature_settlement_ingestion.md`、`feature_orders_ingestion.md`、`feature_fba_reimbursements_ingestion.md`、`feature_fba_fee_preview_ingestion.md`、`feature_promotion_coupon_ingestion.md` 和 `feature_inventory_ledger_ingestion.md` 均已完成当前阶段设计与实现；对应 `003`-`011` migration 已执行成功并同步到 current schema spec。SP-API normalized ingestion 链路已经完成 dry-run、schema guard、repository/upsert、CLI、首次 execute 和第二次 execute 幂等性验证：Listing、Inventory、Sales & Traffic、Settlement、Orders、FBA Reimbursements、FBA Fee Preview、Promotion/Coupon、Inventory Ledger。

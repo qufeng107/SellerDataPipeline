@@ -66,7 +66,9 @@ class OrdersIngestionService:
                 dry_run_result=dry_run_result,
                 upsert_result=None,
                 sync_run_id=None,
-                message="Orders ingestion requires schema/privacy review; Azure SQL write was blocked.",
+                message=(
+                    "Orders ingestion requires schema/privacy review; Azure SQL write was blocked."
+                ),
             )
         if not execute:
             return OrdersIngestionRunResult(

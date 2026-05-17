@@ -58,8 +58,7 @@ def test_fba_reimbursements_ingestion_dry_run_writes_preview_and_audit(tmp_path:
     assert schema_events_path.exists()
     preview_path = Path(result.report_result.preview_file_path or "")
     preview_rows = [
-        json.loads(line)
-        for line in preview_path.read_text(encoding="utf-8").splitlines()
+        json.loads(line) for line in preview_path.read_text(encoding="utf-8").splitlines()
     ]
     assert len(preview_rows) == 1
     assert preview_rows[0]["reimbursement_id"] == "R-1"

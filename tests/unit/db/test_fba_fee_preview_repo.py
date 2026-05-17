@@ -83,9 +83,7 @@ def test_fba_fee_preview_repo_upsert_counts_merge_actions() -> None:
     assert result.inserted_rows == 1
     assert result.updated_rows == 1
     assert len(cursor.executed) == 2
-    source_run_id_index = FBA_FEE_PREVIEW_TARGET_TABLE_SPEC.table_columns.index(
-        "source_run_id"
-    )
+    source_run_id_index = FBA_FEE_PREVIEW_TARGET_TABLE_SPEC.table_columns.index("source_run_id")
     assert cursor.executed[0][1][source_run_id_index] == 42
 
 

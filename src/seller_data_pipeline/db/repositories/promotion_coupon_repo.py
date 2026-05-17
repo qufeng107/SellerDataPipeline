@@ -125,7 +125,9 @@ class PromotionCouponRepo:
         return int(row[0])
 
     def update_sync_run_log(self, sync_run_id: int, event: dict[str, Any]) -> None:
-        update_columns = tuple(column for column in _SYNC_RUN_LOG_COLUMNS if column not in {"started_at"})
+        update_columns = tuple(
+            column for column in _SYNC_RUN_LOG_COLUMNS if column not in {"started_at"}
+        )
         set_sql = ", ".join(f"{_quote_identifier(column)} = ?" for column in update_columns)
         sql = f"UPDATE dbo.[amazon_sync_run_log] SET {set_sql} WHERE [id] = ?;"
         params = tuple(_db_value(event.get(column)) for column in update_columns) + (sync_run_id,)
@@ -149,7 +151,9 @@ class PromotionCouponRepo:
         for event in events:
             payload = dict(event)
             payload["source_run_id"] = source_run_id
-            params = tuple(_db_value(payload.get(column)) for column in _SCHEMA_VALIDATION_EVENT_COLUMNS)
+            params = tuple(
+                _db_value(payload.get(column)) for column in _SCHEMA_VALIDATION_EVENT_COLUMNS
+            )
             cursor.execute(sql, params)
             inserted += 1
         return inserted
@@ -234,7 +238,9 @@ class NullPromotionCouponRepo:
 
 def validate_promotion_coupon_table_spec(table_spec: PromotionCouponTargetTableSpec) -> None:
     if table_spec.target_table not in _ALLOWED_TABLES:
-        raise ValueError(f"Promotion/Coupon target table is not allowlisted: {table_spec.target_table}")
+        raise ValueError(
+            f"Promotion/Coupon target table is not allowlisted: {table_spec.target_table}"
+        )
     for required_column in ("source_row_index", "business_key_hash"):
         if required_column not in table_spec.table_columns:
             raise ValueError(
@@ -271,10 +277,14 @@ def build_insert_sql(*, table_name: str, columns: tuple[str, ...]) -> str:
     validate_static_table_name(table_name)
     column_sql = ", ".join(_quote_identifier(column) for column in columns)
     placeholders = ", ".join("?" for _ in columns)
-    return f"INSERT INTO dbo.{_quote_identifier(table_name)} ({column_sql}) VALUES ({placeholders});"
+    return (
+        f"INSERT INTO dbo.{_quote_identifier(table_name)} ({column_sql}) VALUES ({placeholders});"
+    )
 
 
-def build_insert_with_output_sql(*, table_name: str, columns: tuple[str, ...], output_column: str) -> str:
+def build_insert_with_output_sql(
+    *, table_name: str, columns: tuple[str, ...], output_column: str
+) -> str:
     validate_static_table_name(table_name)
     column_sql = ", ".join(_quote_identifier(column) for column in columns)
     placeholders = ", ".join("?" for _ in columns)
@@ -287,7 +297,9 @@ def build_insert_with_output_sql(*, table_name: str, columns: tuple[str, ...], o
 
 def validate_static_table_name(table_name: str) -> None:
     if table_name not in _ALLOWED_TABLES:
-        raise ValueError(f"Table is not allowlisted for Promotion/Coupon repository writes: {table_name}")
+        raise ValueError(
+            f"Table is not allowlisted for Promotion/Coupon repository writes: {table_name}"
+        )
 
 
 def _quote_identifier(identifier: str) -> str:

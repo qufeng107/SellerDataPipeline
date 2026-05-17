@@ -89,9 +89,11 @@ class OrdersIngestionDryRunService:
             raw_file_path=Path(raw_file_path) if raw_file_path else None,
             preview_dir=preview_dir,
         )
-        schema_events = [
-            prepared.schema_validation_event
-        ] if prepared.schema_validation_event is not None else []
+        schema_events = (
+            [prepared.schema_validation_event]
+            if prepared.schema_validation_event is not None
+            else []
+        )
         write_jsonl(schema_events_path, schema_events)
         finished_at = _utc_now_iso()
         requires_review = prepared.requires_review
@@ -240,10 +242,7 @@ class OrdersIngestionDryRunService:
     def _build_run_output_dir(self, *, marketplace_id: str) -> Path:
         timestamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
         output_dir = (
-            self.output_root
-            / ALL_ORDERS_REPORT_TYPE
-            / _safe_path_part(marketplace_id)
-            / timestamp
+            self.output_root / ALL_ORDERS_REPORT_TYPE / _safe_path_part(marketplace_id) / timestamp
         )
         output_dir.mkdir(parents=True, exist_ok=True)
         return output_dir
@@ -257,7 +256,10 @@ def build_orders_expected_schema() -> ExpectedReportSchema:
         required_fields=ORDERS_TARGET_TABLE_SPEC.required_fields,
         allow_extra_fields=False,
         allow_empty_report=False,
-        notes="All Orders flat-file schema observed from GET_FLAT_FILE_ALL_ORDERS_DATA_BY_ORDER_DATE_GENERAL.",
+        notes=(
+            "All Orders flat-file schema observed from "
+            "GET_FLAT_FILE_ALL_ORDERS_DATA_BY_ORDER_DATE_GENERAL."
+        ),
     )
 
 
@@ -378,7 +380,10 @@ def _with_privacy_review(event: dict[str, Any]) -> dict[str, Any]:
             "severity": "warning",
             "requires_review": True,
             "notification_status": "pending",
-            "message": "Observed non-empty cpf values; Orders ingestion is blocked until privacy handling is approved.",
+            "message": (
+                "Observed non-empty cpf values; Orders ingestion is blocked "
+                "until privacy handling is approved."
+            ),
         }
     )
     return payload
@@ -392,7 +397,9 @@ def _with_duplicate_key_review(event: dict[str, Any], reason: str) -> dict[str, 
             "severity": "warning",
             "requires_review": True,
             "notification_status": "pending",
-            "message": f"Orders dry-run detected duplicate business keys requiring review: {reason}",
+            "message": (
+                f"Orders dry-run detected duplicate business keys requiring review: {reason}"
+            ),
         }
     )
     return payload

@@ -60,7 +60,9 @@ def test_orders_ingestion_dry_run_writes_preview_and_audit(tmp_path: Path) -> No
     assert audit_path.exists()
     assert schema_events_path.exists()
     preview_path = Path(result.report_result.preview_file_path or "")
-    preview_rows = [json.loads(line) for line in preview_path.read_text(encoding="utf-8").splitlines()]
+    preview_rows = [
+        json.loads(line) for line in preview_path.read_text(encoding="utf-8").splitlines()
+    ]
     assert len(preview_rows) == 1
     assert preview_rows[0]["amazon_order_id"] == "ORDER-1"
     assert preview_rows[0]["business_key_hash"]
@@ -92,7 +94,12 @@ def test_orders_ingestion_dry_run_blocks_non_empty_cpf(tmp_path: Path) -> None:
 
 def test_orders_ingestion_dry_run_blocks_schema_drift(tmp_path: Path) -> None:
     raw_root = tmp_path / "reports" / "raw"
-    _write_orders_raw(raw_root, "ATVPDKIKX0DER", "orders-report-1", "amazon-order-id\tunexpected\nORDER-1\tvalue\n")
+    _write_orders_raw(
+        raw_root,
+        "ATVPDKIKX0DER",
+        "orders-report-1",
+        "amazon-order-id\tunexpected\nORDER-1\tvalue\n",
+    )
 
     result = OrdersIngestionDryRunService(
         raw_reports_root=raw_root,

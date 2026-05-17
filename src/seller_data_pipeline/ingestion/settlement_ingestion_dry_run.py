@@ -288,7 +288,9 @@ def build_settlement_expected_schema() -> ExpectedReportSchema:
         required_fields=SETTLEMENT_TARGET_TABLE_SPEC.required_fields,
         allow_extra_fields=False,
         allow_empty_report=False,
-        notes="Settlement flat-file schema observed from GET_V2_SETTLEMENT_REPORT_DATA_FLAT_FILE_V2.",
+        notes=(
+            "Settlement flat-file schema observed from GET_V2_SETTLEMENT_REPORT_DATA_FLAT_FILE_V2."
+        ),
     )
 
 
@@ -348,7 +350,9 @@ def build_task_audit_event(
                 "marketplace_id": marketplace_id,
                 "output_dir": output_dir,
                 "report_type": SETTLEMENT_V2_REPORT_TYPE,
-                "raw_file_paths": [item.raw_file_path for item in file_results if item.raw_file_path],
+                "raw_file_paths": [
+                    item.raw_file_path for item in file_results if item.raw_file_path
+                ],
             },
             ensure_ascii=False,
             sort_keys=True,

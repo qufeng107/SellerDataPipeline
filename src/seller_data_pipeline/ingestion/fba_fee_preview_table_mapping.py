@@ -9,8 +9,10 @@ from typing import Any
 
 from seller_data_pipeline.parsers.amazon.fba_estimated_fees_parser import (
     FBA_ESTIMATED_FEES_REPORT_TYPE,
-    FBA_ESTIMATED_FEES_REQUIRED_FIELDS as PARSER_REQUIRED_FIELDS,
     FbaEstimatedFeeRecord,
+)
+from seller_data_pipeline.parsers.amazon.fba_estimated_fees_parser import (
+    FBA_ESTIMATED_FEES_REQUIRED_FIELDS as PARSER_REQUIRED_FIELDS,
 )
 
 FBA_FEE_PREVIEW_TARGET_TABLE = "amazon_fba_fee_preview"
@@ -167,9 +169,7 @@ def compute_business_key_hash(
 ) -> str:
     key_payload = {
         "target_table": target_table,
-        "business_key": {
-            field: _json_ready(row.get(field)) for field in business_key_fields
-        },
+        "business_key": {field: _json_ready(row.get(field)) for field in business_key_fields},
     }
     canonical = json.dumps(
         key_payload,

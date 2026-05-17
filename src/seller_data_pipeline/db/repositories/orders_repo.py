@@ -242,9 +242,7 @@ class NullOrdersRepo:
 
 def validate_orders_table_spec(table_spec: OrdersTargetTableSpec) -> None:
     if table_spec.target_table != ORDERS_TARGET_TABLE:
-        raise ValueError(
-            f"Orders target table is not allowlisted: {table_spec.target_table}"
-        )
+        raise ValueError(f"Orders target table is not allowlisted: {table_spec.target_table}")
     for required_column in ("source_row_index", "business_key_hash"):
         if required_column not in table_spec.table_columns:
             raise ValueError(
@@ -282,8 +280,7 @@ def build_insert_sql(*, table_name: str, columns: tuple[str, ...]) -> str:
     column_sql = ", ".join(_quote_identifier(column) for column in columns)
     placeholders = ", ".join("?" for _ in columns)
     return (
-        f"INSERT INTO dbo.{_quote_identifier(table_name)} ({column_sql}) "
-        f"VALUES ({placeholders});"
+        f"INSERT INTO dbo.{_quote_identifier(table_name)} ({column_sql}) VALUES ({placeholders});"
     )
 
 

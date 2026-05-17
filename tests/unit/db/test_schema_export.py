@@ -10,10 +10,7 @@ from seller_data_pipeline.db.schema_export import (
 def test_sql_type_label_formats_common_sql_server_types() -> None:
     assert sql_type_label({"data_type": "nvarchar", "max_length": 100}) == "NVARCHAR(100)"
     assert sql_type_label({"data_type": "nvarchar", "max_length": -1}) == "NVARCHAR(MAX)"
-    assert (
-        sql_type_label({"data_type": "decimal", "precision": 18, "scale": 4})
-        == "DECIMAL(18,4)"
-    )
+    assert sql_type_label({"data_type": "decimal", "precision": 18, "scale": 4}) == "DECIMAL(18,4)"
     assert sql_type_label({"data_type": "datetime2", "scale": 7}) == "DATETIME2(7)"
     assert sql_type_label({"data_type": "bigint"}) == "BIGINT"
 
@@ -122,7 +119,9 @@ def test_normalise_schema_snapshot_groups_columns_indexes_constraints_and_foreig
     snapshot = normalise_schema_snapshot(raw_snapshot)
 
     assert snapshot["table_count"] == 2
-    child_table = next(table for table in snapshot["tables"] if table["table_name"] == "child_table")
+    child_table = next(
+        table for table in snapshot["tables"] if table["table_name"] == "child_table"
+    )
     assert child_table["row_count"] == 3
     assert [column["column_name"] for column in child_table["columns"]] == ["id", "parent_id"]
     assert child_table["indexes"][0]["index_name"] == "IX_child_parent"

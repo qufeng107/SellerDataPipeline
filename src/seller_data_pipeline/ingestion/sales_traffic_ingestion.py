@@ -73,7 +73,9 @@ class SalesTrafficIngestionService:
                 dry_run_result=dry_run_result,
                 upsert_result=None,
                 sync_run_id=None,
-                message="Sales & Traffic ingestion requires schema review; Azure SQL write was blocked.",
+                message=(
+                    "Sales & Traffic ingestion requires schema review; Azure SQL write was blocked."
+                ),
             )
         if not execute:
             return SalesTrafficIngestionRunResult(
@@ -84,7 +86,10 @@ class SalesTrafficIngestionService:
                 dry_run_result=dry_run_result,
                 upsert_result=None,
                 sync_run_id=None,
-                message="Sales & Traffic ingestion dry-run completed; no Azure SQL writes were performed.",
+                message=(
+                    "Sales & Traffic ingestion dry-run completed; "
+                    "no Azure SQL writes were performed."
+                ),
             )
 
         started_at = _utc_now_iso()

@@ -136,9 +136,7 @@ class InventoryLedgerIngestionDryRunService:
         _write_json(output_dir / "inventory_ledger_ingestion_dry_run_result.json", result.to_dict())
         _write_json(output_dir / "task_audit_event.json", task_audit_event)
         schema_events = [
-            item.schema_validation_event
-            for item in report_results
-            if item.schema_validation_event
+            item.schema_validation_event for item in report_results if item.schema_validation_event
         ]
         write_jsonl(schema_events_path, schema_events)
         if requires_review and fail_on_review:
@@ -281,8 +279,7 @@ def build_summary_expected_schema() -> ExpectedReportSchema:
         allow_extra_fields=False,
         allow_empty_report=True,
         notes=(
-            "Inventory Ledger summary flat-file schema observed from "
-            "GET_LEDGER_SUMMARY_VIEW_DATA."
+            "Inventory Ledger summary flat-file schema observed from GET_LEDGER_SUMMARY_VIEW_DATA."
         ),
     )
 
@@ -537,8 +534,7 @@ def _utc_now_iso() -> str:
 
 def _safe_path_part(value: str) -> str:
     safe = "".join(
-        char if char.isalnum() or char in {"-", "_", "."} else "_"
-        for char in str(value)
+        char if char.isalnum() or char in {"-", "_", "."} else "_" for char in str(value)
     )
     return safe[:120] or "unknown"
 

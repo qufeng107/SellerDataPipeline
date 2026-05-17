@@ -92,10 +92,13 @@ class Settings:
     azure_sql_encrypt: str = _env("AZURE_SQL_ENCRYPT", DEFAULT_AZURE_SQL_ENCRYPT) or (
         DEFAULT_AZURE_SQL_ENCRYPT
     )
-    azure_sql_trust_server_certificate: str = _env(
-        "AZURE_SQL_TRUST_SERVER_CERTIFICATE",
-        DEFAULT_AZURE_SQL_TRUST_SERVER_CERTIFICATE,
-    ) or DEFAULT_AZURE_SQL_TRUST_SERVER_CERTIFICATE
+    azure_sql_trust_server_certificate: str = (
+        _env(
+            "AZURE_SQL_TRUST_SERVER_CERTIFICATE",
+            DEFAULT_AZURE_SQL_TRUST_SERVER_CERTIFICATE,
+        )
+        or DEFAULT_AZURE_SQL_TRUST_SERVER_CERTIFICATE
+    )
     azure_sql_connection_timeout: int = _env_int(
         "AZURE_SQL_CONNECTION_TIMEOUT",
         DEFAULT_AZURE_SQL_CONNECTION_TIMEOUT,
@@ -112,9 +115,7 @@ class Settings:
         "AZURE_SQL_CONNECT_RETRY_BACKOFF",
         DEFAULT_AZURE_SQL_CONNECT_RETRY_BACKOFF,
     )
-    azure_sql_managed_identity_client_id: str | None = _env(
-        "AZURE_SQL_MANAGED_IDENTITY_CLIENT_ID"
-    )
+    azure_sql_managed_identity_client_id: str | None = _env("AZURE_SQL_MANAGED_IDENTITY_CLIENT_ID")
 
     amazon_region: str = _env("AMAZON_REGION", "NA") or "NA"
     amazon_marketplace_id: str | None = _env("AMAZON_MARKETPLACE_ID")

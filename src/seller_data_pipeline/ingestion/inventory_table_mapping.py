@@ -133,9 +133,7 @@ def compute_business_key_hash(
 ) -> str:
     key_payload = {
         "target_table": target_table,
-        "business_key": {
-            field: _json_ready(row.get(field)) for field in business_key_fields
-        },
+        "business_key": {field: _json_ready(row.get(field)) for field in business_key_fields},
     }
     canonical = json.dumps(
         key_payload,

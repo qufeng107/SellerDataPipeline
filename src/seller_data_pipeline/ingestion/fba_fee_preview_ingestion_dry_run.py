@@ -89,9 +89,11 @@ class FbaFeePreviewIngestionDryRunService:
             raw_file_path=Path(raw_file_path) if raw_file_path else None,
             preview_dir=preview_dir,
         )
-        schema_events = [
-            prepared.schema_validation_event
-        ] if prepared.schema_validation_event is not None else []
+        schema_events = (
+            [prepared.schema_validation_event]
+            if prepared.schema_validation_event is not None
+            else []
+        )
         write_jsonl(schema_events_path, schema_events)
         finished_at = _utc_now_iso()
         requires_review = prepared.requires_review

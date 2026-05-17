@@ -80,7 +80,9 @@ class SettlementIngestionService:
                 dry_run_result=dry_run_result,
                 upsert_result=None,
                 sync_run_id=None,
-                message="Settlement ingestion dry-run completed; no Azure SQL writes were performed.",
+                message=(
+                    "Settlement ingestion dry-run completed; no Azure SQL writes were performed."
+                ),
             )
 
         started_at = _utc_now_iso()
@@ -144,7 +146,9 @@ class SettlementIngestionService:
         dry_run_result: SettlementIngestionDryRunResult,
         source_run_id: int,
     ) -> SettlementUpsertRunResult:
-        rows = read_jsonl(dry_run_result.preview_file_path) if dry_run_result.preview_file_path else []
+        rows = (
+            read_jsonl(dry_run_result.preview_file_path) if dry_run_result.preview_file_path else []
+        )
         table_result = repo.upsert_settlement_transaction_rows(
             rows=rows,
             source_run_id=source_run_id,

@@ -402,7 +402,7 @@ tests/unit/db/test_fba_fee_preview_repo.py
 |---|---|---|---|
 | 2026-05-17 | 完成 FBA Fee Preview 入库功能设计第一版 | 本文档 | 随后按流程准备 009 migration。 |
 | 2026-05-17 | 准备 `009_add_fba_fee_preview_business_key.sql` | `sql/migrations/009_add_fba_fee_preview_business_key.sql` | 用户已本地 dry-run / execute 并导出 live schema。 |
-| 2026-05-17 | 开发 FBA Fee Preview 专用 ingestion 并完成 dry-run 验证 | `scripts/ingest_fba_fee_preview_report.py` 等 | `prepared_rows=8 requires_review=False`；待 execute 和幂等验证。 |
+| 2026-05-17 | 完成 FBA Fee Preview 专用 ingestion execute 与幂等验证 | `scripts/ingest_fba_fee_preview_report.py` 等 | 首次 sync_run_id=15 inserted=8；第二次 sync_run_id=16 updated=8。 |
 
 ## 18. 弃置记录
 

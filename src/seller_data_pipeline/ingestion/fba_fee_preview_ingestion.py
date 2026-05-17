@@ -70,8 +70,7 @@ class FbaFeePreviewIngestionService:
                 upsert_result=None,
                 sync_run_id=None,
                 message=(
-                    "FBA Fee Preview ingestion requires schema review; "
-                    "Azure SQL write was blocked."
+                    "FBA Fee Preview ingestion requires schema review; Azure SQL write was blocked."
                 ),
             )
         if not execute:

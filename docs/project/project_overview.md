@@ -129,29 +129,27 @@ tests/
 | SP-API FBA Reimbursements normalized ingestion | Implemented | FBA Reimbursements dry-run、execute、重复 execute 幂等性已通过：首次 inserted=19，第二次 updated=19。 |
 | SP-API FBA Fee Preview normalized ingestion | Implemented | FBA Fee Preview dry-run、execute、重复 execute 幂等性已通过：首次 inserted=8，第二次 updated=8。 |
 | SP-API Promotion/Coupon normalized ingestion | Implemented | Promotion/Coupon dry-run、execute、重复 execute 幂等性已通过：首次 inserted=10，第二次 updated=10。 |
-| SP-API Inventory Ledger normalized ingestion | Implementing | Inventory Ledger summary/detail 专用 dry-run 已通过：150 + 207 rows，待 execute/幂等验证。 |
+| SP-API Inventory Ledger normalized ingestion | Implemented | Inventory Ledger summary/detail 专用 dry-run 已通过：150 + 207 rows，已完成 execute/幂等验证。 |
 | 周报/月报/清仓分析 | 待设计/待开发 | 依赖 normalized 数据沉淀后再做。 |
 | Azure Container Apps Jobs | 待开发 | 本地闭环稳定后再上云。 |
 
 ## 8. 下一阶段主线
 
-下一阶段不应先做自动任务或报表，而应完成最后一条库存审计补充链路 Inventory Ledger execute/幂等验证。Listing、Inventory、Sales & Traffic、Settlement、Orders、FBA Reimbursements、FBA Fee Preview、Promotion/Coupon 已完成，下一条主线是 Inventory Ledger：
+核心 normalized ingestion 与两组运营/库存补充数据已经完成真实 execute 和幂等验证。下一阶段不应先上自动任务，而应进入利润核算设计：
 
 ```text
-GET_LEDGER_SUMMARY_VIEW_DATA / GET_LEDGER_DETAIL_VIEW_DATA
-  -> feature_inventory_ledger_ingestion.md 已建立
-  -> amazon_inventory_ledger_summary_daily / amazon_inventory_ledger_detail 已建表
-  -> 011_add_inventory_ledger_business_keys.sql 已执行，live schema 已导出
-  -> 专用 dry-run/schema guard/repository/CLI 已开发并通过 dry-run
-  -> execute / 幂等验证待用户执行
+feature_profit_calculation.md
+  -> 定义收入、退款、广告费、促销折扣、FBA 费用、赔偿、货款成本、头程成本等口径
+  -> 确认 SKU / 周 / 月维度的汇总规则
+  -> 判断是否需要新增 profit fact 表、视图或报表输出表
 ```
 
 建议顺序：
 
-1. 完成 Inventory Ledger execute 与幂等验证
-2. 通过后将 Inventory Ledger 标记为 Implemented
-3. 开始利润核算功能设计
-4. 做财务利润计算、周报/月报、清仓决策支持。
+1. 编写 `docs/features/feature_profit_calculation.md`。
+2. 设计 SKU 成本与头程/海运成本导入方式。
+3. 设计利润核算输出表或视图。
+4. 开发财务利润计算、周报/月报、清仓决策支持。
 
 ## 9. 文档体系关系
 

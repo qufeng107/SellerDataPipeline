@@ -84,7 +84,9 @@ class InventoryIngestionService:
                 dry_run_result=dry_run_result,
                 upsert_result=None,
                 sync_run_id=None,
-                message="Inventory ingestion dry-run completed; no Azure SQL writes were performed.",
+                message=(
+                    "Inventory ingestion dry-run completed; no Azure SQL writes were performed."
+                ),
             )
 
         started_at = _utc_now_iso()

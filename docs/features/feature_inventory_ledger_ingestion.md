@@ -42,7 +42,7 @@ GET_LEDGER_DETAIL_VIEW_DATA
 | 单元测试 | 已新增：mapping / dry-run / repo |
 | 文档同步 | 本设计已完成第一版 |
 
-功能整体状态：`Implementing`。`011` 已执行；Promotion/Coupon 已完成验收；Inventory Ledger 专用 dry-run / repository / CLI 已完成本地验证，下一步由用户执行 dry-run、首次 execute 与第二次 execute 幂等性验证。
+功能整体状态：`Implemented`。`011` 已执行；Promotion/Coupon 已完成验收；Inventory Ledger 专用 dry-run / repository / CLI 已完成本地验证，已完成用户 dry-run、首次 execute 与第二次 execute 幂等性验证。
 
 ## 3. 业务目标
 
@@ -417,3 +417,12 @@ python scripts/ingest_inventory_ledger_reports.py --marketplace-id ATVPDKIKX0DER
 ```
 
 预期首次 execute 插入 357 行；第二次 execute 更新 357 行且不重复插入。
+
+
+## 13. Execute 验收结果
+
+```text
+Dry-run: prepared_rows=357 requires_review=False
+首次 execute: sync_run_id=19, attempted=357 inserted=357 updated=0 written=357 skipped=0
+第二次 execute: sync_run_id=20, attempted=357 inserted=0 updated=357 written=357 skipped=0
+```

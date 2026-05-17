@@ -77,7 +77,9 @@ def test_listing_repo_upsert_counts_merge_actions() -> None:
     assert result.updated_rows == 1
     assert result.written_rows == 2
     assert len(cursor.executed) == 2
-    assert cursor.executed[0][1][LISTING_TARGET_TABLE_SPEC.table_columns.index("source_run_id")] == 42
+    assert (
+        cursor.executed[0][1][LISTING_TARGET_TABLE_SPEC.table_columns.index("source_run_id")] == 42
+    )
 
 
 def test_listing_repo_insert_and_update_sync_run_log() -> None:

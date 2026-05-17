@@ -92,9 +92,11 @@ class InventoryIngestionDryRunService:
             currency=currency,
             preview_dir=preview_dir,
         )
-        schema_events = [
-            prepared.schema_validation_event
-        ] if prepared.schema_validation_event is not None else []
+        schema_events = (
+            [prepared.schema_validation_event]
+            if prepared.schema_validation_event is not None
+            else []
+        )
         write_jsonl(schema_events_path, schema_events)
         finished_at = _utc_now_iso()
         requires_review = prepared.requires_review
@@ -231,10 +233,7 @@ class InventoryIngestionDryRunService:
     def _build_run_output_dir(self, *, marketplace_id: str) -> Path:
         timestamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
         output_dir = (
-            self.output_root
-            / INVENTORY_REPORT_TYPE
-            / _safe_path_part(marketplace_id)
-            / timestamp
+            self.output_root / INVENTORY_REPORT_TYPE / _safe_path_part(marketplace_id) / timestamp
         )
         output_dir.mkdir(parents=True, exist_ok=True)
         return output_dir
@@ -248,7 +247,9 @@ def build_inventory_expected_schema() -> ExpectedReportSchema:
         required_fields=INVENTORY_TARGET_TABLE_SPEC.required_fields,
         allow_extra_fields=False,
         allow_empty_report=True,
-        notes="FBA inventory flat-file schema observed from GET_FBA_MYI_UNSUPPRESSED_INVENTORY_DATA.",
+        notes=(
+            "FBA inventory flat-file schema observed from GET_FBA_MYI_UNSUPPRESSED_INVENTORY_DATA."
+        ),
     )
 
 

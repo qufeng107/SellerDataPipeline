@@ -88,10 +88,14 @@ class SalesTrafficIngestionDryRunService:
         preview_dir = run_output_dir / "previews"
         schema_events_path = run_output_dir / "schema_validation_events.jsonl"
 
-        path = Path(raw_file_path) if raw_file_path else find_latest_sp_api_raw_file(
-            raw_reports_root=self.raw_reports_root,
-            marketplace_id=marketplace_id,
-            report_type=SALES_AND_TRAFFIC_REPORT_TYPE,
+        path = (
+            Path(raw_file_path)
+            if raw_file_path
+            else find_latest_sp_api_raw_file(
+                raw_reports_root=self.raw_reports_root,
+                marketplace_id=marketplace_id,
+                report_type=SALES_AND_TRAFFIC_REPORT_TYPE,
+            )
         )
         if path is None:
             return self._build_missing_file_result(
@@ -153,7 +157,9 @@ class SalesTrafficIngestionDryRunService:
                     report_type=SALES_AND_TRAFFIC_REPORT_TYPE,
                     target_table=SALES_TRAFFIC_DAILY_TABLE_SPEC.target_table,
                     raw_file_path=str(path),
-                    schema_validation_status=str(schema_event.get("validation_status") or schema_result.status),
+                    schema_validation_status=str(
+                        schema_event.get("validation_status") or schema_result.status
+                    ),
                     requires_review=True,
                     skipped=True,
                     skip_reason="schema_validation_requires_review",
@@ -165,7 +171,9 @@ class SalesTrafficIngestionDryRunService:
                     report_type=SALES_AND_TRAFFIC_REPORT_TYPE,
                     target_table=SALES_TRAFFIC_ASIN_TABLE_SPEC.target_table,
                     raw_file_path=str(path),
-                    schema_validation_status=str(schema_event.get("validation_status") or schema_result.status),
+                    schema_validation_status=str(
+                        schema_event.get("validation_status") or schema_result.status
+                    ),
                     requires_review=True,
                     skipped=True,
                     skip_reason="schema_validation_requires_review",
@@ -181,7 +189,9 @@ class SalesTrafficIngestionDryRunService:
                 raw_file_path=str(path),
                 report_start_date=report_start_date,
                 report_end_date=report_end_date,
-                schema_validation_status=str(schema_event.get("validation_status") or schema_result.status),
+                schema_validation_status=str(
+                    schema_event.get("validation_status") or schema_result.status
+                ),
                 requires_review=True,
                 table_results=table_results,
                 schema_validation_event=schema_event,
@@ -194,8 +204,12 @@ class SalesTrafficIngestionDryRunService:
         asin_rows = [
             map_sales_traffic_asin_record_to_table_row(record) for record in parsed.by_asin
         ]
-        daily_preview_path = preview_dir / f"{SALES_TRAFFIC_DAILY_TABLE_SPEC.target_table}.preview.jsonl"
-        asin_preview_path = preview_dir / f"{SALES_TRAFFIC_ASIN_TABLE_SPEC.target_table}.preview.jsonl"
+        daily_preview_path = (
+            preview_dir / f"{SALES_TRAFFIC_DAILY_TABLE_SPEC.target_table}.preview.jsonl"
+        )
+        asin_preview_path = (
+            preview_dir / f"{SALES_TRAFFIC_ASIN_TABLE_SPEC.target_table}.preview.jsonl"
+        )
         write_jsonl(daily_preview_path, daily_rows)
         write_jsonl(asin_preview_path, asin_rows)
         table_results = (
@@ -203,7 +217,9 @@ class SalesTrafficIngestionDryRunService:
                 report_type=SALES_AND_TRAFFIC_REPORT_TYPE,
                 target_table=SALES_TRAFFIC_DAILY_TABLE_SPEC.target_table,
                 raw_file_path=str(path),
-                schema_validation_status=str(schema_event.get("validation_status") or schema_result.status),
+                schema_validation_status=str(
+                    schema_event.get("validation_status") or schema_result.status
+                ),
                 requires_review=False,
                 skipped=False,
                 skip_reason=None,
@@ -215,7 +231,9 @@ class SalesTrafficIngestionDryRunService:
                 report_type=SALES_AND_TRAFFIC_REPORT_TYPE,
                 target_table=SALES_TRAFFIC_ASIN_TABLE_SPEC.target_table,
                 raw_file_path=str(path),
-                schema_validation_status=str(schema_event.get("validation_status") or schema_result.status),
+                schema_validation_status=str(
+                    schema_event.get("validation_status") or schema_result.status
+                ),
                 requires_review=False,
                 skipped=False,
                 skip_reason=None,
@@ -231,7 +249,9 @@ class SalesTrafficIngestionDryRunService:
             raw_file_path=str(path),
             report_start_date=report_start_date,
             report_end_date=report_end_date,
-            schema_validation_status=str(schema_event.get("validation_status") or schema_result.status),
+            schema_validation_status=str(
+                schema_event.get("validation_status") or schema_result.status
+            ),
             requires_review=False,
             table_results=table_results,
             schema_validation_event=schema_event,
@@ -376,10 +396,7 @@ def find_latest_sp_api_raw_file(
     if not root.exists():
         return None
     candidates = [
-        path
-        for pattern in ("*.txt", "*.json")
-        for path in root.rglob(pattern)
-        if path.is_file()
+        path for pattern in ("*.txt", "*.json") for path in root.rglob(pattern) if path.is_file()
     ]
     if not candidates:
         return None
@@ -439,7 +456,6 @@ def build_task_audit_event(
         "error_type": None,
         "error_detail": None,
     }
-
 
 
 def _validate_supported_report_options(report_specification: dict[str, Any]) -> str | None:

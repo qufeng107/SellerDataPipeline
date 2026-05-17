@@ -87,13 +87,16 @@ def test_resolve_ads_raw_file_latest(tmp_path: Path) -> None:
     os.utime(old_file, (1_700_000_000, 1_700_000_000))
     os.utime(new_file, (1_700_000_100, 1_700_000_100))
 
-    assert analyze_ads_raw_report._resolve_raw_file_path(
-        raw_file_arg=None,
-        latest=True,
-        raw_reports_root=str(root),
-        profile_id="3917953989967300",
-        report_type_id="spCampaigns",
-    ) == new_file
+    assert (
+        analyze_ads_raw_report._resolve_raw_file_path(
+            raw_file_arg=None,
+            latest=True,
+            raw_reports_root=str(root),
+            profile_id="3917953989967300",
+            report_type_id="spCampaigns",
+        )
+        == new_file
+    )
 
 
 def test_resolve_ads_raw_file_requires_explicit_mode(tmp_path: Path) -> None:

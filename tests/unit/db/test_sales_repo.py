@@ -97,7 +97,10 @@ def test_sales_repo_upsert_counts_merge_actions_for_daily_and_asin() -> None:
     assert asin_result.attempted_rows == 1
     assert asin_result.inserted_rows == 1
     assert len(cursor.executed) == 3
-    assert cursor.executed[0][1][SALES_TRAFFIC_DAILY_TABLE_SPEC.table_columns.index("source_run_id")] == 42
+    assert (
+        cursor.executed[0][1][SALES_TRAFFIC_DAILY_TABLE_SPEC.table_columns.index("source_run_id")]
+        == 42
+    )
 
 
 def test_sales_repo_insert_and_update_sync_run_log() -> None:

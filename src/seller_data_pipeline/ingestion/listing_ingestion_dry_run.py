@@ -92,9 +92,11 @@ class ListingIngestionDryRunService:
             currency=currency,
             preview_dir=preview_dir,
         )
-        schema_events = [
-            prepared.schema_validation_event
-        ] if prepared.schema_validation_event is not None else []
+        schema_events = (
+            [prepared.schema_validation_event]
+            if prepared.schema_validation_event is not None
+            else []
+        )
         write_jsonl(schema_events_path, schema_events)
         finished_at = _utc_now_iso()
         requires_review = prepared.requires_review
@@ -231,10 +233,7 @@ class ListingIngestionDryRunService:
     def _build_run_output_dir(self, *, marketplace_id: str) -> Path:
         timestamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
         output_dir = (
-            self.output_root
-            / LISTING_REPORT_TYPE
-            / _safe_path_part(marketplace_id)
-            / timestamp
+            self.output_root / LISTING_REPORT_TYPE / _safe_path_part(marketplace_id) / timestamp
         )
         output_dir.mkdir(parents=True, exist_ok=True)
         return output_dir

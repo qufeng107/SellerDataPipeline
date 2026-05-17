@@ -152,8 +152,7 @@ class InventoryLedgerRepo:
             payload = dict(event)
             payload["source_run_id"] = source_run_id
             params = tuple(
-                _db_value(payload.get(column))
-                for column in _SCHEMA_VALIDATION_EVENT_COLUMNS
+                _db_value(payload.get(column)) for column in _SCHEMA_VALIDATION_EVENT_COLUMNS
             )
             cursor.execute(sql, params)
             inserted += 1
@@ -240,8 +239,7 @@ class NullInventoryLedgerRepo:
 def validate_inventory_ledger_table_spec(table_spec: InventoryLedgerTargetTableSpec) -> None:
     if table_spec.target_table not in _ALLOWED_TABLES:
         raise ValueError(
-            "Inventory Ledger target table is not allowlisted: "
-            f"{table_spec.target_table}"
+            f"Inventory Ledger target table is not allowlisted: {table_spec.target_table}"
         )
     for required_column in ("source_row_index", "business_key_hash"):
         if required_column not in table_spec.table_columns:
@@ -280,8 +278,7 @@ def build_insert_sql(*, table_name: str, columns: tuple[str, ...]) -> str:
     column_sql = ", ".join(_quote_identifier(column) for column in columns)
     placeholders = ", ".join("?" for _ in columns)
     return (
-        f"INSERT INTO dbo.{_quote_identifier(table_name)} "
-        f"({column_sql}) VALUES ({placeholders});"
+        f"INSERT INTO dbo.{_quote_identifier(table_name)} ({column_sql}) VALUES ({placeholders});"
     )
 
 
@@ -304,8 +301,7 @@ def build_insert_with_output_sql(
 def validate_static_table_name(table_name: str) -> None:
     if table_name not in _ALLOWED_TABLES:
         raise ValueError(
-            "Table is not allowlisted for Inventory Ledger repository writes: "
-            f"{table_name}"
+            f"Table is not allowlisted for Inventory Ledger repository writes: {table_name}"
         )
 
 

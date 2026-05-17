@@ -74,7 +74,6 @@ def test_collect_ready_report_downloads_raw_file_and_updates_manifests(tmp_path:
     assert raw_manifest["preview"]["sample_rows"] == [{"sku": "ABC", "price": "9.99"}]
 
 
-
 class FakeFatalSpApiClient:
     def get_report(self, *, report_id: str) -> dict[str, Any]:
         return {

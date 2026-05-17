@@ -60,7 +60,9 @@ def test_settlement_ingestion_dry_run_writes_preview_and_audit(tmp_path: Path) -
     assert audit_path.exists()
     assert schema_events_path.exists()
     preview_path = Path(result.preview_file_path or "")
-    preview_rows = [json.loads(line) for line in preview_path.read_text(encoding="utf-8").splitlines()]
+    preview_rows = [
+        json.loads(line) for line in preview_path.read_text(encoding="utf-8").splitlines()
+    ]
     assert len(preview_rows) == 2
     assert preview_rows[0]["is_settlement_summary"] is True
     assert preview_rows[1]["is_settlement_summary"] is False

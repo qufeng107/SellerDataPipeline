@@ -218,8 +218,12 @@ class PromotionCouponIngestionDryRunService:
                 PROMOTION_PRODUCT_TARGET_TABLE_SPEC.target_table: product_rows,
             },
             table_specs={
-                PROMOTION_PERFORMANCE_TARGET_TABLE_SPEC.target_table: PROMOTION_PERFORMANCE_TARGET_TABLE_SPEC,
-                PROMOTION_PRODUCT_TARGET_TABLE_SPEC.target_table: PROMOTION_PRODUCT_TARGET_TABLE_SPEC,
+                PROMOTION_PERFORMANCE_TARGET_TABLE_SPEC.target_table: (
+                    PROMOTION_PERFORMANCE_TARGET_TABLE_SPEC
+                ),
+                PROMOTION_PRODUCT_TARGET_TABLE_SPEC.target_table: (
+                    PROMOTION_PRODUCT_TARGET_TABLE_SPEC
+                ),
             },
             preview_dir=preview_dir,
         )
@@ -293,7 +297,9 @@ class PromotionCouponIngestionDryRunService:
                 COUPON_ASIN_TARGET_TABLE_SPEC.target_table: asin_rows,
             },
             table_specs={
-                COUPON_PERFORMANCE_TARGET_TABLE_SPEC.target_table: COUPON_PERFORMANCE_TARGET_TABLE_SPEC,
+                COUPON_PERFORMANCE_TARGET_TABLE_SPEC.target_table: (
+                    COUPON_PERFORMANCE_TARGET_TABLE_SPEC
+                ),
                 COUPON_ASIN_TARGET_TABLE_SPEC.target_table: COUPON_ASIN_TARGET_TABLE_SPEC,
             },
             preview_dir=preview_dir,
@@ -301,7 +307,9 @@ class PromotionCouponIngestionDryRunService:
 
     def _build_run_output_dir(self, *, marketplace_id: str) -> Path:
         timestamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
-        output_dir = self.output_root / "PROMOTION_COUPON" / _safe_path_part(marketplace_id) / timestamp
+        output_dir = (
+            self.output_root / "PROMOTION_COUPON" / _safe_path_part(marketplace_id) / timestamp
+        )
         output_dir.mkdir(parents=True, exist_ok=True)
         return output_dir
 
@@ -427,7 +435,9 @@ def _validate_raw_schema(
         expected_schema=expected_schema,
     )
     event = build_schema_validation_event_row(schema_result)
-    requires_review = schema_result.status in BLOCKING_SCHEMA_STATUSES or schema_result.requires_review
+    requires_review = (
+        schema_result.status in BLOCKING_SCHEMA_STATUSES or schema_result.requires_review
+    )
     return event, requires_review, schema_result.status
 
 
@@ -455,7 +465,9 @@ def _write_previews_or_review(
                 prepared_row_count=0,
                 table_row_counts={},
                 preview_file_paths={},
-                schema_validation_event=_with_duplicate_key_review(schema_event, table_name, duplicate_issue),
+                schema_validation_event=_with_duplicate_key_review(
+                    schema_event, table_name, duplicate_issue
+                ),
             )
     preview_paths: dict[str, str] = {}
     table_row_counts: dict[str, int] = {}
@@ -505,7 +517,9 @@ def _skipped_result(
     )
 
 
-def _with_duplicate_key_review(event: dict[str, Any], table_name: str, reason: str) -> dict[str, Any]:
+def _with_duplicate_key_review(
+    event: dict[str, Any], table_name: str, reason: str
+) -> dict[str, Any]:
     payload = dict(event)
     payload.update(
         {
@@ -541,7 +555,9 @@ def _utc_now_iso() -> str:
 
 
 def _safe_path_part(value: str) -> str:
-    safe = "".join(char if char.isalnum() or char in {"-", "_", "."} else "_" for char in str(value))
+    safe = "".join(
+        char if char.isalnum() or char in {"-", "_", "."} else "_" for char in str(value)
+    )
     return safe[:120] or "unknown"
 
 

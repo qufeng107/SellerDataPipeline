@@ -9,8 +9,10 @@ from typing import Any
 
 from seller_data_pipeline.parsers.amazon.fba_reimbursements_parser import (
     FBA_REIMBURSEMENTS_REPORT_TYPE,
-    FBA_REIMBURSEMENTS_REQUIRED_FIELDS as PARSER_REQUIRED_FIELDS,
     FbaReimbursementRecord,
+)
+from seller_data_pipeline.parsers.amazon.fba_reimbursements_parser import (
+    FBA_REIMBURSEMENTS_REQUIRED_FIELDS as PARSER_REQUIRED_FIELDS,
 )
 
 FBA_REIMBURSEMENTS_TARGET_TABLE = "amazon_fba_reimbursement"
@@ -34,9 +36,7 @@ FBA_REIMBURSEMENTS_EXPECTED_FIELDS: tuple[str, ...] = (
     "original-reimbursement-id",
     "original-reimbursement-type",
 )
-FBA_REIMBURSEMENTS_REQUIRED_FIELDS: tuple[str, ...] = tuple(
-    sorted(PARSER_REQUIRED_FIELDS)
-)
+FBA_REIMBURSEMENTS_REQUIRED_FIELDS: tuple[str, ...] = tuple(sorted(PARSER_REQUIRED_FIELDS))
 
 
 @dataclass(frozen=True)
@@ -142,9 +142,7 @@ def compute_business_key_hash(
 ) -> str:
     key_payload = {
         "target_table": target_table,
-        "business_key": {
-            field: _json_ready(row.get(field)) for field in business_key_fields
-        },
+        "business_key": {field: _json_ready(row.get(field)) for field in business_key_fields},
     }
     canonical = json.dumps(
         key_payload,

@@ -112,7 +112,9 @@ SALES_TRAFFIC_PAYLOAD = {
 }
 
 
-def _write_sales_raw(root: Path, marketplace_id: str, report_id: str, payload: dict = SALES_TRAFFIC_PAYLOAD) -> Path:
+def _write_sales_raw(
+    root: Path, marketplace_id: str, report_id: str, payload: dict = SALES_TRAFFIC_PAYLOAD
+) -> Path:
     path = (
         root
         / "amazon"
@@ -145,8 +147,14 @@ def test_sales_traffic_dry_run_writes_two_previews_and_audit(tmp_path: Path) -> 
     assert Path(result.output_dir, "sales_traffic_ingestion_summary.json").exists()
     assert Path(result.output_dir, "task_audit_event.json").exists()
     assert Path(result.output_dir, "schema_validation_events.jsonl").exists()
-    daily_result = next(item for item in result.table_results if item.target_table == "amazon_sales_traffic_daily")
-    asin_result = next(item for item in result.table_results if item.target_table == "amazon_sales_traffic_asin_daily")
+    daily_result = next(
+        item for item in result.table_results if item.target_table == "amazon_sales_traffic_daily"
+    )
+    asin_result = next(
+        item
+        for item in result.table_results
+        if item.target_table == "amazon_sales_traffic_asin_daily"
+    )
     daily_row = json.loads(Path(daily_result.preview_file_path or "").read_text().splitlines()[0])
     asin_row = json.loads(Path(asin_result.preview_file_path or "").read_text().splitlines()[0])
     assert daily_row["marketplace_id"] == "ATVPDKIKX0DER"
@@ -173,5 +181,7 @@ def test_sales_traffic_dry_run_blocks_schema_drift(tmp_path: Path) -> None:
     assert result.status == "requires_review"
     assert result.requires_review is True
     assert all(item.skipped for item in result.table_results)
-    assert all(item.skip_reason == "schema_validation_requires_review" for item in result.table_results)
+    assert all(
+        item.skip_reason == "schema_validation_requires_review" for item in result.table_results
+    )
     assert result.prepared_row_count == 0

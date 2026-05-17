@@ -160,9 +160,7 @@ class FbaInventoryParser:
                         row.get("afn-inbound-receiving-quantity")
                     ),
                     afn_researching_quantity=_parse_int(row.get("afn-researching-quantity")),
-                    afn_reserved_future_supply=_parse_int(
-                        row.get("afn-reserved-future-supply")
-                    ),
+                    afn_reserved_future_supply=_parse_int(row.get("afn-reserved-future-supply")),
                     afn_future_supply_buyable=_parse_int(row.get("afn-future-supply-buyable")),
                     store=_empty_to_none(row.get("store")),
                     source_system="sp_api_reports",

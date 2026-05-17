@@ -282,8 +282,7 @@ def build_insert_sql(*, table_name: str, columns: tuple[str, ...]) -> str:
     column_sql = ", ".join(_quote_identifier(column) for column in columns)
     placeholders = ", ".join("?" for _ in columns)
     return (
-        f"INSERT INTO dbo.{_quote_identifier(table_name)} ({column_sql}) "
-        f"VALUES ({placeholders});"
+        f"INSERT INTO dbo.{_quote_identifier(table_name)} ({column_sql}) VALUES ({placeholders});"
     )
 
 
