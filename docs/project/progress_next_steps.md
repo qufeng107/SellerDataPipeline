@@ -1,12 +1,12 @@
 # SellerDataPipeline 当前进展与下一步计划
 
 > 更新时间：2026-05-17  
-> 当前版本：v1.46 promotion/coupon and inventory ledger design/migrations prepared  
+> 当前版本：v1.48 promotion/coupon implemented; inventory ledger dry-run implemented  
 > 文档定位：记录项目真实进展、已完成里程碑、当前非阻塞问题和下一步开发顺序。本文档只记录真实状态和近期计划，不承载详细功能设计。
 
 ## 1. 当前一句话状态
 
-项目已经从“取样和数据库设计阶段”进入 **SP-API normalized ingestion 扩展阶段**。当前已完成并通过真实 Azure SQL execute + 第二次 execute 幂等性验证的链路包括：
+项目已经完成核心 SP-API / Ads normalized ingestion 底座，并进入 **运营补充数据收尾阶段**。当前已完成并通过真实 Azure SQL execute + 第二次 execute 幂等性验证的链路包括：
 
 ```text
 Amazon Ads SP reports -> 4 张 Ads daily 表
@@ -17,38 +17,36 @@ GET_V2_SETTLEMENT_REPORT_DATA_FLAT_FILE_V2 -> amazon_settlement_transaction
 GET_FLAT_FILE_ALL_ORDERS_DATA_BY_ORDER_DATE_GENERAL -> amazon_order_item
 GET_FBA_REIMBURSEMENTS_DATA -> amazon_fba_reimbursement
 GET_FBA_ESTIMATED_FBA_FEES_TXT_DATA -> amazon_fba_fee_preview
+GET_PROMOTION_PERFORMANCE_REPORT / GET_COUPON_PERFORMANCE_REPORT -> 4 张 promotion/coupon 表
 ```
 
-最新 FBA Reimbursements 验收结果：
+最新 Promotion/Coupon 验收结果：
 
 ```text
-Dry-run: prepared_rows=19 requires_review=False
-首次 execute: sync_run_id=13, attempted=19 inserted=19 updated=0 written=19 skipped=0
-第二次 execute: sync_run_id=14, attempted=19 inserted=0 updated=19 written=19 skipped=0
+Dry-run: prepared_rows=10 requires_review=False
+首次 execute: sync_run_id=17, attempted=10 inserted=10 updated=0 written=10 skipped=0
+第二次 execute: sync_run_id=18, attempted=10 inserted=0 updated=10 written=10 skipped=0
 ```
 
 当前基础设施状态：
 
 ```text
-001/002/003/004/005/006/007/008/009 migration 已执行成功
-FBA Reimbursements 专用 ingestion 已完成 execute/幂等验证
+001/002/003/004/005/006/007/008/009/010/011 migration 已执行成功
 FBA Fee Preview 专用 ingestion 已完成 execute/幂等验证：sync_run_id=15 inserted=8；sync_run_id=16 updated=8
+Promotion/Coupon 专用 ingestion 已完成 execute/幂等验证：sync_run_id=17 inserted=10；sync_run_id=18 updated=10
+Inventory Ledger 专用 ingestion 已完成代码开发和 dry-run 验证：prepared_rows=357 requires_review=False
 Azure SQL connection warm-up retry 已启用，默认 max_attempts=6
 scripts/export_database_schema_spec.py 已可导出 live schema snapshot
 ```
 
-下一条主线切换到 FBA Fee Preview normalized ingestion：
+下一条主线切换到 Inventory Ledger execute 验证：
 
 ```text
-GET_PROMOTION_PERFORMANCE_REPORT / GET_COUPON_PERFORMANCE_REPORT
-  -> docs/features/feature_promotion_coupon_ingestion.md 已建立
-  -> amazon_promotion_performance / amazon_promotion_product_performance / amazon_coupon_performance / amazon_coupon_asin 已建表
-  -> 010_add_promotion_coupon_business_keys.sql 已准备，待 dry-run/execute/live schema export
-
 GET_LEDGER_SUMMARY_VIEW_DATA / GET_LEDGER_DETAIL_VIEW_DATA
   -> docs/features/feature_inventory_ledger_ingestion.md 已建立
   -> amazon_inventory_ledger_summary_daily / amazon_inventory_ledger_detail 已建表
-  -> 011_add_inventory_ledger_business_keys.sql 已准备，待 dry-run/execute/live schema export
+  -> 011_add_inventory_ledger_business_keys.sql 已执行成功：dry-run 4 batches，execute 4/4，live schema export after_011_inventory_ledger_business_keys
+  -> scripts/ingest_inventory_ledger_reports.py 已开发并通过 dry-run：150 summary rows + 207 detail rows
 ```
 
 ## 2. 已完成里程碑

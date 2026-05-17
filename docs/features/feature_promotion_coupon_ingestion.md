@@ -1,9 +1,9 @@
 # Feature: Promotion and Coupon Performance Ingestion
 
-> 文档状态：Planned; design completed; 010 migration prepared but not executed  
+> 文档状态：Implemented; 010 executed; dry-run, Azure SQL execute and idempotency verified  
 > 负责人：AI / 待定  
 > 更新时间：2026-05-17  
-> 功能状态：Planned  
+> 功能状态：Implemented  
 > 相关数据接入文档：`docs/data_access/sp_api_reports_catalog.md`  
 > 相关数据库 spec：`docs/database/database_current_schema_spec.md`
 
@@ -35,16 +35,16 @@ GET_COUPON_PERFORMANCE_REPORT
 | 数据源取样 | 已完成；Promotion 1 个 promotion / 3 个 includedProducts，Coupon 2 个 coupons / 4 个 coupon-ASIN |
 | 目标表 | 已存在于 `001_create_core_tables.sql`：4 张 promotion/coupon 表 |
 | Parser | 已存在：`src/seller_data_pipeline/parsers/amazon/promotion_coupon_parser.py` |
-| Migration | 已准备：`010_add_promotion_coupon_business_keys.sql`；尚未在 Azure SQL 执行 |
-| Dry-run preview | 待开发 |
-| Schema guard | 待开发 |
-| Repository/upsert | 待开发 |
-| Azure SQL execute | 待开发后验证 |
-| 幂等性验证 | 待开发后验证 |
-| 单元测试 | 待新增 |
+| Migration | 已执行：`010_add_promotion_coupon_business_keys.sql`，8/8 batches；live schema export `after_010_promotion_coupon_business_keys` 已生成 |
+| Dry-run preview | 已开发；本地验证 prepared_rows=10 |
+| Schema guard | 已开发；Promotion/Coupon JSON path guard 已接入 |
+| Repository/upsert | 已开发并完成 Azure SQL execute 验证 |
+| Azure SQL execute | 已完成；首次 execute sync_run_id=17，inserted=10 updated=0 |
+| 幂等性验证 | 已完成；第二次 execute sync_run_id=18，inserted=0 updated=10 |
+| 单元测试 | 已新增：mapping / dry-run / repo |
 | 文档同步 | 本设计已完成第一版 |
 
-功能整体状态：`Planned`。下一步应由用户执行 `010_add_promotion_coupon_business_keys.sql` 并导出 live schema，之后再开发专用 ingestion 入口。
+功能整体状态：`Implemented`。`010` 已执行，专用 dry-run / repository / CLI 已完成，并已通过真实 Azure SQL 首次 execute 与第二次 execute 幂等性验证。
 
 ## 3. 业务目标
 
@@ -410,3 +410,27 @@ tests/unit/db/test_promotion_coupon_repo.py
 |---|---|---|---|
 | 2026-05-17 | 直接把 Promotion/Coupon 折扣当成最终成本 | 运营报表口径不等于财务结算口径，可能与 Settlement 不一致 | Promotion/Coupon 用于活动效果分析；最终利润以 Settlement 为主口径。 |
 | 2026-05-17 | 继续拖延 Promotion/Coupon 到利润核算后 | 用户会高频使用优惠券、折扣、会员日/Prime Day 活动，促销效果是日常运营核心数据 | 在利润核算前先补 Promotion/Coupon 入库。 |
+
+
+## 16. 当前开发验证结果
+
+本轮已实现专用入口：
+
+```text
+scripts/ingest_promotion_coupon_reports.py
+```
+
+最终验收结果：
+
+```text
+dry-run: prepared_rows=10 requires_review=False
+首次 execute: sync_run_id=17, attempted=10 inserted=10 updated=0 written=10 skipped=0
+第二次 execute: sync_run_id=18, attempted=10 inserted=0 updated=10 written=10 skipped=0
+
+amazon_promotion_performance: 1 row
+amazon_promotion_product_performance: 3 rows
+amazon_coupon_performance: 2 rows
+amazon_coupon_asin: 4 rows
+```
+
+本功能已完成当前阶段验收。后续利润/促销复盘功能应把本数据作为活动效果口径，最终财务扣款仍以 Settlement 为主口径。

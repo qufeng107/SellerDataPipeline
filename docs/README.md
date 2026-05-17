@@ -108,7 +108,9 @@ docs/
 11. Settlement 功能文档 `feature_settlement_ingestion.md` 已完成验收：`006_add_settlement_transaction_business_key.sql` 已执行，专用 dry-run / repository / CLI / execute / 幂等性验证均已完成。
 12. Orders 功能文档 `feature_orders_ingestion.md` 已完成验收：`007_add_order_item_business_key.sql` 已执行，专用 dry-run / repository / CLI / execute / 幂等性验证均已完成。
 13. FBA Reimbursements 功能文档 `feature_fba_reimbursements_ingestion.md` 已完成验收：`008_add_fba_reimbursement_business_key.sql` 已执行，专用 dry-run / repository / CLI / execute / 幂等性验证均已完成。
-14. FBA Fee Preview 功能文档 `feature_fba_fee_preview_ingestion.md` 已建立；`009_add_fba_fee_preview_business_key.sql` 已执行，live schema 已导出。
+14. FBA Fee Preview 功能已完成 dry-run、execute 和第二次 execute 幂等性验证。
+15. Promotion/Coupon 功能已完成 `010`、dry-run、execute 和第二次 execute 幂等性验证。
+16. Inventory Ledger 功能已完成 `011`、专用 dry-run/schema guard/repository/CLI，待 execute/幂等验证。
 15. 后续再补充利润、周报、清仓决策等业务分析功能文档。
 
 ## 6. 维护硬规则
@@ -136,4 +138,4 @@ docs/features/feature_inventory_ledger_ingestion.md
 sql/migrations/011_add_inventory_ledger_business_keys.sql
 ```
 
-Promotion/Coupon 用于优惠券、折扣、会员日/Prime Day 等活动效果分析；Inventory Ledger 用于库存 movement 与库存审计。周报中的当前库存余额仍优先来自 `amazon_inventory_daily`，Ledger 用于解释库存变化。
+Promotion/Coupon 用于优惠券、折扣、会员日/Prime Day 等活动效果分析，已完成入库验收；Inventory Ledger 用于库存 movement 与库存审计，当前已完成专用 dry-run，待 execute/幂等验证。周报中的当前库存余额仍优先来自 `amazon_inventory_daily`，Ledger 用于解释库存变化。

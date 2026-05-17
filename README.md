@@ -57,7 +57,9 @@ Amazon SP-API / Amazon Ads API / Seller Central raw exports
 | [`docs/features/feature_settlement_ingestion.md`](docs/features/feature_settlement_ingestion.md) | SP-API Settlement 入库功能文档；`006` migration、dry-run、真实 execute 和幂等性验证已完成。 |
 | [`docs/features/feature_orders_ingestion.md`](docs/features/feature_orders_ingestion.md) | SP-API Orders 入库功能文档；007、dry-run、真实 execute 和幂等性验证已完成。 |
 | [`docs/features/feature_fba_reimbursements_ingestion.md`](docs/features/feature_fba_reimbursements_ingestion.md) | SP-API FBA Reimbursements 入库功能文档；`008` 已执行，dry-run、execute 和幂等性验证已完成。 |
-| [`docs/features/feature_fba_fee_preview_ingestion.md`](docs/features/feature_fba_fee_preview_ingestion.md) | SP-API FBA Fee Preview 入库功能文档；009 已执行，专用 dry-run 已完成，待 execute/幂等验证。 |
+| [`docs/features/feature_fba_fee_preview_ingestion.md`](docs/features/feature_fba_fee_preview_ingestion.md) | SP-API FBA Fee Preview 入库功能文档；009、dry-run、execute 与幂等验证已完成。 |
+| [`docs/features/feature_promotion_coupon_ingestion.md`](docs/features/feature_promotion_coupon_ingestion.md) | Promotion/Coupon 入库功能文档；010、dry-run、execute 与幂等验证已完成。 |
+| [`docs/features/feature_inventory_ledger_ingestion.md`](docs/features/feature_inventory_ledger_ingestion.md) | Inventory Ledger 入库功能文档；011 已执行，专用 dry-run 已完成，待 execute/幂等验证。 |
 | [`docs/database/database_current_schema_spec.md`](docs/database/database_current_schema_spec.md) | 当前真实 Azure SQL 表结构、字段、索引与数据来源。 |
 | [`docs/database/database_migration_policy.md`](docs/database/database_migration_policy.md) | 数据库变更和 migration 规则。 |
 | [`docs/database/database_schema_export_tool.md`](docs/database/database_schema_export_tool.md) | 从真实 Azure SQL 导出 schema snapshot 的工具说明。 |
@@ -155,7 +157,7 @@ python scripts/export_database_schema_spec.py --output-prefix after_004_xxx --in
 python scripts/export_database_schema_spec.py --stdout-markdown
 ```
 
-执行新 SQL migration 时使用以下模式。当前 `001/002/003/004/005/006/007/008/009` 已经执行成功并锁定；后续结构变化必须从 `010_xxx.sql` 开始。
+执行新 SQL migration 时使用以下模式。当前 `001/002/003/004/005/006/007/008/009/010/011` 已经执行成功并锁定；后续结构变化必须从 `010_xxx.sql` 开始。
 
 ```bash
 python scripts/run_sql_migration.py --file sql/migrations/010_xxx.sql --dry-run --show-batches
@@ -228,7 +230,7 @@ python scripts/ingest_inventory_snapshot.py \
   --execute
 ```
 
-当前计划链路已经切换为 FBA Fee Preview。Orders 与 FBA Reimbursements 均已完成真实 execute 和幂等性验证；下一步为 FBA Fee Preview 执行真实入库与第二次 execute 幂等验证，为后续利润核算提供预估 referral fee / FBA fulfillment fee 参考口径：
+当前计划链路已经切换为 Inventory Ledger execute 验证。FBA Fee Preview 与 Promotion/Coupon 均已完成真实 execute 和幂等性验证；下一步为 Inventory Ledger 执行真实入库与第二次 execute 幂等验证，为后续周报库存 movement 和库存审计提供数据口径：
 
 ```text
 GET_FBA_ESTIMATED_FBA_FEES_TXT_DATA
@@ -252,4 +254,4 @@ docs/features/feature_inventory_ledger_ingestion.md
 sql/migrations/011_add_inventory_ledger_business_keys.sql
 ```
 
-Promotion/Coupon 用于优惠券、折扣、会员日/Prime Day 等活动效果分析；Inventory Ledger 用于库存 movement 与库存审计。周报中的当前库存余额仍优先来自 `amazon_inventory_daily`，Ledger 用于解释库存变化。
+Promotion/Coupon 用于优惠券、折扣、会员日/Prime Day 等活动效果分析，已完成入库验收；Inventory Ledger 用于库存 movement 与库存审计，当前已完成专用 dry-run，待 execute/幂等验证。周报中的当前库存余额仍优先来自 `amazon_inventory_daily`，Ledger 用于解释库存变化。

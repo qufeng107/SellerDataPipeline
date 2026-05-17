@@ -127,26 +127,29 @@ tests/
 | SP-API Settlement normalized ingestion | Implemented | Settlement dry-run、execute、重复 execute 幂等性已通过：首次 inserted=4911，第二次 updated=4911。 |
 | SP-API Orders normalized ingestion | Implemented | Orders dry-run、execute、重复 execute 幂等性已通过：首次 inserted=112，第二次 updated=112。 |
 | SP-API FBA Reimbursements normalized ingestion | Implemented | FBA Reimbursements dry-run、execute、重复 execute 幂等性已通过：首次 inserted=19，第二次 updated=19。 |
+| SP-API FBA Fee Preview normalized ingestion | Implemented | FBA Fee Preview dry-run、execute、重复 execute 幂等性已通过：首次 inserted=8，第二次 updated=8。 |
+| SP-API Promotion/Coupon normalized ingestion | Implemented | Promotion/Coupon dry-run、execute、重复 execute 幂等性已通过：首次 inserted=10，第二次 updated=10。 |
+| SP-API Inventory Ledger normalized ingestion | Implementing | Inventory Ledger summary/detail 专用 dry-run 已通过：150 + 207 rows，待 execute/幂等验证。 |
 | 周报/月报/清仓分析 | 待设计/待开发 | 依赖 normalized 数据沉淀后再做。 |
 | Azure Container Apps Jobs | 待开发 | 本地闭环稳定后再上云。 |
 
 ## 8. 下一阶段主线
 
-下一阶段不应先做自动任务或报表，而应继续扩展 SP-API normalized 入库闭环。Listing、Inventory、Sales & Traffic、Settlement、Orders、FBA Reimbursements 已完成，下一条主线是 FBA Fee Preview：
+下一阶段不应先做自动任务或报表，而应完成最后一条库存审计补充链路 Inventory Ledger execute/幂等验证。Listing、Inventory、Sales & Traffic、Settlement、Orders、FBA Reimbursements、FBA Fee Preview、Promotion/Coupon 已完成，下一条主线是 Inventory Ledger：
 
 ```text
-GET_FBA_ESTIMATED_FBA_FEES_TXT_DATA
-  -> feature_fba_fee_preview_ingestion.md 已建立
-  -> amazon_fba_fee_preview 已建表
-  -> 009_add_fba_fee_preview_business_key.sql 已执行，live schema 已导出
+GET_LEDGER_SUMMARY_VIEW_DATA / GET_LEDGER_DETAIL_VIEW_DATA
+  -> feature_inventory_ledger_ingestion.md 已建立
+  -> amazon_inventory_ledger_summary_daily / amazon_inventory_ledger_detail 已建表
+  -> 011_add_inventory_ledger_business_keys.sql 已执行，live schema 已导出
   -> 专用 dry-run/schema guard/repository/CLI 已开发并通过 dry-run
-  -> dry-run / repository / execute 待开发
+  -> execute / 幂等验证待用户执行
 ```
 
 建议顺序：
 
-1. 完成 FBA Fee Preview execute 与幂等验证
-2. 通过后将 FBA Fee Preview 标记为 Implemented
+1. 完成 Inventory Ledger execute 与幂等验证
+2. 通过后将 Inventory Ledger 标记为 Implemented
 3. 开始利润核算功能设计
 4. 做财务利润计算、周报/月报、清仓决策支持。
 

@@ -10,10 +10,10 @@
 |---|---|
 | Azure SQL database | `amazon_ops` |
 | Server | `amazon-ops-sql` |
-| 已执行 migration | `001_create_core_tables.sql` 29/29 batches；`002_create_indexes.sql` 54/54 batches；`003_add_listing_snapshot_business_key_hash.sql` 3/3 batches；`004_add_inventory_daily_business_key_hash.sql` 3/3 batches；`005_add_sales_traffic_business_key_hashes.sql` 5/5 batches；`006_add_settlement_transaction_business_key.sql` 4/4 batches；`007_add_order_item_business_key.sql` 4/4 batches；`008_add_fba_reimbursement_business_key.sql` 4/4 batches；`009_add_fba_fee_preview_business_key.sql` 4/4 batches |
+| 已执行 migration | `001_create_core_tables.sql` 29/29 batches；`002_create_indexes.sql` 54/54 batches；`003_add_listing_snapshot_business_key_hash.sql` 3/3 batches；`004_add_inventory_daily_business_key_hash.sql` 3/3 batches；`005_add_sales_traffic_business_key_hashes.sql` 5/5 batches；`006_add_settlement_transaction_business_key.sql` 4/4 batches；`007_add_order_item_business_key.sql` 4/4 batches；`008_add_fba_reimbursement_business_key.sql` 4/4 batches；`009_add_fba_fee_preview_business_key.sql` 4/4 batches；`010_add_promotion_coupon_business_keys.sql` 8/8 batches；`011_add_inventory_ledger_business_keys.sql` 4/4 batches |
 | 用户表数量 | 28 |
-| 已真实入库验证 | Amazon Ads 4 张 SP 日表，首次 inserted=200、重复执行 inserted=0/updated=200；Listing 快照表首次 inserted=6、重复执行 inserted=0/updated=6；Inventory 快照表首次 inserted=5、重复执行 inserted=0/updated=5；Sales & Traffic 首次 inserted=7、重复执行 inserted=0/updated=7；Settlement 首次 inserted=4911、重复执行 inserted=0/updated=4911；Orders 首次 inserted=112、重复执行 inserted=0/updated=112；FBA Reimbursements 首次 inserted=19、重复执行 inserted=0/updated=19；FBA Fee Preview 首次 inserted=8、重复执行 inserted=0/updated=8 |
-| 当前限制 | `amazon_sync_run_log` 尚无 rows_inserted / rows_updated 字段；Ads/Listing/Inventory/Sales & Traffic/Settlement/Orders/FBA Reimbursements/FBA Fee Preview 当前 `raw_file_id` 仍可能为 NULL；Promotion/Coupon 与 Inventory Ledger 目标表已存在，但 `010/011` business key migrations 尚未执行 |
+| 已真实入库验证 | Amazon Ads 4 张 SP 日表，首次 inserted=200、重复执行 inserted=0/updated=200；Listing 快照表首次 inserted=6、重复执行 inserted=0/updated=6；Inventory 快照表首次 inserted=5、重复执行 inserted=0/updated=5；Sales & Traffic 首次 inserted=7、重复执行 inserted=0/updated=7；Settlement 首次 inserted=4911、重复执行 inserted=0/updated=4911；Orders 首次 inserted=112、重复执行 inserted=0/updated=112；FBA Reimbursements 首次 inserted=19、重复执行 inserted=0/updated=19；FBA Fee Preview 首次 inserted=8、重复执行 inserted=0/updated=8；Promotion/Coupon 首次 inserted=10、重复执行 inserted=0/updated=10 |
+| 当前限制 | `amazon_sync_run_log` 尚无 rows_inserted / rows_updated 字段；Ads/Listing/Inventory/Sales & Traffic/Settlement/Orders/FBA Reimbursements/FBA Fee Preview/Promotion/Coupon 当前 `raw_file_id` 仍可能为 NULL；Inventory Ledger 目标表已存在且 `011` business key migration 已执行，专用 ingestion 已通过 dry-run，待 execute/幂等验证 |
 
 ## 1.1 Schema 更新辅助工具
 
@@ -78,7 +78,9 @@ python scripts/export_database_schema_spec.py --output-prefix after_NNN_xxx --in
 | `amazon_ads_sp_targeting_daily` | `IX_amazon_ads_sp_targeting_daily_source` | 否 | `source_report_id, source_row_hash` | `` |
 | `amazon_ads_sp_targeting_daily` | `UX_amazon_ads_sp_targeting_daily_business_key` | 是 | `business_key_hash` | `` |
 | `amazon_coupon_asin` | `IX_amazon_coupon_asin_key` | 否 | `marketplace_id, coupon_id, asin` | `` |
+| `amazon_coupon_asin` | `UX_amazon_coupon_asin_business_key_hash` | 是 | `business_key_hash` | `([business_key_hash] IS NOT NULL)` |
 | `amazon_coupon_performance` | `IX_amazon_coupon_performance_key` | 否 | `marketplace_id, coupon_id, merchant_id` | `` |
+| `amazon_coupon_performance` | `UX_amazon_coupon_performance_business_key_hash` | 是 | `business_key_hash` | `([business_key_hash] IS NOT NULL)` |
 | `amazon_fba_fee_preview` | `IX_amazon_fba_fee_preview_sku` | 否 | `marketplace_id, seller_sku, fnsku, asin` | `` |
 | `amazon_fba_fee_preview` | `IX_amazon_fba_fee_preview_source` | 否 | `source_report_id, source_row_hash` | `` |
 | `amazon_fba_fee_preview` | `UX_amazon_fba_fee_preview_business_key_hash` | 是 | `business_key_hash` | `([business_key_hash] IS NOT NULL)` |
@@ -89,7 +91,9 @@ python scripts/export_database_schema_spec.py --output-prefix after_NNN_xxx --in
 | `amazon_inventory_daily` | `IX_amazon_inventory_daily_source` | 否 | `source_report_id, source_row_hash` | `` |
 | `amazon_inventory_daily` | `UX_amazon_inventory_daily_business_key_hash` | 是 | `business_key_hash` | `([business_key_hash] IS NOT NULL)` |
 | `amazon_inventory_ledger_detail` | `IX_amazon_inventory_ledger_detail_key` | 否 | `marketplace_id, seller_sku, fnsku, asin, event_type, reference_id` | `` |
+| `amazon_inventory_ledger_detail` | `UX_amazon_inventory_ledger_detail_business_key_hash` | 是 | `business_key_hash` | `([business_key_hash] IS NOT NULL)` |
 | `amazon_inventory_ledger_summary_daily` | `IX_amazon_inventory_ledger_summary_daily_key` | 否 | `marketplace_id, seller_sku, fnsku, asin, ledger_date_raw` | `` |
+| `amazon_inventory_ledger_summary_daily` | `UX_amazon_inventory_ledger_summary_daily_business_key_hash` | 是 | `business_key_hash` | `([business_key_hash] IS NOT NULL)` |
 | `amazon_inventory_planning_daily` | `IX_amazon_inventory_planning_daily_key` | 否 | `marketplace_id, seller_sku, fnsku, asin, snapshot_date_raw` | `` |
 | `amazon_listing_snapshot` | `IX_amazon_listing_snapshot_key` | 否 | `marketplace_id, snapshot_date DESC, seller_sku, listing_id` | `` |
 | `amazon_listing_snapshot` | `IX_amazon_listing_snapshot_source` | 否 | `source_report_id, source_row_hash` | `` |
@@ -99,7 +103,9 @@ python scripts/export_database_schema_spec.py --output-prefix after_NNN_xxx --in
 | `amazon_order_item` | `IX_amazon_order_item_source` | 否 | `source_report_id, source_row_hash` | `` |
 | `amazon_order_item` | `UX_amazon_order_item_business_key_hash` | 是 | `business_key_hash` | `([business_key_hash] IS NOT NULL)` |
 | `amazon_promotion_performance` | `IX_amazon_promotion_performance_key` | 否 | `marketplace_id, promotion_id, status` | `` |
+| `amazon_promotion_performance` | `UX_amazon_promotion_performance_business_key_hash` | 是 | `business_key_hash` | `([business_key_hash] IS NOT NULL)` |
 | `amazon_promotion_product_performance` | `IX_amazon_promotion_product_performance_key` | 否 | `marketplace_id, promotion_id, asin` | `` |
+| `amazon_promotion_product_performance` | `UX_amazon_promotion_product_performance_business_key_hash` | 是 | `business_key_hash` | `([business_key_hash] IS NOT NULL)` |
 | `amazon_raw_report_file` | `IX_amazon_raw_report_file_report` | 否 | `source_system, report_type, marketplace_id, downloaded_at DESC` | `` |
 | `amazon_raw_report_file` | `IX_amazon_raw_report_file_sha256` | 否 | `sha256` | `` |
 | `amazon_raw_report_file` | `UX_amazon_raw_report_file_path` | 是 | `storage_backend, file_path` | `` |
@@ -318,7 +324,7 @@ python scripts/export_database_schema_spec.py --output-prefix after_NNN_xxx --in
 
 - 数据来源：GET_COUPON_PERFORMANCE_REPORT.asins
 - 表用途：Coupon 关联 ASIN。
-- 当前索引：`IX_amazon_coupon_asin_key`(marketplace_id, coupon_id, asin)
+- 当前索引：`IX_amazon_coupon_asin_key`(marketplace_id, coupon_id, asin)；`UX_amazon_coupon_asin_business_key_hash`(business_key_hash, unique filtered)
 - 当前行数：`0`
 
 | 字段 | 类型 | 可空 | 默认值 | 字段说明 |
@@ -341,6 +347,8 @@ python scripts/export_database_schema_spec.py --output-prefix after_NNN_xxx --in
 | `source_run_id` | `BIGINT` | NULL | `` | 对应 amazon_sync_run_log.id。 |
 | `source_row_hash` | `NVARCHAR(100)` | NOT NULL | `` | 原始行 hash，用于追溯，不作为业务 upsert 主键。 |
 | `raw_data` | `NVARCHAR(MAX)` | NOT NULL | `` | 保留原始行 JSON，便于重放和排查。 |
+| `source_row_index` | `INT` | NULL | `` | 010/011 migration 新增；raw file 内 1-based 数据行号，用于行级追溯。 |
+| `business_key_hash` | `NVARCHAR(100)` | NULL | `` | 010/011 migration 新增；业务幂等键 hash，用于 MERGE/upsert。 |
 | `created_at` | `DATETIME2(7)` | NOT NULL | `(sysutcdatetime())` | 数据库记录创建时间 UTC。 |
 | `updated_at` | `DATETIME2(7)` | NOT NULL | `(sysutcdatetime())` | 数据库记录最后更新时间 UTC。 |
 
@@ -381,6 +389,8 @@ python scripts/export_database_schema_spec.py --output-prefix after_NNN_xxx --in
 | `source_run_id` | `BIGINT` | NULL | `` | 对应 amazon_sync_run_log.id。 |
 | `source_row_hash` | `NVARCHAR(100)` | NOT NULL | `` | 原始行 hash，用于追溯，不作为业务 upsert 主键。 |
 | `raw_data` | `NVARCHAR(MAX)` | NOT NULL | `` | 保留原始行 JSON，便于重放和排查。 |
+| `source_row_index` | `INT` | NULL | `` | 010/011 migration 新增；raw file 内 1-based 数据行号，用于行级追溯。 |
+| `business_key_hash` | `NVARCHAR(100)` | NULL | `` | 010/011 migration 新增；业务幂等键 hash，用于 MERGE/upsert。 |
 | `created_at` | `DATETIME2(7)` | NOT NULL | `(sysutcdatetime())` | 数据库记录创建时间 UTC。 |
 | `updated_at` | `DATETIME2(7)` | NOT NULL | `(sysutcdatetime())` | 数据库记录最后更新时间 UTC。 |
 
@@ -567,6 +577,8 @@ python scripts/export_database_schema_spec.py --output-prefix after_NNN_xxx --in
 | `source_run_id` | `BIGINT` | NULL | `` | 对应 amazon_sync_run_log.id。 |
 | `source_row_hash` | `NVARCHAR(100)` | NOT NULL | `` | 原始行 hash，用于追溯，不作为业务 upsert 主键。 |
 | `raw_data` | `NVARCHAR(MAX)` | NOT NULL | `` | 保留原始行 JSON，便于重放和排查。 |
+| `source_row_index` | `INT` | NULL | `` | 010/011 migration 新增；raw file 内 1-based 数据行号，用于行级追溯。 |
+| `business_key_hash` | `NVARCHAR(100)` | NULL | `` | 010/011 migration 新增；业务幂等键 hash，用于 MERGE/upsert。 |
 | `created_at` | `DATETIME2(7)` | NOT NULL | `(sysutcdatetime())` | 数据库记录创建时间 UTC。 |
 | `updated_at` | `DATETIME2(7)` | NOT NULL | `(sysutcdatetime())` | 数据库记录最后更新时间 UTC。 |
 
@@ -574,7 +586,7 @@ python scripts/export_database_schema_spec.py --output-prefix after_NNN_xxx --in
 
 - 数据来源：GET_LEDGER_SUMMARY_VIEW_DATA
 - 表用途：每日/地点维度仓库库存变动汇总。
-- 当前索引：`IX_amazon_inventory_ledger_summary_daily_key`(marketplace_id, seller_sku, fnsku, asin, ledger_date_raw)
+- 当前索引：`IX_amazon_inventory_ledger_summary_daily_key`(marketplace_id, seller_sku, fnsku, asin, ledger_date_raw)；`UX_amazon_inventory_ledger_summary_daily_business_key_hash`(business_key_hash, unique filtered)
 - 当前行数：`0`
 
 | 字段 | 类型 | 可空 | 默认值 | 字段说明 |
@@ -612,6 +624,8 @@ python scripts/export_database_schema_spec.py --output-prefix after_NNN_xxx --in
 | `source_run_id` | `BIGINT` | NULL | `` | 对应 amazon_sync_run_log.id。 |
 | `source_row_hash` | `NVARCHAR(100)` | NOT NULL | `` | 原始行 hash，用于追溯，不作为业务 upsert 主键。 |
 | `raw_data` | `NVARCHAR(MAX)` | NOT NULL | `` | 保留原始行 JSON，便于重放和排查。 |
+| `source_row_index` | `INT` | NULL | `` | 010/011 migration 新增；raw file 内 1-based 数据行号，用于行级追溯。 |
+| `business_key_hash` | `NVARCHAR(100)` | NULL | `` | 010/011 migration 新增；业务幂等键 hash，用于 MERGE/upsert。 |
 | `created_at` | `DATETIME2(7)` | NOT NULL | `(sysutcdatetime())` | 数据库记录创建时间 UTC。 |
 | `updated_at` | `DATETIME2(7)` | NOT NULL | `(sysutcdatetime())` | 数据库记录最后更新时间 UTC。 |
 
@@ -800,7 +814,7 @@ python scripts/export_database_schema_spec.py --output-prefix after_NNN_xxx --in
 
 - 数据来源：GET_PROMOTION_PERFORMANCE_REPORT
 - 表用途：活动总体浏览、销量、销售额、状态与时间。
-- 当前索引：`IX_amazon_promotion_performance_key`(marketplace_id, promotion_id, status)
+- 当前索引：`IX_amazon_promotion_performance_key`(marketplace_id, promotion_id, status)；`UX_amazon_promotion_performance_business_key_hash`(business_key_hash, unique filtered)
 - 当前行数：`0`
 
 | 字段 | 类型 | 可空 | 默认值 | 字段说明 |
@@ -829,6 +843,8 @@ python scripts/export_database_schema_spec.py --output-prefix after_NNN_xxx --in
 | `source_run_id` | `BIGINT` | NULL | `` | 对应 amazon_sync_run_log.id。 |
 | `source_row_hash` | `NVARCHAR(100)` | NOT NULL | `` | 原始行 hash，用于追溯，不作为业务 upsert 主键。 |
 | `raw_data` | `NVARCHAR(MAX)` | NOT NULL | `` | 保留原始行 JSON，便于重放和排查。 |
+| `source_row_index` | `INT` | NULL | `` | 010/011 migration 新增；raw file 内 1-based 数据行号，用于行级追溯。 |
+| `business_key_hash` | `NVARCHAR(100)` | NULL | `` | 010/011 migration 新增；业务幂等键 hash，用于 MERGE/upsert。 |
 | `created_at` | `DATETIME2(7)` | NOT NULL | `(sysutcdatetime())` | 数据库记录创建时间 UTC。 |
 | `updated_at` | `DATETIME2(7)` | NOT NULL | `(sysutcdatetime())` | 数据库记录最后更新时间 UTC。 |
 
@@ -836,7 +852,7 @@ python scripts/export_database_schema_spec.py --output-prefix after_NNN_xxx --in
 
 - 数据来源：GET_PROMOTION_PERFORMANCE_REPORT.productPerformance
 - 表用途：活动 ASIN 维度表现。
-- 当前索引：`IX_amazon_promotion_product_performance_key`(marketplace_id, promotion_id, asin)
+- 当前索引：`IX_amazon_promotion_product_performance_key`(marketplace_id, promotion_id, asin)；`UX_amazon_promotion_product_performance_business_key_hash`(business_key_hash, unique filtered)
 - 当前行数：`0`
 
 | 字段 | 类型 | 可空 | 默认值 | 字段说明 |
@@ -863,6 +879,8 @@ python scripts/export_database_schema_spec.py --output-prefix after_NNN_xxx --in
 | `source_run_id` | `BIGINT` | NULL | `` | 对应 amazon_sync_run_log.id。 |
 | `source_row_hash` | `NVARCHAR(100)` | NOT NULL | `` | 原始行 hash，用于追溯，不作为业务 upsert 主键。 |
 | `raw_data` | `NVARCHAR(MAX)` | NOT NULL | `` | 保留原始行 JSON，便于重放和排查。 |
+| `source_row_index` | `INT` | NULL | `` | 010/011 migration 新增；raw file 内 1-based 数据行号，用于行级追溯。 |
+| `business_key_hash` | `NVARCHAR(100)` | NULL | `` | 010/011 migration 新增；业务幂等键 hash，用于 MERGE/upsert。 |
 | `created_at` | `DATETIME2(7)` | NOT NULL | `(sysutcdatetime())` | 数据库记录创建时间 UTC。 |
 | `updated_at` | `DATETIME2(7)` | NOT NULL | `(sysutcdatetime())` | 数据库记录最后更新时间 UTC。 |
 
@@ -1277,9 +1295,4 @@ python scripts/export_database_schema_spec.py --output-prefix after_NNN_xxx --in
 
 ## 6. 当前已准备但尚未执行的 migration
 
-以下 migration 已按功能设计准备，但尚未在 Azure SQL `amazon_ops` 执行；因此本 spec 的字段结构部分不把这些字段写作当前真实字段。
-
-| Migration | 状态 | 目标表 | 说明 |
-|---|---|---|---|
-| `010_add_promotion_coupon_business_keys.sql` | Prepared; not executed | `amazon_promotion_performance`, `amazon_promotion_product_performance`, `amazon_coupon_performance`, `amazon_coupon_asin` | 为 Promotion/Coupon 4 张表增加 `source_row_index`、`business_key_hash` 和唯一过滤索引。 |
-| `011_add_inventory_ledger_business_keys.sql` | Prepared; not executed | `amazon_inventory_ledger_summary_daily`, `amazon_inventory_ledger_detail` | 为 Inventory Ledger summary/detail 增加 `source_row_index`、`business_key_hash` 和唯一过滤索引。 |
+当前无已准备但未执行的 migration。后续新增结构变更从 `012_xxx.sql` 开始。

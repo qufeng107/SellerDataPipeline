@@ -1,9 +1,9 @@
 # Feature: Inventory Ledger Ingestion
 
-> 文档状态：Planned; design completed; 011 migration prepared but not executed  
+> 文档状态：Implementing; 011 executed; dedicated ingestion dry-run implemented  
 > 负责人：AI / 待定  
 > 更新时间：2026-05-17  
-> 功能状态：Planned  
+> 功能状态：Implementing  
 > 相关数据接入文档：`docs/data_access/sp_api_reports_catalog.md`  
 > 相关数据库 spec：`docs/database/database_current_schema_spec.md`
 
@@ -33,16 +33,16 @@ GET_LEDGER_DETAIL_VIEW_DATA
 | 数据源取样 | 已完成；summary 150 行，detail 207 行 |
 | 目标表 | 已存在于 `001_create_core_tables.sql`：summary/detail 两张表 |
 | Parser | 已存在：`src/seller_data_pipeline/parsers/amazon/inventory_ledger_parser.py` |
-| Migration | 已准备：`011_add_inventory_ledger_business_keys.sql`；尚未在 Azure SQL 执行 |
-| Dry-run preview | 待开发 |
-| Schema guard | 待开发 |
-| Repository/upsert | 待开发 |
-| Azure SQL execute | 待开发后验证 |
-| 幂等性验证 | 待开发后验证 |
-| 单元测试 | 待新增 |
+| Migration | 已执行：`011_add_inventory_ledger_business_keys.sql`，4/4 batches；live schema export `after_011_inventory_ledger_business_keys` 已生成 |
+| Dry-run preview | 已开发；本地验证 prepared_rows=357 |
+| Schema guard | 已开发；summary/detail flat-file schema guard 已接入 |
+| Repository/upsert | 已开发，待 Azure SQL execute 验证 |
+| Azure SQL execute | 待用户执行验证 |
+| 幂等性验证 | 待用户重复 execute 验证 |
+| 单元测试 | 已新增：mapping / dry-run / repo |
 | 文档同步 | 本设计已完成第一版 |
 
-功能整体状态：`Planned`。下一步应由用户执行 `011_add_inventory_ledger_business_keys.sql` 并导出 live schema，之后再开发专用 ingestion 入口。
+功能整体状态：`Implementing`。`011` 已执行；Promotion/Coupon 已完成验收；Inventory Ledger 专用 dry-run / repository / CLI 已完成本地验证，下一步由用户执行 dry-run、首次 execute 与第二次 execute 幂等性验证。
 
 ## 3. 业务目标
 
@@ -368,7 +368,7 @@ amazon_inventory_ledger_detail: 207
 src/seller_data_pipeline/parsers/amazon/inventory_ledger_parser.py
 ```
 
-待新增：
+已新增：
 
 ```text
 scripts/ingest_inventory_ledger_reports.py
@@ -387,3 +387,33 @@ tests/unit/db/test_inventory_ledger_repo.py
 |---|---|---|---|
 | 2026-05-17 | 用 Inventory Ledger 替代库存快照 | Ledger 解释 movement，但当前库存余额应来自库存快照 report | 周报库存余额用 `amazon_inventory_daily`；movement 解释用 Ledger。 |
 | 2026-05-17 | 只做 summary，不做 detail | Summary 适合周报，但无法追踪异常 reference/FC/reason | Summary/detail 两张表都做，周报先用 summary，异常排查用 detail。 |
+
+
+## 16. 当前开发验证结果
+
+本轮已实现专用入口：
+
+```text
+scripts/ingest_inventory_ledger_reports.py
+```
+
+本地 dry-run 验证结果：
+
+```text
+Inventory Ledger ingestion mode=dry_run status=dry_run_success
+prepared_rows=357 requires_review=False
+GET_LEDGER_SUMMARY_VIEW_DATA: parsed=150 prepared=150
+  amazon_inventory_ledger_summary_daily: prepared=150
+GET_LEDGER_DETAIL_VIEW_DATA: parsed=207 prepared=207
+  amazon_inventory_ledger_detail: prepared=207
+```
+
+下一步验收命令：
+
+```powershell
+python scripts/ingest_inventory_ledger_reports.py --marketplace-id ATVPDKIKX0DER
+python scripts/ingest_inventory_ledger_reports.py --marketplace-id ATVPDKIKX0DER --execute
+python scripts/ingest_inventory_ledger_reports.py --marketplace-id ATVPDKIKX0DER --execute
+```
+
+预期首次 execute 插入 357 行；第二次 execute 更新 357 行且不重复插入。
