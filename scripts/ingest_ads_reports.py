@@ -4,6 +4,7 @@ import argparse
 import json
 from pathlib import Path
 
+from seller_data_pipeline.common.cli import run_cli_main
 from seller_data_pipeline.common.logging import configure_logging
 from seller_data_pipeline.config.settings import get_settings
 from seller_data_pipeline.ingestion.ads_ingestion import AdsIngestionService
@@ -123,4 +124,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    run_cli_main(main)

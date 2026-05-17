@@ -37,34 +37,39 @@ def _row(values: list[str]) -> str:
 
 
 def test_parse_settlement_v2_report() -> None:
-    content = HEADER + "\n" + _row(
-        [
-            "123",
-            "2026-05-01T00:00:00Z",
-            "2026-05-14T00:00:00Z",
-            "2026-05-16T00:00:00Z",
-            "99.50",
-            "USD",
-            "Order",
-            "111-2222222-3333333",
-            "",
-            "",
-            "shipment-1",
-            "Amazon.com",
-            "ItemPrice",
-            "Principal",
-            "19.99",
-            "AFN",
-            "2026-05-10",
-            "2026-05-10T12:00:00Z",
-            "item-1",
-            "",
-            "",
-            "SKU-1",
-            "1",
-            "",
-        ]
-    ) + "\n"
+    content = (
+        HEADER
+        + "\n"
+        + _row(
+            [
+                "123",
+                "2026-05-01T00:00:00Z",
+                "2026-05-14T00:00:00Z",
+                "2026-05-16T00:00:00Z",
+                "99.50",
+                "USD",
+                "Order",
+                "111-2222222-3333333",
+                "",
+                "",
+                "shipment-1",
+                "Amazon.com",
+                "ItemPrice",
+                "Principal",
+                "19.99",
+                "AFN",
+                "2026-05-10",
+                "2026-05-10T12:00:00Z",
+                "item-1",
+                "",
+                "",
+                "SKU-1",
+                "1",
+                "",
+            ]
+        )
+        + "\n"
+    )
 
     records = SettlementReportParser().parse_text(
         text=content,
@@ -92,34 +97,39 @@ def test_parse_settlement_v2_report() -> None:
 
 
 def test_parse_settlement_decimal_with_comma_format() -> None:
-    content = HEADER + "\n" + _row(
-        [
-            "123",
-            "",
-            "",
-            "",
-            "1.234,56",
-            "EUR",
-            "Order",
-            "order-1",
-            "",
-            "",
-            "",
-            "Amazon.de",
-            "ItemFees",
-            "Commission",
-            "-2,50",
-            "AFN",
-            "",
-            "",
-            "",
-            "",
-            "",
-            "SKU-1",
-            "1",
-            "",
-        ]
-    ) + "\n"
+    content = (
+        HEADER
+        + "\n"
+        + _row(
+            [
+                "123",
+                "",
+                "",
+                "",
+                "1.234,56",
+                "EUR",
+                "Order",
+                "order-1",
+                "",
+                "",
+                "",
+                "Amazon.de",
+                "ItemFees",
+                "Commission",
+                "-2,50",
+                "AFN",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "SKU-1",
+                "1",
+                "",
+            ]
+        )
+        + "\n"
+    )
 
     record = SettlementReportParser().parse_text(text=content, marketplace_id="A1PA6795UKMFR9")[0]
 
@@ -130,66 +140,71 @@ def test_parse_settlement_decimal_with_comma_format() -> None:
 
 
 def test_settlement_summary_metadata_is_forward_filled_to_transaction_rows() -> None:
-    content = HEADER + "\n" + "\n".join(
-        [
-            _row(
-                [
-                    "123",
-                    "2026-05-01 00:00:00 UTC",
-                    "2026-05-14 00:00:00 UTC",
-                    "2026-05-16 00:00:00 UTC",
-                    "99.50",
-                    "USD",
-                    "",
-                    "",
-                    "",
-                    "",
-                    "",
-                    "",
-                    "",
-                    "",
-                    "",
-                    "",
-                    "",
-                    "",
-                    "",
-                    "",
-                    "",
-                    "",
-                    "",
-                    "",
-                ]
-            ),
-            _row(
-                [
-                    "123",
-                    "",
-                    "",
-                    "",
-                    "",
-                    "",
-                    "Order",
-                    "111-2222222-3333333",
-                    "",
-                    "",
-                    "shipment-1",
-                    "Amazon.com",
-                    "ItemFees",
-                    "FBAPerUnitFulfillmentFee",
-                    "-4.06",
-                    "AFN",
-                    "2026-05-10",
-                    "",
-                    "item-1",
-                    "",
-                    "",
-                    "SKU-1",
-                    "1",
-                    "",
-                ]
-            ),
-        ]
-    ) + "\n"
+    content = (
+        HEADER
+        + "\n"
+        + "\n".join(
+            [
+                _row(
+                    [
+                        "123",
+                        "2026-05-01 00:00:00 UTC",
+                        "2026-05-14 00:00:00 UTC",
+                        "2026-05-16 00:00:00 UTC",
+                        "99.50",
+                        "USD",
+                        "",
+                        "",
+                        "",
+                        "",
+                        "",
+                        "",
+                        "",
+                        "",
+                        "",
+                        "",
+                        "",
+                        "",
+                        "",
+                        "",
+                        "",
+                        "",
+                        "",
+                        "",
+                    ]
+                ),
+                _row(
+                    [
+                        "123",
+                        "",
+                        "",
+                        "",
+                        "",
+                        "",
+                        "Order",
+                        "111-2222222-3333333",
+                        "",
+                        "",
+                        "shipment-1",
+                        "Amazon.com",
+                        "ItemFees",
+                        "FBAPerUnitFulfillmentFee",
+                        "-4.06",
+                        "AFN",
+                        "2026-05-10",
+                        "",
+                        "item-1",
+                        "",
+                        "",
+                        "SKU-1",
+                        "1",
+                        "",
+                    ]
+                ),
+            ]
+        )
+        + "\n"
+    )
 
     summary, transaction = SettlementReportParser().parse_text(
         text=content,

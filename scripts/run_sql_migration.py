@@ -4,6 +4,7 @@ import argparse
 import logging
 from pathlib import Path
 
+from seller_data_pipeline.common.cli import run_cli_main
 from seller_data_pipeline.common.logging import configure_logging
 from seller_data_pipeline.config.settings import get_settings
 from seller_data_pipeline.db.migrations import read_sql_batches, run_sql_file
@@ -71,4 +72,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    run_cli_main(main)

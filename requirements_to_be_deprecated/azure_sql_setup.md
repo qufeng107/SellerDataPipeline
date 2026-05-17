@@ -7,26 +7,33 @@
 ---
 
 
-## 0. 当前状态提醒（2026-05-15）
+## 0. 当前状态提醒（2026-05-16）
 
-本轮 chat 中用户确认：Azure SQL 参数尚未配置，真实 SQL 执行和真实入库将在后续新 chat 继续。
+Azure SQL `amazon_ops` 已完成初始建表与索引创建：
 
-当前不要执行：
-
-```powershell
-python scripts/run_sql_migration.py --file sql/migrations/001_create_core_tables.sql
-python scripts/run_sql_migration.py --file sql/migrations/002_create_indexes.sql
-python scripts/ingest_ads_reports.py --execute
+```text
+001_create_core_tables.sql -> executed_batches=29/29
+002_create_indexes.sql     -> executed_batches=54/54
+user_table_count           -> 28
 ```
 
-下一次继续时，先完成 `.env` 中 Azure SQL 参数配置，再运行：
+Amazon Ads 四张 Sponsored Products 日表已完成真实入库和幂等性验证：
+
+```text
+第一次 execute: inserted=200 updated=0
+第二次 execute: inserted=0 updated=200
+```
+
+因此，后续不要再修改已执行的 `001/002` migration；任何结构调整都必须新增 `003_xxx.sql`、`004_xxx.sql`。
+
+常用检查脚本：
 
 ```powershell
 python scripts/test_azure_sql_connection.py --json
+python scripts/test_azure_sql_connection.py --list-tables
+python scripts/check_database_status.py
+python scripts/check_database_status.py --json
 ```
-
-连接成功后再 dry-run migration，并人工确认 `requirements/database_spec.md` 与 SQL migration 一致。
-
 
 ## 1. 当前结论
 

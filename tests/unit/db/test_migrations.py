@@ -58,9 +58,7 @@ def test_initial_migration_contains_confirmed_ads_core_tables() -> None:
 
 def test_ads_index_migration_contains_confirmed_ads_core_indexes() -> None:
     project_root = Path(__file__).resolve().parents[3]
-    sql_text = (project_root / "sql/migrations/002_create_indexes.sql").read_text(
-        encoding="utf-8"
-    )
+    sql_text = (project_root / "sql/migrations/002_create_indexes.sql").read_text(encoding="utf-8")
 
     assert "IX_amazon_ads_sp_campaign_daily_key" in sql_text
     assert "IX_amazon_ads_sp_targeting_daily_key" in sql_text
@@ -70,4 +68,3 @@ def test_ads_index_migration_contains_confirmed_ads_core_indexes() -> None:
     assert "UX_amazon_ads_sp_targeting_daily_business_key" in sql_text
     assert "UX_amazon_ads_sp_search_term_daily_business_key" in sql_text
     assert "UX_amazon_ads_sp_advertised_product_daily_business_key" in sql_text
-

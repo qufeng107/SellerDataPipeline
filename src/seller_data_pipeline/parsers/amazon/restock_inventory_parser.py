@@ -141,9 +141,7 @@ class RestockInventoryRecommendationsParser(AmazonFlatFileParser):
                 row.get("Days of Supply at Amazon Fulfillment Network")
             ),
             alert=empty_to_none(row.get("Alert")),
-            recommended_replenishment_quantity=parse_int(
-                row.get("Recommended replenishment qty")
-            ),
+            recommended_replenishment_quantity=parse_int(row.get("Recommended replenishment qty")),
             recommended_ship_date_raw=empty_to_none(row.get("Recommended ship date")),
             recommended_action=empty_to_none(row.get("Recommended action")),
             unit_storage_size=parse_decimal(row.get("Unit storage size")),

@@ -184,8 +184,7 @@ ADS_TARGET_TABLE_SPECS: tuple[AdsTargetTableSpec, ...] = (
         ),
         table_ready=False,
         notes=(
-            "API has been confirmed, but the first canary was empty; "
-            "wait for a non-empty sample."
+            "API has been confirmed, but the first canary was empty; wait for a non-empty sample."
         ),
     ),
 )

@@ -143,8 +143,7 @@ class DiscoverAvailableReportsService:
             )
             manifest_path = self.manifest_store.save_report_request(updated)
             logger.info(
-                "Updated existing discovered Amazon report manifest: "
-                "report_id=%s manifest=%s",
+                "Updated existing discovered Amazon report manifest: report_id=%s manifest=%s",
                 report_id,
                 manifest_path,
             )

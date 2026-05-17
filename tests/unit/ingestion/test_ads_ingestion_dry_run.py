@@ -97,7 +97,6 @@ def test_ads_ingestion_dry_run_skips_not_ready_mapping_without_review(tmp_path: 
     assert result.status == "success"
     assert result.skipped_report_count == 1
     assert (
-        result.report_results[0].skip_reason
-        == "target_table_not_ready_non_empty_sample_required"
+        result.report_results[0].skip_reason == "target_table_not_ready_non_empty_sample_required"
     )
     assert result.report_results[0].requires_review is False

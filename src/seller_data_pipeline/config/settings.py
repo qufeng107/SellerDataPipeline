@@ -26,6 +26,9 @@ DEFAULT_AZURE_SQL_AUTH_MODE = "sql_password"
 DEFAULT_AZURE_SQL_ENCRYPT = "yes"
 DEFAULT_AZURE_SQL_TRUST_SERVER_CERTIFICATE = "no"
 DEFAULT_AZURE_SQL_CONNECTION_TIMEOUT = 30
+DEFAULT_AZURE_SQL_CONNECT_MAX_ATTEMPTS = 6
+DEFAULT_AZURE_SQL_CONNECT_RETRY_DELAY_SECONDS = 5.0
+DEFAULT_AZURE_SQL_CONNECT_RETRY_BACKOFF = 1.8
 
 
 def _env(name: str, default: str | None = None) -> str | None:
@@ -39,6 +42,16 @@ def _env_int(name: str, default: int) -> int:
         return default
     try:
         return int(value)
+    except ValueError:
+        return default
+
+
+def _env_float(name: str, default: float) -> float:
+    value = os.getenv(name)
+    if value in (None, ""):
+        return default
+    try:
+        return float(value)
     except ValueError:
         return default
 
@@ -79,17 +92,30 @@ class Settings:
     azure_sql_encrypt: str = _env("AZURE_SQL_ENCRYPT", DEFAULT_AZURE_SQL_ENCRYPT) or (
         DEFAULT_AZURE_SQL_ENCRYPT
     )
-    azure_sql_trust_server_certificate: str = _env(
-        "AZURE_SQL_TRUST_SERVER_CERTIFICATE",
-        DEFAULT_AZURE_SQL_TRUST_SERVER_CERTIFICATE,
-    ) or DEFAULT_AZURE_SQL_TRUST_SERVER_CERTIFICATE
+    azure_sql_trust_server_certificate: str = (
+        _env(
+            "AZURE_SQL_TRUST_SERVER_CERTIFICATE",
+            DEFAULT_AZURE_SQL_TRUST_SERVER_CERTIFICATE,
+        )
+        or DEFAULT_AZURE_SQL_TRUST_SERVER_CERTIFICATE
+    )
     azure_sql_connection_timeout: int = _env_int(
         "AZURE_SQL_CONNECTION_TIMEOUT",
         DEFAULT_AZURE_SQL_CONNECTION_TIMEOUT,
     )
-    azure_sql_managed_identity_client_id: str | None = _env(
-        "AZURE_SQL_MANAGED_IDENTITY_CLIENT_ID"
+    azure_sql_connect_max_attempts: int = _env_int(
+        "AZURE_SQL_CONNECT_MAX_ATTEMPTS",
+        DEFAULT_AZURE_SQL_CONNECT_MAX_ATTEMPTS,
     )
+    azure_sql_connect_retry_delay_seconds: float = _env_float(
+        "AZURE_SQL_CONNECT_RETRY_DELAY_SECONDS",
+        DEFAULT_AZURE_SQL_CONNECT_RETRY_DELAY_SECONDS,
+    )
+    azure_sql_connect_retry_backoff: float = _env_float(
+        "AZURE_SQL_CONNECT_RETRY_BACKOFF",
+        DEFAULT_AZURE_SQL_CONNECT_RETRY_BACKOFF,
+    )
+    azure_sql_managed_identity_client_id: str | None = _env("AZURE_SQL_MANAGED_IDENTITY_CLIENT_ID")
 
     amazon_region: str = _env("AMAZON_REGION", "NA") or "NA"
     amazon_marketplace_id: str | None = _env("AMAZON_MARKETPLACE_ID")

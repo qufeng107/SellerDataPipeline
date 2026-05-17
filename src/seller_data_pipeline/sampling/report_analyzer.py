@@ -556,6 +556,7 @@ ADS_REPORT_MAPPED_FIELDS = {
     "rows[].cost",
 }
 
+
 @dataclass(frozen=True)
 class FieldAnalysis:
     position: int
@@ -814,10 +815,7 @@ def render_report_analysis_markdown(analysis: ReportAnalysis) -> str:
         f"# {analysis.report_type} 字段取样记录",
         "",
         "> 本文件记录真实 Amazon report 样例的字段结构和初步映射建议。",
-        (
-            "> 原始报告文件可能包含经营数据，不应提交 GitHub；"
-            "本文只保留字段统计和脱敏样例。"
-        ),
+        ("> 原始报告文件可能包含经营数据，不应提交 GitHub；本文只保留字段统计和脱敏样例。"),
         "",
         "## 1. 样例元数据",
         "",
@@ -920,10 +918,7 @@ def render_report_specific_notes(analysis: ReportAnalysis) -> list[str]:
             )
         else:
             status = "sampling"
-            first_note = (
-                f"本报告字段统计已完成或等待 canary；"
-                f"当前样例行数为 {analysis.row_count}。"
-            )
+            first_note = f"本报告字段统计已完成或等待 canary；当前样例行数为 {analysis.row_count}。"
         return [
             "",
             "## 4. 初步结论",
@@ -981,10 +976,7 @@ def render_report_specific_notes(analysis: ReportAnalysis) -> list[str]:
             "",
             "## 3. 初步结论",
             "",
-            (
-                "1. 本报告适合生成 `amazon_inventory_daily`，用于保存 FBA SKU "
-                "库存快照。"
-            ),
+            ("1. 本报告适合生成 `amazon_inventory_daily`，用于保存 FBA SKU 库存快照。"),
             (
                 "2. `afn-fulfillable-quantity` 可作为第一版运营可售库存主口径；"
                 "`afn-total-quantity`、`afn-reserved-quantity`、"
@@ -1018,8 +1010,7 @@ def render_report_specific_notes(analysis: ReportAnalysis) -> list[str]:
         by_asin_len = _array_length_from_notes(analysis.notes, "salesAndTrafficByAsin")
         asin_status = "sampling" if by_asin_len > 0 else "draft"
         asin_note = (
-            f"本次样例包含 `salesAndTrafficByAsin` {by_asin_len} 行，"
-            "可开始确认 ASIN 维度字段。"
+            f"本次样例包含 `salesAndTrafficByAsin` {by_asin_len} 行，可开始确认 ASIN 维度字段。"
             if by_asin_len > 0
             else "本次样例 `salesAndTrafficByAsin` 为空，ASIN 维度仍需补样例。"
         )
@@ -1027,14 +1018,8 @@ def render_report_specific_notes(analysis: ReportAnalysis) -> list[str]:
             "",
             "## 4. 初步结论",
             "",
-            (
-                "1. 本报告是 JSON 格式，不是 tab-delimited flat file；"
-                "字段以 JSON path 方式记录。"
-            ),
-            (
-                f"2. 本次样例包含 `salesAndTrafficByDate` {by_date_len} 行；"
-                f"{asin_note}"
-            ),
+            ("1. 本报告是 JSON 格式，不是 tab-delimited flat file；字段以 JSON path 方式记录。"),
+            (f"2. 本次样例包含 `salesAndTrafficByDate` {by_date_len} 行；{asin_note}"),
             (
                 "3. 日期维度适合生成 `amazon_sales_traffic_daily`，"
                 "用于销售额、订单、退款、session、page view、转化率等运营指标。"
@@ -1070,10 +1055,7 @@ def render_report_specific_notes(analysis: ReportAnalysis) -> list[str]:
                 "2. 样例中包含 ship-city / ship-state / ship-postal-code 等地址字段，"
                 "正式表建议仅保留低敏国家/州/邮编，raw file 仍不得提交 GitHub。"
             ),
-            (
-                "3. 本报告销售金额是订单口径，最终利润仍应以 settlement/finance"
-                "费用口径做对账。"
-            ),
+            ("3. 本报告销售金额是订单口径，最终利润仍应以 settlement/finance费用口径做对账。"),
             "",
             "## 4. 建议目标表",
             "",
@@ -1280,10 +1262,7 @@ def render_report_specific_notes(analysis: ReportAnalysis) -> list[str]:
                 "| `amazon_coupon_performance` | `sampling` | "
                 "Coupon 主表，记录预算、领取、兑换、销售等指标，暂不执行 SQL |"
             ),
-            (
-                "| `amazon_coupon_asin` | `sampling` | "
-                "Coupon 关联 ASIN 明细，暂不执行 SQL |"
-            ),
+            ("| `amazon_coupon_asin` | `sampling` | Coupon 关联 ASIN 明细，暂不执行 SQL |"),
         ]
 
     return [

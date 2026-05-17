@@ -211,9 +211,9 @@ class PromotionPerformanceParser:
         for promotion in promotions_payload:
             if not isinstance(promotion, dict):
                 continue
-            record_marketplace_id = _string_or_none(
-                promotion.get("marketplaceId")
-            ) or default_marketplace_id
+            record_marketplace_id = (
+                _string_or_none(promotion.get("marketplaceId")) or default_marketplace_id
+            )
             promotion_id = _string_or_none(promotion.get("promotionId"))
             merchant_id = _string_or_none(promotion.get("merchantId"))
             promotion_name = _string_or_none(promotion.get("promotionName"))
@@ -230,14 +230,10 @@ class PromotionPerformanceParser:
                     glance_views=_parse_int(promotion.get("glanceViews")),
                     units_sold=_parse_int(promotion.get("unitsSold")),
                     revenue=_parse_decimal(promotion.get("revenue")),
-                    revenue_currency_code=_string_or_none(
-                        promotion.get("revenueCurrencyCode")
-                    ),
+                    revenue_currency_code=_string_or_none(promotion.get("revenueCurrencyCode")),
                     start_date_time_raw=_string_or_none(promotion.get("startDateTime")),
                     end_date_time_raw=_string_or_none(promotion.get("endDateTime")),
-                    created_date_time_raw=_string_or_none(
-                        promotion.get("createdDateTime")
-                    ),
+                    created_date_time_raw=_string_or_none(promotion.get("createdDateTime")),
                     last_updated_date_time_raw=_string_or_none(
                         promotion.get("lastUpdatedDateTime")
                     ),
@@ -270,9 +266,7 @@ class PromotionPerformanceParser:
                         status=status,
                         asin=_string_or_none(product.get("asin")),
                         product_name=_string_or_none(product.get("productName")),
-                        product_glance_views=_parse_int(
-                            product.get("productGlanceViews")
-                        ),
+                        product_glance_views=_parse_int(product.get("productGlanceViews")),
                         product_units_sold=_parse_int(product.get("productUnitsSold")),
                         product_revenue=_parse_decimal(product.get("productRevenue")),
                         product_revenue_currency_code=_string_or_none(
@@ -352,9 +346,9 @@ class CouponPerformanceParser:
         for coupon in coupons_payload:
             if not isinstance(coupon, dict):
                 continue
-            record_marketplace_id = _string_or_none(
-                coupon.get("marketplaceId")
-            ) or default_marketplace_id
+            record_marketplace_id = (
+                _string_or_none(coupon.get("marketplaceId")) or default_marketplace_id
+            )
             coupon_id = _string_or_none(coupon.get("couponId"))
             merchant_id = _string_or_none(coupon.get("merchantId"))
             coupon_name = _string_or_none(coupon.get("name"))
@@ -379,9 +373,7 @@ class CouponPerformanceParser:
                     budget=_parse_decimal(coupon.get("budget")),
                     budget_spent=_parse_decimal(coupon.get("budgetSpent")),
                     budget_remaining=_parse_decimal(coupon.get("budgetRemaining")),
-                    budget_percentage_used=_parse_decimal(
-                        coupon.get("budgetPercentageUsed")
-                    ),
+                    budget_percentage_used=_parse_decimal(coupon.get("budgetPercentageUsed")),
                     sales=_parse_decimal(coupon.get("sales")),
                     source_system="sp_api_reports",
                     source_report_type=self.report_type,

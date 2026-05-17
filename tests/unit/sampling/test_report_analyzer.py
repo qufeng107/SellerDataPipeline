@@ -11,9 +11,7 @@ from seller_data_pipeline.sampling.report_analyzer import (
 def test_analyze_delimited_report_file_returns_field_stats(tmp_path: Path) -> None:
     raw_file = tmp_path / "listing.txt"
     raw_file.write_text(
-        "seller-sku\tprice\tstatus\tquantity\n"
-        "SKU-1\t25.50\tActive\t\n"
-        "SKU-2\t\tInactive\t3\n",
+        "seller-sku\tprice\tstatus\tquantity\nSKU-1\t25.50\tActive\t\nSKU-2\t\tInactive\t3\n",
         encoding="utf-8",
     )
 
@@ -52,8 +50,7 @@ def test_render_inventory_report_analysis_markdown_includes_inventory_table(
 ) -> None:
     raw_file = tmp_path / "inventory.txt"
     raw_file.write_text(
-        "sku\tafn-fulfillable-quantity\tafn-total-quantity\n"
-        "SKU-1\t3\t4\n",
+        "sku\tafn-fulfillable-quantity\tafn-total-quantity\nSKU-1\t3\t4\n",
         encoding="utf-8",
     )
     analysis = analyze_delimited_report_file(
@@ -72,31 +69,31 @@ def test_render_inventory_report_analysis_markdown_includes_inventory_table(
 def test_analyze_json_sales_report_returns_flattened_paths(tmp_path: Path) -> None:
     raw_file = tmp_path / "sales.json"
     raw_file.write_text(
-        '{'
+        "{"
         '"reportSpecification": {'
         '"reportType": "GET_SALES_AND_TRAFFIC_REPORT",'
         '"reportOptions": {"dateGranularity": "DAY", "asinGranularity": "PARENT"},'
         '"dataStartTime": "2026-05-14",'
         '"dataEndTime": "2026-05-14",'
         '"marketplaceIds": ["ATVPDKIKX0DER"]'
-        '},'
+        "},"
         '"salesAndTrafficByDate": [{'
         '"date": "2026-05-14",'
         '"salesByDate": {'
         '"orderedProductSales": {"amount": 12.34, "currencyCode": "USD"},'
         '"unitsOrdered": 2'
-        '},'
+        "},"
         '"trafficByDate": {"sessions": 10, "unitSessionPercentage": 20.0}'
-        '}],'
+        "}],"
         '"salesAndTrafficByAsin": [{'
         '"parentAsin": "B000000001",'
         '"salesByAsin": {'
         '"orderedProductSales": {"amount": 12.34, "currencyCode": "USD"},'
         '"unitsOrdered": 2'
-        '},'
+        "},"
         '"trafficByAsin": {"sessions": 10, "unitSessionPercentage": 20.0}'
-        '}]'
-        '}',
+        "}]"
+        "}",
         encoding="utf-8",
     )
 
@@ -214,8 +211,6 @@ def test_ads_search_term_report_notes_are_sampling_confirmed_and_redacted(
     assert "<redacted:" in markdown
 
 
-
-
 def test_ads_advertised_product_report_notes_are_sampling_confirmed(
     tmp_path: Path,
 ) -> None:
@@ -243,6 +238,7 @@ def test_ads_advertised_product_report_notes_are_sampling_confirmed(
     assert "SKU-001" not in markdown
     assert "<redacted:" in markdown
 
+
 def test_ads_empty_purchased_product_report_is_confirmed_empty(
     tmp_path: Path,
 ) -> None:
@@ -264,4 +260,3 @@ def test_ads_empty_purchased_product_report_is_confirmed_empty(
     assert "amazon_ads_sp_purchased_product_daily" in markdown
     assert "sampling_confirmed_empty" in markdown
     assert "不是 API 或 parser 失败" in markdown
-

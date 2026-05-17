@@ -353,18 +353,20 @@ def _apply_summary_defaults(
 
 
 def _looks_like_settlement_summary_row(row: dict[str, str]) -> bool:
-    return bool(row.get("settlement-id")) and bool(
-        row.get("total-amount") or row.get("currency")
-    ) and not any(
-        row.get(key)
-        for key in [
-            "transaction-type",
-            "amount-type",
-            "amount-description",
-            "amount",
-            "posted-date",
-            "posted-date-time",
-        ]
+    return (
+        bool(row.get("settlement-id"))
+        and bool(row.get("total-amount") or row.get("currency"))
+        and not any(
+            row.get(key)
+            for key in [
+                "transaction-type",
+                "amount-type",
+                "amount-description",
+                "amount",
+                "posted-date",
+                "posted-date-time",
+            ]
+        )
     )
 
 

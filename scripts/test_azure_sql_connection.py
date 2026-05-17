@@ -3,7 +3,9 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+from dataclasses import replace
 
+from seller_data_pipeline.common.cli import run_cli_main
 from seller_data_pipeline.common.logging import configure_logging
 from seller_data_pipeline.config.settings import get_settings
 from seller_data_pipeline.db.connection import list_user_tables, run_connection_diagnostics
@@ -23,9 +25,36 @@ def main() -> None:
         action="store_true",
         help="Print the diagnostic result as JSON.",
     )
+    parser.add_argument(
+        "--max-attempts",
+        type=int,
+        help=(
+            "Override AZURE_SQL_CONNECT_MAX_ATTEMPTS for this check. "
+            "Useful when waking an auto-paused Azure SQL serverless database."
+        ),
+    )
+    parser.add_argument(
+        "--retry-delay-seconds",
+        type=float,
+        help="Override AZURE_SQL_CONNECT_RETRY_DELAY_SECONDS for this check.",
+    )
     args = parser.parse_args()
 
     settings = get_settings()
+    if args.max_attempts is not None or args.retry_delay_seconds is not None:
+        settings = replace(
+            settings,
+            azure_sql_connect_max_attempts=(
+                args.max_attempts
+                if args.max_attempts is not None
+                else settings.azure_sql_connect_max_attempts
+            ),
+            azure_sql_connect_retry_delay_seconds=(
+                args.retry_delay_seconds
+                if args.retry_delay_seconds is not None
+                else settings.azure_sql_connect_retry_delay_seconds
+            ),
+        )
     configure_logging(settings.log_level)
 
     result = run_connection_diagnostics(settings=settings)
@@ -56,4 +85,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    run_cli_main(main)

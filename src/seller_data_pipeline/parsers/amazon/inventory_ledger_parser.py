@@ -97,9 +97,7 @@ class InventoryLedgerSummaryParser(AmazonFlatFileParser):
             title=empty_to_none(row.get("Title")),
             disposition=empty_to_none(row.get("Disposition")),
             starting_warehouse_balance=parse_int(row.get("Starting Warehouse Balance")),
-            in_transit_between_warehouses=parse_int(
-                row.get("In Transit Between Warehouses")
-            ),
+            in_transit_between_warehouses=parse_int(row.get("In Transit Between Warehouses")),
             receipts=parse_int(row.get("Receipts")),
             customer_shipments=parse_int(row.get("Customer Shipments")),
             customer_returns=parse_int(row.get("Customer Returns")),
@@ -121,6 +119,7 @@ class InventoryLedgerSummaryParser(AmazonFlatFileParser):
             source_row_hash=compute_source_row_hash(row),
             raw_data=row,
         )
+
 
 LEDGER_DETAIL_REPORT_TYPE = "GET_LEDGER_DETAIL_VIEW_DATA"
 
