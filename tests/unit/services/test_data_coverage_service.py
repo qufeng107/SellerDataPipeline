@@ -166,6 +166,23 @@ def test_write_and_render_coverage_files(tmp_path) -> None:
     assert "Analysis/report outputs remain weekly" in markdown
 
 
+def test_run_handles_rows_without_business_dates() -> None:
+    service = DataCoverageAuditService(repo=FakeCoverageRepoWithUndatedRows())
+
+    result = service.run(
+        marketplace_id="ATVPDKIKX0DER",
+        target_start_date=date(2026, 1, 1),
+        target_end_date=date(2026, 5, 18),
+    )
+
+    row = result.coverage_rows[0]
+    assert row.status == "no_business_dates"
+    assert row.stable_status == "no_business_dates"
+    assert row.coverage_start_gap_days is None
+    assert row.days_since_latest_business_date is None
+    assert row.days_since_stable_target_end is None
+
+
 class FakeCoverageRepo:
     def fetch_core_coverage_rows(
         self,
@@ -237,3 +254,41 @@ class FakeCoverageRepo:
                 "latest_parsed_at": datetime(2026, 5, 18, 12, 2, tzinfo=UTC),
             }
         ]
+
+
+class FakeCoverageRepoWithUndatedRows:
+    def fetch_core_coverage_rows(
+        self,
+        *,
+        marketplace_id: str,
+        target_start_date: date,
+        target_end_date: date,
+    ) -> list[dict[str, object]]:
+        return [
+            {
+                "data_domain": "FBA fee preview",
+                "source_table": "amazon_fba_fee_preview",
+                "business_date_semantics": "snapshot/reference date",
+                "row_count": 3,
+                "dated_row_count": 0,
+                "min_business_date": None,
+                "max_business_date": None,
+                "distinct_business_dates": 0,
+                "distinct_entity_count": 2,
+                "target_window_row_count": 0,
+                "target_min_business_date": None,
+                "target_max_business_date": None,
+                "latest_created_at": datetime(2026, 5, 18, 12, 0, tzinfo=UTC),
+                "latest_updated_at": datetime(2026, 5, 18, 12, 0, tzinfo=UTC),
+                "notes": "Rows exist, but no parseable business date was available.",
+            }
+        ]
+
+    def fetch_report_request_coverage_rows(
+        self,
+        *,
+        marketplace_id: str,
+        target_start_date: date,
+        target_end_date: date,
+    ) -> list[dict[str, object]]:
+        return []

@@ -587,14 +587,14 @@ def write_report_request_csv(rows: tuple[ReportRequestCoverageRow, ...], path: P
             writer.writerow(row.to_dict())
 
 
-def _date_gap(*, start: date | None, end: date) -> int | None:
-    if start is None:
+def _date_gap(*, start: date | None, end: date | None) -> int | None:
+    if start is None or end is None:
         return None
     return (end - start).days
 
 
-def _positive_date_gap(*, start: date | None, end: date) -> int | None:
-    if start is None:
+def _positive_date_gap(*, start: date | None, end: date | None) -> int | None:
+    if start is None or end is None:
         return None
     gap = (end - start).days
     return gap if gap > 0 else None
