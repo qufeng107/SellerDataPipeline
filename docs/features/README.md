@@ -27,16 +27,18 @@
 | [`feature_fba_fee_preview_ingestion.md`](feature_fba_fee_preview_ingestion.md) | Implemented | SP-API `GET_FBA_ESTIMATED_FBA_FEES_TXT_DATA` -> `amazon_fba_fee_preview`；009、dry-run、execute 和第二次 execute 幂等性验证已完成。 |
 | [`feature_promotion_coupon_ingestion.md`](feature_promotion_coupon_ingestion.md) | Implemented | SP-API Promotion/Coupon reports -> 4 张促销/优惠券表；010、dry-run、execute 和第二次 execute 幂等性验证已完成。 |
 | [`feature_inventory_ledger_ingestion.md`](feature_inventory_ledger_ingestion.md) | Implemented | SP-API Inventory Ledger summary/detail -> 2 张库存流水表；011 已执行，专用 ingestion 已完成 execute/幂等验证。 |
-| [`feature_ingestion_job_config.md`](feature_ingestion_job_config.md) | Planned | 数据下载/入库/加工/报表任务周期配置表；012 migration 和 seed 已准备，尚未执行。 |
+| [`feature_ingestion_job_config.md`](feature_ingestion_job_config.md) | Implemented | 数据下载/入库/加工/报表任务周期配置表；012 migration 和 seed 已执行，`pipeline_job_config` 当前 13 行。 |
+| [`feature_profit_calculation.md`](feature_profit_calculation.md) | Planned / policy frozen | 利润核算口径已冻结为 Settlement-led Financial Profit v1.0；第一版以 Settlement 财务主口径 + SKU 标准成本为核心，先生成人工复核文件，不立即新增利润结果表。 |
+| [`feature_sku_cost_management.md`](feature_sku_cost_management.md) | Implemented | SKU 成本 xlsx 模板导出与导入；默认 dry-run、按 marketplace + SKU + effective_from 幂等写入 `amazon_sku_cost`。 |
 
 ## 3. 下一批建议
 
 当前核心 ingestion 功能已全部完成。后续优先级应切换为：
 
-1. 执行 `012_create_ingestion_job_config.sql` 和 seed，把任务周期写入数据库。
-2. 进入 `feature_profit_calculation.md`，先定义利润核算口径。
-3. 设计 SKU 成本与头程/海运成本导入方式。
-4. 判断是否需要新增利润 fact 表、视图或报表输出表。
+1. 按 `feature_profit_calculation.md` 开发利润计算 dry-run / preview。
+2. 使用 `feature_sku_cost_management.md` 导出/导入 SKU 成本、包装成本、头程/海运成本，并验证缺成本阻塞规则。
+3. 先用真实 3月/4月或 5月上旬数据人工复核利润结果。
+4. 连续几期稳定后，再判断是否新增利润 fact 表、视图或报表输出表。
 5. 利润核算稳定后，再做 `feature_weekly_operations_report.md` 和 `feature_clearance_decision_support.md`。
 
-已完成当前阶段设计与实现的 ingestion 功能包括：Listing、Inventory、Sales & Traffic、Settlement、Orders、FBA Reimbursements、FBA Fee Preview、Promotion/Coupon、Inventory Ledger 和 Ads。对应 migration `003`-`011` 已执行成功并同步到 current schema spec。
+已完成当前阶段设计与实现的 ingestion 功能包括：Listing、Inventory、Sales & Traffic、Settlement、Orders、FBA Reimbursements、FBA Fee Preview、Promotion/Coupon、Inventory Ledger 和 Ads。对应 migration `003`-`011` 已执行成功；任务周期配置 migration `012` 和 seed 也已执行成功。

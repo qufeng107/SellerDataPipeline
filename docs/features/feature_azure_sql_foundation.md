@@ -14,7 +14,7 @@
 
 本功能负责为 SellerDataPipeline 建立 Azure SQL 数据库基础设施，包括连接配置、migration 执行、当前 schema 记录、数据库状态检查和后续 schema 变更治理规则。它不直接处理 Amazon 原始报表，但为 SP-API Reports、Amazon Ads API、后续利润核算和周期报表提供统一结构化数据仓库。
 
-当前该功能已完成第一阶段验收：Azure SQL `amazon_ops` 可连接，`001_create_core_tables.sql` 和 `002_create_indexes.sql` 已执行成功，数据库中存在 28 张用户表，`scripts/check_database_status.py` 可输出表行数、最新 sync run 和最新 schema validation event，`scripts/export_database_schema_spec.py` 可从真实系统 catalog 导出表、字段、索引和约束，用于 migration 后更新 current schema spec。针对 Azure SQL serverless 长时间 idle 后首次连接可能 login timeout 的情况，连接层已新增 retry + `SELECT 1` warm-up，业务 SQL 只会在连接预热成功后执行。
+当前该功能已完成第一阶段验收：Azure SQL `amazon_ops` 可连接，`001_create_core_tables.sql` 和 `002_create_indexes.sql` 已执行成功，初始核心库表建立后有 28 张用户表；012 执行后当前数据库有 29 张用户表，`scripts/check_database_status.py` 可输出表行数、最新 sync run 和最新 schema validation event，`scripts/export_database_schema_spec.py` 可从真实系统 catalog 导出表、字段、索引和约束，用于 migration 后更新 current schema spec。针对 Azure SQL serverless 长时间 idle 后首次连接可能 login timeout 的情况，连接层已新增 retry + `SELECT 1` warm-up，业务 SQL 只会在连接预热成功后执行。
 
 ## 2. 功能状态
 
@@ -76,7 +76,7 @@
 | `.env` | Azure SQL 连接参数 | 环境变量 | 已验证 | 本地开发当前使用 SQL password auth。 |
 | `sql/migrations/001_create_core_tables.sql` | 初始核心表结构 | T-SQL | 已执行 | 29/29 batches。 |
 | `sql/migrations/002_create_indexes.sql` | 初始索引 | T-SQL | 已执行 | 54/54 batches。 |
-| Azure SQL | `amazon_ops` database | SQL Azure | 已验证 | 当前 28 张用户表。 |
+| Azure SQL | `amazon_ops` database | SQL Azure | 已验证 | 当前 29 张用户表。 |
 | ODBC Driver | `ODBC Driver 18 for SQL Server` | Native driver | 本地已可用 | pyodbc 依赖该驱动。 |
 | Connection warm-up | `SELECT 1` | SQL | 已实现 | 所有 `get_connection()` 在 yield 给业务 SQL 前都会执行。 |
 
@@ -153,7 +153,7 @@ AZURE_SQL_MANAGED_IDENTITY_CLIENT_ID=''
 
 ### 9.1 当前已存在表
 
-当前 Azure SQL `amazon_ops` 已有 28 张用户表。完整字段、索引、数据来源见 `docs/database/database_current_schema_spec.md`。
+当前 Azure SQL `amazon_ops` 已有 29 张用户表。完整字段、索引、数据来源见 `docs/database/database_current_schema_spec.md`。
 
 | 领域 | 表 |
 |---|---|
@@ -315,7 +315,7 @@ python scripts/check_database_status.py
 2. `001_create_core_tables.sql` 执行成功：29/29 batches。
 3. 执行 `001` 后，用户表数量为 28。
 4. `002_create_indexes.sql` 执行成功：54/54 batches。
-5. `python scripts/test_azure_sql_connection.py --list-tables` 可列出 28 张用户表。
+5. `python scripts/test_azure_sql_connection.py --list-tables` 当前可列出 29 张用户表；初始 `001` 后为 28 张。
 6. `scripts/check_database_status.py` 已实现，可检查重点表行数、最新 run log、最新 schema validation event。
 7. `docs/database/database_current_schema_spec.md` 已记录当前真实数据库结构。
 8. `docs/database/database_migration_policy.md` 已记录后续 migration 规则。
@@ -327,7 +327,7 @@ python scripts/check_database_status.py
 |---|---|---|---|
 | 2026-05-16 | Azure SQL 连接成功 | `python scripts/test_azure_sql_connection.py --json` | `database=amazon_ops`, `tables=0`。 |
 | 2026-05-16 | 初始核心表创建成功 | `python scripts/run_sql_migration.py --file sql/migrations/001_create_core_tables.sql` | 29/29 batches。 |
-| 2026-05-16 | 用户表清单验证成功 | `python scripts/test_azure_sql_connection.py --list-tables` | 28 张用户表。 |
+| 2026-05-16 | 用户表清单验证成功 | `python scripts/test_azure_sql_connection.py --list-tables` | 初始 28 张用户表；012 后当前 29 张。 |
 | 2026-05-16 | 初始索引创建成功 | `python scripts/run_sql_migration.py --file sql/migrations/002_create_indexes.sql` | 54/54 batches。 |
 | 2026-05-16 | 数据库检查脚本完成 | `scripts/check_database_status.py` | 输出连接、表行数、latest sync/schema events。 |
 | 2026-05-16 | Azure SQL connection warm-up retry 完成 | `src/seller_data_pipeline/db/connection.py` | 处理 serverless idle/resume 后首次 login timeout；业务 SQL 前执行 `SELECT 1`。 |

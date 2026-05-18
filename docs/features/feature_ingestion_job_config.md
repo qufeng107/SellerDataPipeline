@@ -1,6 +1,6 @@
 # Feature: Ingestion Job Configuration
 
-> 状态：Planned  
+> 状态：Implemented  
 > 更新时间：2026-05-18  
 > 文档定位：设计用于记录数据下载、入库、加工和报表任务执行周期的配置表。当前先支持 manual-first 流程；未来 Azure Container Apps Jobs 可读取该配置决定调度频率。
 
@@ -59,7 +59,7 @@ run_log = execution / actual state
 
 ## 5. 目标表设计
 
-准备新增：
+已新增：
 
 ```text
 pipeline_job_config
@@ -91,19 +91,19 @@ pipeline_job_config
 
 ## 6. Migration 与 seed
 
-准备新增 migration：
+已执行 migration：
 
 ```text
-sql/migrations/012_create_ingestion_job_config.sql
+sql/migrations/012_create_ingestion_job_config.sql  # 4/4 batches
 ```
 
-准备新增 seed：
+已执行 seed：
 
 ```text
-sql/seeds/001_seed_ingestion_job_config_core_jobs.sql
+sql/seeds/001_seed_ingestion_job_config_core_jobs.sql  # 1/1 batch
 ```
 
-执行顺序建议：
+已执行验证命令：
 
 ```powershell
 python scripts/run_sql_migration.py --file sql/migrations/012_create_ingestion_job_config.sql --dry-run --show-batches
@@ -113,7 +113,14 @@ python scripts/run_sql_migration.py --file sql/seeds/001_seed_ingestion_job_conf
 python scripts/export_database_schema_spec.py --output-prefix after_012_job_config --include-row-counts
 ```
 
-执行成功后，需要更新：
+执行成功后已导出：
+
+```text
+runtime/schema_exports/after_012_job_config.json
+runtime/schema_exports/after_012_job_config.md
+```
+
+需要同步/已同步：
 
 ```text
 docs/database/database_current_schema_spec.md
@@ -174,13 +181,17 @@ WHERE enabled = 1
 5. `database_current_schema_spec.md` 来自 live schema 结果并同步更新。
 6. cadence catalog 与 seed 表保持一致。
 
+当前验收状态：1-5 已完成；第 6 项后续应在每次调整 seed/cadence 时继续复核。
+
 ## 10. 当前状态
 
 截至 2026-05-18：
 
 ```text
 设计完成
-012 migration 已准备，尚未执行
-seed 已准备，尚未执行
+012 migration 已执行成功：4/4 batches
+seed 已执行成功：1/1 batch
+live schema 已导出：after_012_job_config
+pipeline_job_config 当前 13 行
 scheduler 未开发
 ```

@@ -17,6 +17,7 @@ Manual-first operations
 数据下载
 -> 数据入库
 -> 数据加工
+-> SKU 成本维护
 -> 报表生成
 -> 人工复核
 -> 邮件发送
@@ -122,23 +123,84 @@ amazon_schema_validation_event 是否有 blocking requires_review
 目标表行数是否符合预期
 ```
 
-### 2.5 数据加工与报表生成
+### 2.4.1 数据覆盖范围审计
 
-下一阶段将新增利润核算和周报命令。预期手动流程是：
+在继续利润复核、周报/月报前，先运行 normalized 数据覆盖审计，确认每个数据源到底覆盖到哪一天：
 
 ```powershell
-python scripts/calculate_profit_report.py --marketplace-id ATVPDKIKX0DER --period weekly --start-date YYYY-MM-DD --end-date YYYY-MM-DD
+python scripts/audit_data_coverage.py --marketplace-id ATVPDKIKX0DER --target-start-date 2026-01-01
+```
+
+输出文件：
+
+```text
+runtime/data_coverage_audits/ATVPDKIKX0DER/{target_start}_{target_end}/data_coverage_audit.md
+runtime/data_coverage_audits/ATVPDKIKX0DER/{target_start}_{target_end}/data_coverage_audit.csv
+runtime/data_coverage_audits/ATVPDKIKX0DER/{target_start}_{target_end}/report_request_coverage.csv
+```
+
+详细规则见：
+
+```text
+docs/operations/data_coverage_audit_workflow.md
+```
+
+### 2.5 SKU 成本维护
+
+利润 preview 依赖 `amazon_sku_cost`。该成本不是 Amazon 后台数据，而是公司内部采购、包装、头程/海运/清关/入仓分摊成本。
+
+先导出模板：
+
+```powershell
+python scripts/export_sku_cost_template.py --marketplace-id ATVPDKIKX0DER
+```
+
+人工填写 `new_*` 列后，先 dry-run：
+
+```powershell
+python scripts/import_sku_cost_template.py --file runtime/sku_cost_templates/ATVPDKIKX0DER/sku_cost_template.xlsx
+```
+
+确认无误后 execute：
+
+```powershell
+python scripts/import_sku_cost_template.py --file runtime/sku_cost_templates/ATVPDKIKX0DER/sku_cost_template.xlsx --execute
+```
+
+详细规则见：
+
+```text
+docs/features/feature_sku_cost_management.md
+```
+
+### 2.6 数据加工与报表生成
+
+利润核算口径已冻结为 Settlement-led Financial Profit v1.0。当前已新增利润 preview。预期手动流程是：
+
+```powershell
+python scripts/audit_data_coverage.py --marketplace-id ATVPDKIKX0DER --target-start-date 2026-01-01
+python scripts/calculate_profit_report.py --marketplace-id ATVPDKIKX0DER --period weekly --start-date YYYY-MM-DD --end-date YYYY-MM-DD --dry-run
 python scripts/generate_weekly_operations_report.py --marketplace-id ATVPDKIKX0DER --start-date YYYY-MM-DD --end-date YYYY-MM-DD
 ```
 
-以上脚本尚未实现，正式设计见后续：
+`calculate_profit_report.py` 已实现；周报脚本尚未实现。利润口径已冻结，正式设计见：
 
 ```text
 docs/features/feature_profit_calculation.md
-docs/features/feature_weekly_operations_report.md
+docs/adr/ADR-009-settlement-led-profit-policy.md
+docs/features/feature_weekly_operations_report.md  # 待创建
 ```
 
-### 2.6 人工复核与邮件发送
+利润 preview 复核规则：
+
+```text
+Settlement 是财务主口径；
+Orders / Ads / Promotion-Coupon 只做解释；
+缺 SKU 成本时默认不输出正式净利润；
+人工确认后再用于周报或发给会计。
+```
+
+### 2.7 人工复核与邮件发送
 
 第一版周报不应自动发送。建议流程：
 
@@ -180,7 +242,7 @@ check_database_status.py 可确认结果
 
 ## 5. 与未来 Jobs 的关系
 
-未来 Azure Container Apps Jobs 应读取数据库中的 job config 或等价配置，决定：
+未来 Azure Container Apps Jobs 应读取当前已建立的 `pipeline_job_config` 或等价配置，决定：
 
 ```text
 运行哪个脚本
@@ -190,9 +252,10 @@ check_database_status.py 可确认结果
 失败后如何告警
 ```
 
-对应设计见：
+对应设计与已执行结构见：
 
 ```text
 docs/features/feature_ingestion_job_config.md
 sql/migrations/012_create_ingestion_job_config.sql
+sql/seeds/001_seed_ingestion_job_config_core_jobs.sql
 ```

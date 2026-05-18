@@ -16,9 +16,9 @@
 ```text
 手动下载 raw data
 -> 手动入库 normalized tables
--> 手动加工周报/月报
+-> 手动加工利润 preview 和周报/月报
 -> 手动复核并发送邮件
 -> 再迁移到 Azure Container Apps Jobs
 ```
 
-自动化不应改变业务逻辑，只应复用已经通过手动验收的 CLI、配置和审计表。
+自动化不应改变业务逻辑，只应复用已经通过手动验收的 CLI、配置和审计表。利润核算当前采用 Settlement-led Financial Profit v1.0，第一版必须先人工复核后再进入周报或邮件。

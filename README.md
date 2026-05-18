@@ -18,12 +18,14 @@ Amazon SP-API / Amazon Ads API / Seller Central raw exports
 
 截至 2026-05-18：
 
-- Azure SQL `amazon_ops` 已完成核心建表、索引和 001-011 migration，当前真实数据库有 28 张用户表。
+- Azure SQL `amazon_ops` 已完成核心建表、索引和 001-012 migration，当前真实数据库有 29 张用户表。
 - 核心 normalized ingestion 已完成真实 Azure SQL execute 和第二次 execute 幂等性验证：Ads、Listing、Inventory、Sales & Traffic、Settlement、Orders、FBA Reimbursements、FBA Fee Preview、Promotion/Coupon、Inventory Ledger。
 - Azure SQL 连接层已支持 retry + `SELECT 1` warm-up，并能区分 idle/resume、firewall/IP allowlist 和登录错误。
 - 已新增 `scripts/check_database_status.py` 与 `scripts/export_database_schema_spec.py`，用于检查运行状态和从 live schema 更新数据库 spec。
 - 当前主线从“继续扩 ingestion”转为“手动运营流程 + 利润核算 + 周报/月报”。
-- 已新增 manual-first operations 文档，并准备 `012_create_ingestion_job_config.sql`，用于后续把数据下载/入库/加工/报表任务周期写入数据库配置表。
+- 已新增 manual-first operations 文档，并执行 `012_create_ingestion_job_config.sql` 与 `001_seed_ingestion_job_config_core_jobs.sql`，当前 `pipeline_job_config` 有 13 条任务配置。
+- 利润核算口径已冻结为 Settlement-led Financial Profit v1.0：财务利润以 Settlement 为主，Orders / Ads / Promotion-Coupon 只做运营解释，SKU 成本来自 `amazon_sku_cost`。
+- 已实现 SKU 成本 xlsx 模板导出/导入：先导出模板人工填写，再 dry-run/execute 写入 `amazon_sku_cost`。
 
 详细进展见：[`docs/project/progress_next_steps.md`](docs/project/progress_next_steps.md)。
 
@@ -59,7 +61,9 @@ Amazon SP-API / Amazon Ads API / Seller Central raw exports
 | [`docs/features/feature_fba_fee_preview_ingestion.md`](docs/features/feature_fba_fee_preview_ingestion.md) | SP-API FBA Fee Preview 入库功能文档；009、dry-run、execute 与幂等验证已完成。 |
 | [`docs/features/feature_promotion_coupon_ingestion.md`](docs/features/feature_promotion_coupon_ingestion.md) | Promotion/Coupon 入库功能文档；010、dry-run、execute 与幂等验证已完成。 |
 | [`docs/features/feature_inventory_ledger_ingestion.md`](docs/features/feature_inventory_ledger_ingestion.md) | Inventory Ledger 入库功能文档；011 已执行，专用 dry-run 已完成，已完成 execute/幂等验证。 |
-| [`docs/features/feature_ingestion_job_config.md`](docs/features/feature_ingestion_job_config.md) | 数据下载/入库/加工/报表任务周期配置表设计；012 migration 已准备，尚未执行。 |
+| [`docs/features/feature_ingestion_job_config.md`](docs/features/feature_ingestion_job_config.md) | 数据下载/入库/加工/报表任务周期配置表设计；012 migration 和 seed 已执行成功。 |
+| [`docs/features/feature_profit_calculation.md`](docs/features/feature_profit_calculation.md) | 利润核算功能设计；口径已冻结为 Settlement-led Financial Profit v1.0，下一步开发手动利润 preview。 |
+| [`docs/features/feature_sku_cost_management.md`](docs/features/feature_sku_cost_management.md) | SKU 成本 xlsx 模板导出/导入功能；用于维护 `amazon_sku_cost`。 |
 | [`docs/database/database_current_schema_spec.md`](docs/database/database_current_schema_spec.md) | 当前真实 Azure SQL 表结构、字段、索引与数据来源。 |
 | [`docs/database/database_migration_policy.md`](docs/database/database_migration_policy.md) | 数据库变更和 migration 规则。 |
 | [`docs/database/database_schema_export_tool.md`](docs/database/database_schema_export_tool.md) | 从真实 Azure SQL 导出 schema snapshot 的工具说明。 |
@@ -154,15 +158,15 @@ python scripts/check_database_status.py --all-tables
 
 ```bash
 python scripts/export_database_schema_spec.py
-python scripts/export_database_schema_spec.py --output-prefix after_004_xxx --include-row-counts
+python scripts/export_database_schema_spec.py --output-prefix after_013_xxx --include-row-counts
 python scripts/export_database_schema_spec.py --stdout-markdown
 ```
 
-执行新 SQL migration 时使用以下模式。当前 `001/002/003/004/005/006/007/008/009/010/011` 已经执行成功并锁定；后续结构变化必须从 `010_xxx.sql` 开始。
+执行新 SQL migration 时使用以下模式。当前 `001/002/003/004/005/006/007/008/009/010/011/012` 已经执行成功并锁定；后续结构变化必须从 `013_xxx.sql` 开始。
 
 ```bash
-python scripts/run_sql_migration.py --file sql/migrations/010_xxx.sql --dry-run --show-batches
-python scripts/run_sql_migration.py --file sql/migrations/010_xxx.sql
+python scripts/run_sql_migration.py --file sql/migrations/013_xxx.sql --dry-run --show-batches
+python scripts/run_sql_migration.py --file sql/migrations/013_xxx.sql
 ```
 
 注意：已执行过的 migration 不允许修改。后续任何结构变化都必须新增 migration。migration 执行成功并导出 live schema 后，才可把新字段或新索引写入 current schema spec。
@@ -199,6 +203,14 @@ SP-API 连接测试：
 ```bash
 python scripts/test_sp_api_connection.py
 ```
+
+利润核算口径已冻结，脚本待开发；规划入口如下：
+
+```bash
+python scripts/calculate_profit_report.py --marketplace-id ATVPDKIKX0DER --period weekly --start-date YYYY-MM-DD --end-date YYYY-MM-DD --dry-run
+```
+
+第一版利润 preview 不应自动发送邮件，必须人工复核 Settlement、SKU 成本、广告、促销和异常项后再使用。
 
 提交并下载 SP-API Reports：
 

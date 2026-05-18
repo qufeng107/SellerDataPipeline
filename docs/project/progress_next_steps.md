@@ -1,7 +1,7 @@
 # SellerDataPipeline 当前进展与下一步计划
 
 > 更新时间：2026-05-18  
-> 当前版本：v1.50 core ingestion closed; manual operations planning  
+> 当前版本：v1.54 data coverage audit implemented; ready for 2026 YTD backfill planning  
 > 文档定位：记录项目真实进展、已完成里程碑、当前非阻塞问题和下一步开发顺序。本文不承载详细字段设计；功能细节见 `docs/features/`。
 
 ## 1. 当前一句话状态
@@ -10,9 +10,11 @@
 
 ```text
 手动运营流程
--> 任务周期配置
--> 利润核算设计
--> 周报/月报生成
+-> 任务周期配置已落库
+-> 利润核算口径已冻结
+-> SKU 成本模板导出/导入
+-> 数据覆盖审计
+-> 利润 preview/周报/月报生成
 -> 邮件发送
 -> Azure Container Apps Jobs 自动化
 ```
@@ -48,6 +50,13 @@
 009_add_fba_fee_preview_business_key.sql
 010_add_promotion_coupon_business_keys.sql
 011_add_inventory_ledger_business_keys.sql
+012_create_ingestion_job_config.sql
+```
+
+Seed 已执行成功：
+
+```text
+001_seed_ingestion_job_config_core_jobs.sql
 ```
 
 当前真实数据库记录在：
@@ -56,14 +65,7 @@
 docs/database/database_current_schema_spec.md
 ```
 
-准备中但尚未执行：
-
-```text
-012_create_ingestion_job_config.sql
-sql/seeds/001_seed_ingestion_job_config_core_jobs.sql
-```
-
-用途：建立 `pipeline_job_config`，记录手动/未来自动化任务的执行周期、默认回看窗口和脚本路径。
+`runtime/schema_exports/after_012_job_config.md/json` 显示当前用户表数量为 29，`pipeline_job_config` 当前 13 行。
 
 ## 4. 已完成基础设施
 
@@ -115,39 +117,33 @@ docs/project/requirements_deprecation_plan.md
 | 限制 | 后续处理 |
 |---|---|
 | raw file registry 关联仍不完整，部分 `source_raw_file_id` 可能为 NULL | 后续补 raw file registry / Blob Storage 归档增强。 |
-| 任务周期目前主要在文档中，配置表尚未执行 | 执行 012 migration 和 seed 后纳入数据库。 |
-| 利润核算口径未定义 | 下一阶段编写 `feature_profit_calculation.md`。 |
-| SKU 成本、采购成本、头程/海运成本需要录入机制 | 利润核算设计中确定成本表和导入方式。 |
-| 周报/月报脚本未实现 | 利润核算口径确定后开发手动脚本。 |
+| 任务周期已写入 `pipeline_job_config` | 后续 profit/report/email placeholder 待对应功能实现后再启用。 |
+| 利润核算口径已冻结 | 已采用 Settlement-led Financial Profit v1.0；下一步开发手动利润 preview。 |
+| SKU 成本、采购成本、头程/海运成本需要录入机制 | 已实现 xlsx 模板导出/导入脚本，目标表为 `amazon_sku_cost`。 |
+| 2026-01-01 至今各数据源覆盖范围尚需确认 | 已新增 `scripts/audit_data_coverage.py`，先跑 coverage audit，再决定 backfill 范围。 |
+| 周报/月报脚本未实现 | 数据覆盖和利润 preview 人工复核稳定后开发手动周报/月报。 |
 | 自动邮件和 Azure Jobs 未实现 | 手动流程稳定后再自动化。 |
 
 ## 8. 下一步建议
 
-建议下一批先做：
-
-```text
-012_create_ingestion_job_config.sql dry-run / execute
-seed ingestion job config
-导出 live schema
-更新 database_current_schema_spec.md
-```
-
-然后进入：
+利润核算口径已冻结在：
 
 ```text
 docs/features/feature_profit_calculation.md
+docs/adr/ADR-009-settlement-led-profit-policy.md
 ```
 
-利润核算设计应先确定：
+当前冻结规则：
 
 ```text
-收入来源：Settlement / Orders / Sales & Traffic 的优先级
-广告费口径：Ads attribution vs Settlement 实扣
-促销折扣口径：Promotion/Coupon performance vs Settlement 实扣
-退款、赔偿、FBA fee、referral fee、storage fee 的分类
-SKU 采购成本、包装成本、头程/海运成本分摊
-周报/月报输出粒度：SKU / ASIN / 周 / 月
+财务利润以 Settlement 为主；
+Orders / Sales & Traffic / Ads / Promotion-Coupon 只做运营解释和差异分析；
+SKU 成本来自 amazon_sku_cost；
+第一版采用 SKU 标准成本 + 生效日期；
+第一版先输出人工复核文件，不立即新增利润结果表。
 ```
+
+下一批建议先运行 `scripts/audit_data_coverage.py --target-start-date 2026-01-01`，确认每个 normalized 数据源实际覆盖范围；再按缺口补 2026 年初至今的 raw data / ingestion；核心源覆盖后，继续运行利润 preview 并用 3月/4月或 5月上旬数据人工复核。
 
 ## 9. 当前建议手动运行顺序
 
@@ -164,7 +160,9 @@ docs/operations/ingestion_job_cadence_catalog.md
 先手动下载 raw data
 -> 手动运行各 ingestion CLI
 -> 手动检查数据库
--> 手动生成利润/周报
+-> 手动导出/导入 SKU 成本
+-> 手动运行数据覆盖审计
+-> 手动生成利润 preview / 周报
 -> 人工复核邮件
 -> 最后才上自动化 Jobs
 ```

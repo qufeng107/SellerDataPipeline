@@ -29,15 +29,10 @@ sql/migrations/008_add_fba_reimbursement_business_key.sql
 sql/migrations/009_add_fba_fee_preview_business_key.sql
 sql/migrations/010_add_promotion_coupon_business_keys.sql
 sql/migrations/011_add_inventory_ledger_business_keys.sql
-```
-
-任何新的数据库结构变化都必须继续新增后续 migration。当前准备中但尚未执行：
-
-```text
 sql/migrations/012_create_ingestion_job_config.sql
 ```
 
-`012` 执行成功后也会进入锁定范围。
+任何新的数据库结构变化都必须继续新增后续 migration。当前无已准备但尚未执行的 migration；后续从 `013_xxx.sql` 开始。
 
 ## 原因
 

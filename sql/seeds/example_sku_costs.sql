@@ -1,5 +1,32 @@
--- Example only. Replace with real SKU costs before calculating profit.
+-- Example only. Replace with real SKU costs before calculating official profit.
+-- This file is intentionally not a migration. Review values with operations/accounting first,
+-- then run manually if you want to seed amazon_sku_cost in a local/dev database.
+--
 -- INSERT INTO dbo.amazon_sku_cost
--- (marketplace, sku, asin, product_cost, first_mile_cost, packaging_cost, other_unit_cost, currency, effective_from, remark)
+-- (
+--     marketplace_id,
+--     seller_sku,
+--     asin,
+--     product_cost,
+--     first_mile_cost,
+--     packaging_cost,
+--     other_unit_cost,
+--     currency,
+--     effective_from,
+--     effective_to,
+--     remark
+-- )
 -- VALUES
--- ('US', 'EXAMPLE-SKU', 'B000000000', 1.50, 0.30, 0.05, 0.00, 'USD', '2026-01-01', 'Example row only');
+-- (
+--     'ATVPDKIKX0DER',
+--     'EXAMPLE-SKU',
+--     'B000000000',
+--     1.50,
+--     0.30,
+--     0.05,
+--     0.00,
+--     'USD',
+--     '2026-01-01',
+--     NULL,
+--     'Example row only; replace with real product/packaging/first-mile costs.'
+-- );

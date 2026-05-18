@@ -45,6 +45,8 @@ docs/
     feature_azure_sql_foundation.md
     feature_ads_ingestion.md
     feature_listing_snapshot_ingestion.md
+    feature_profit_calculation.md
+    feature_sku_cost_management.md
     # feature_weekly_operations_report.md
 
   database/
@@ -63,6 +65,7 @@ docs/
     ADR-006-azure-sql-connection-warmup.md
     ADR-007-manual-first-before-automation.md
     ADR-008-ingestion-job-config-table.md
+    ADR-009-settlement-led-profit-policy.md
 ```
 
 ## 3. 文档职责边界
@@ -101,8 +104,11 @@ docs/
 16. 已实现功能：[`features/feature_settlement_ingestion.md`](features/feature_settlement_ingestion.md)，006 已执行，Settlement 专用 dry-run / repository / CLI / execute / 幂等性已完成
 17. 已实现功能：[`features/feature_orders_ingestion.md`](features/feature_orders_ingestion.md)，Orders 007 已执行，专用 ingestion、真实 execute 和幂等性验证均已完成
 18. 已实现功能：[`features/feature_fba_reimbursements_ingestion.md`](features/feature_fba_reimbursements_ingestion.md)，`008` 已执行，dry-run / execute / 幂等性验证已完成
-19. 当前功能：[`features/feature_fba_fee_preview_ingestion.md`](features/feature_fba_fee_preview_ingestion.md)，009 已执行，专用 dry-run 已完成，已完成 execute/幂等验证
-19. 相关 ADR，尤其 `ADR-005-progressive-generalization.md` 与 `ADR-006-azure-sql-connection-warmup.md`
+19. 已实现功能：[`features/feature_fba_fee_preview_ingestion.md`](features/feature_fba_fee_preview_ingestion.md)，009 已执行，专用 dry-run 已完成，已完成 execute/幂等验证
+20. 已实现功能：[`features/feature_ingestion_job_config.md`](features/feature_ingestion_job_config.md)，012 和 seed 已执行，当前 `pipeline_job_config` 13 行
+21. 已规划功能：[`features/feature_profit_calculation.md`](features/feature_profit_calculation.md)，利润口径已冻结为 Settlement-led Financial Profit v1.0
+22. 已实现功能：[`features/feature_sku_cost_management.md`](features/feature_sku_cost_management.md)，通过 xlsx 模板导出/导入维护 `amazon_sku_cost`
+23. 相关 ADR，尤其 `ADR-005-progressive-generalization.md`、`ADR-006-azure-sql-connection-warmup.md` 与 `ADR-009-settlement-led-profit-policy.md`
 
 ## 5. 当前迁移与治理进展
 
@@ -125,8 +131,9 @@ docs/
 15. Promotion/Coupon 功能已完成 `010`、dry-run、execute 和第二次 execute 幂等性验证。
 16. Inventory Ledger 功能已完成 `011`、专用 dry-run/schema guard/repository/CLI，已完成 execute/幂等验证。
 17. 新增 operations runbooks：手动执行流程和数据周期目录。
-18. 新增 job config 设计：`feature_ingestion_job_config.md`，`012_create_ingestion_job_config.sql` 已准备但尚未执行。
-19. 后续进入利润、周报、清仓决策等业务分析功能文档。
+18. 新增并执行 job config：`feature_ingestion_job_config.md`，`012_create_ingestion_job_config.sql` 和 seed 已执行成功，`pipeline_job_config` 当前 13 行。
+19. 已冻结利润核算口径：`feature_profit_calculation.md` + `ADR-009-settlement-led-profit-policy.md`。后续进入利润 preview、周报、清仓决策等业务分析功能实现。
+20. 已实现 SKU 成本模板导出/导入功能：`feature_sku_cost_management.md`，用于手动维护 `amazon_sku_cost`。
 
 ## 6. 维护硬规则
 

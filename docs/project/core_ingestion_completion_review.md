@@ -47,9 +47,10 @@ dry-run
 009_add_fba_fee_preview_business_key.sql
 010_add_promotion_coupon_business_keys.sql
 011_add_inventory_ledger_business_keys.sql
+012_create_ingestion_job_config.sql
 ```
 
-以上 migration 已执行成功，不允许再修改历史文件。后续从 `012_xxx.sql` 开始。
+以上 migration 已执行成功，不允许再修改历史文件。后续从 `013_xxx.sql` 开始。`001_seed_ingestion_job_config_core_jobs.sql` 也已执行成功，当前 `pipeline_job_config` 有 13 条任务配置。
 
 ## 4. 当前已知限制
 
@@ -57,7 +58,7 @@ dry-run
 |---|---|---|
 | raw file 归档关联仍不完整 | 多数 normalized 表可追踪 `source_raw_file_path`，但 `source_raw_file_id` 仍可能为 NULL | 后续补 raw file registry 关联。 |
 | 还没有自动下载调度 | 当前 raw data 仍依赖手动下载/收集 | 先建立 manual workflow，再上 Jobs。 |
-| 利润核算口径未定义 | 不能直接输出正式利润周报 | 下一阶段写 `feature_profit_calculation.md`。 |
+| 利润核算口径已冻结但未实现 | 还不能直接输出正式利润周报 | 下一阶段按 Settlement-led Financial Profit v1.0 开发手动利润 preview。 |
 | SKU 成本/头程成本仍需人工配置 | 缺少真实毛利计算关键输入 | 设计成本导入机制。 |
 | 周报和邮件发送未实现 | 仍需人工整理输出 | 先实现手动生成，再做自动邮件。 |
 | `requirements_to_be_deprecated/` 尚未删除 | 历史 sample docs 仍有引用 | 后续迁移 sample notes 后再删除。 |
@@ -77,9 +78,8 @@ dry-run
 
 ## 6. 近期建议执行顺序
 
-1. 执行并验证 `012_create_ingestion_job_config.sql`。
-2. 执行 seed，写入第一批任务 cadence。
-3. 编写 `feature_profit_calculation.md`。
-4. 开发手动利润计算脚本。
-5. 开发手动周报生成脚本。
-6. 再评估自动化 Jobs。
+1. 按已冻结的 `feature_profit_calculation.md` 开发手动利润 preview。
+2. 设计并录入 SKU 成本、包装成本和头程/海运成本。
+3. 用真实周期人工复核利润计算结果。
+4. 开发手动周报生成脚本。
+5. 再评估自动化 Jobs。

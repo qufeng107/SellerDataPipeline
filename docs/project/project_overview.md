@@ -118,7 +118,7 @@ tests/
 | SP-API 连接测试 | 已实现 | 可验证 `marketplaceParticipations`。 |
 | SP-API Reports sampling | 已实现一批 | 已下载和分析多类 report，历史样例在 `requirements_to_be_deprecated/data_samples/`。 |
 | Amazon Ads sampling | 已实现 | 已获取 profile，并下载 Sponsored Products 多类报表。 |
-| Azure SQL 基础设施 | 已完成 | `001`-`011` 已执行成功，当前 28 张用户表；连接层支持 retry + warm-up。 |
+| Azure SQL 基础设施 | 已完成 | `001`-`012` 已执行成功，当前 29 张用户表；连接层支持 retry + warm-up。 |
 | Ads normalized ingestion | Implemented | 4 张 Ads SP 日表首次 inserted=200，重复执行 updated=200。 |
 | Listing normalized ingestion | Implemented | 首次 inserted=6，重复执行 updated=6。 |
 | Inventory snapshot ingestion | Implemented | 首次 inserted=5，重复执行 updated=5。 |
@@ -130,8 +130,9 @@ tests/
 | Promotion/Coupon ingestion | Implemented | 首次 inserted=10，重复执行 updated=10。 |
 | Inventory Ledger ingestion | Implemented | Summary + Detail 首次 inserted=357，重复执行 updated=357。 |
 | Manual operations workflow | Planned / documented | 已建立手动执行流程和数据更新周期目录。 |
-| Job cadence config table | Planned | `012_create_ingestion_job_config.sql` 已准备，尚未执行。 |
-| 周报/月报/清仓分析 | 待设计/待开发 | 依赖利润核算设计。 |
+| Job cadence config table | Implemented | `012_create_ingestion_job_config.sql` 和 seed 已执行成功；`pipeline_job_config` 当前 13 行。 |
+| 利润核算 | Planned / policy frozen | 已冻结 Settlement-led Financial Profit v1.0；下一步开发手动利润 preview。 |
+| 周报/月报/清仓分析 | 待设计/待开发 | 依赖利润 preview 稳定输出。 |
 | Azure Container Apps Jobs | 待开发 | 手动流程稳定后再上云。 |
 
 ## 8. 下一阶段主线
@@ -141,19 +142,18 @@ tests/
 ```text
 手动下载 raw data
 -> 手动入库 normalized tables
--> 手动加工利润和周报
+-> 手动加工利润 preview 和周报
 -> 手动复核并发送邮件
 -> 再迁移到 Azure Container Apps Jobs
 ```
 
 建议顺序：
 
-1. 执行 `012_create_ingestion_job_config.sql`，把任务周期写入数据库配置表。
-2. 编写 `docs/features/feature_profit_calculation.md`。
-3. 设计 SKU 成本与头程/海运成本导入方式。
-4. 开发手动利润计算脚本。
-5. 开发手动周报/月报输出。
-6. 先人工复核和邮件发送，再自动化 Jobs。
+1. 按 `docs/features/feature_profit_calculation.md` 和 `docs/adr/ADR-009-settlement-led-profit-policy.md` 开发手动利润 preview。
+2. 录入/导入 SKU 成本与头程/海运成本，并验证缺成本阻塞规则。
+3. 用真实周期数据人工复核利润结果。
+4. 开发手动周报/月报输出。
+5. 先人工复核和邮件发送，再自动化 Jobs。
 
 ## 9. 文档体系关系
 

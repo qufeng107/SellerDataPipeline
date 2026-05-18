@@ -27,7 +27,8 @@
 | FBA Fee Preview | `GET_FBA_ESTIMATED_FBA_FEES_TXT_DATA` | `scripts/ingest_fba_fee_preview_report.py` | 每周或费用变更前后 | 每周 | 1 天 | 预估费用用于参考；最终费用仍以 settlement 实扣为准。 |
 | Promotion/Coupon | `GET_PROMOTION_PERFORMANCE_REPORT` / `GET_COUPON_PERFORMANCE_REPORT` | `scripts/ingest_promotion_coupon_reports.py` | 活动期间每日；非活动期每周 | 活动期间每日，平时每周 | 30 天或活动期 | 适合分析百分比折扣、固定 Coupon、会员日/Prime Day 活动表现。 |
 | Inventory Ledger | `GET_LEDGER_SUMMARY_VIEW_DATA` / `GET_LEDGER_DETAIL_VIEW_DATA` | `scripts/ingest_inventory_ledger_reports.py` | 每周 1 次；库存异常时按需 | 每周 | 7-14 天 | 不是库存余额首要来源，用于解释库存变化和审计异常。 |
-| Profit calculation | normalized SQL tables | planned | 每周/月报前 | 每周/月度 | 报表周期 | 需先完成利润口径和成本数据。 |
+| SKU cost management | SKU universe + `amazon_sku_cost` | implemented / manual | 每次进货、成本变化或利润复核前 | 按需 | 全量 SKU 模板 | 通过 xlsx 模板导出/导入维护内部 SKU 标准成本。 |
+| Profit calculation | Settlement + `amazon_sku_cost` + auxiliary normalized tables | planned / policy frozen | 每周/月报前 | 每周/月度 | 报表周期 | 已冻结 Settlement-led Financial Profit v1.0；缺成本默认阻塞正式净利润。 |
 | Weekly operations report | normalized SQL tables + profit result | planned | 每周手动生成 | 每周 | 上一自然周 | 第一版生成后人工复核，再考虑邮件自动化。 |
 | Email report delivery | generated report files | planned | 人工发送 | 周报确认后自动草稿/发送 | n/a | 第一阶段不直接自动发送正式邮件。 |
 
@@ -43,15 +44,15 @@
 Settlement：每周检查，未来自动化可每日 discovery
 ```
 
-## 4. 未来数据库配置表
+## 4. 当前数据库配置表
 
-为了让程序自动判断任务周期，后续将新增：
+为了让程序自动判断任务周期，当前已新增并 seed：
 
 ```text
 pipeline_job_config
 ```
 
-该表记录：
+该表当前记录 13 条任务配置，包括 10 个核心 ingestion 任务和 3 个利润/周报/邮件 placeholder。该表记录：
 
 ```text
 job_key
@@ -72,11 +73,11 @@ enabled
 docs/features/feature_ingestion_job_config.md
 ```
 
-准备中的 migration / seed：
+已执行的 migration / seed：
 
 ```text
-sql/migrations/012_create_ingestion_job_config.sql
-sql/seeds/001_seed_ingestion_job_config_core_jobs.sql
+sql/migrations/012_create_ingestion_job_config.sql  # 4/4 batches
+sql/seeds/001_seed_ingestion_job_config_core_jobs.sql  # 1/1 batch
 ```
 
 ## 5. 重要边界
