@@ -1,7 +1,7 @@
 # SellerDataPipeline 当前进展与下一步计划
 
-> 更新时间：2026-05-18  
-> 当前版本：v1.54 data coverage audit implemented; ready for 2026 YTD backfill planning  
+> 更新时间：2026-05-19  
+> 当前版本：v1.55 overlapping refresh policy implemented; weekly analysis cadence frozen  
 > 文档定位：记录项目真实进展、已完成里程碑、当前非阻塞问题和下一步开发顺序。本文不承载详细字段设计；功能细节见 `docs/features/`。
 
 ## 1. 当前一句话状态
@@ -13,7 +13,8 @@
 -> 任务周期配置已落库
 -> 利润核算口径已冻结
 -> SKU 成本模板导出/导入
--> 数据覆盖审计
+-> 数据覆盖审计 + stable cutoff
+-> 重叠窗口 rolling refresh
 -> 利润 preview/周报/月报生成
 -> 邮件发送
 -> Azure Container Apps Jobs 自动化
@@ -59,6 +60,12 @@ Seed 已执行成功：
 001_seed_ingestion_job_config_core_jobs.sql
 ```
 
+新增待执行/可重复执行 seed：
+
+```text
+002_update_ingestion_job_config_refresh_policy.sql
+```
+
 当前真实数据库记录在：
 
 ```text
@@ -87,7 +94,9 @@ docs/database/database_current_schema_spec.md
 
 ```text
 docs/operations/manual_execution_workflow.md
+docs/operations/data_refresh_policy.md
 docs/operations/ingestion_job_cadence_catalog.md
+docs/operations/data_coverage_audit_workflow.md
 docs/features/feature_ingestion_job_config.md
 docs/project/core_ingestion_completion_review.md
 docs/project/requirements_deprecation_plan.md
@@ -98,6 +107,7 @@ docs/project/requirements_deprecation_plan.md
 ```text
 docs/adr/ADR-007-manual-first-before-automation.md
 docs/adr/ADR-008-ingestion-job-config-table.md
+docs/adr/ADR-010-overlapping-refresh-weekly-analysis.md
 ```
 
 ## 6. requirements_to_be_deprecated 状态
@@ -117,10 +127,10 @@ docs/project/requirements_deprecation_plan.md
 | 限制 | 后续处理 |
 |---|---|
 | raw file registry 关联仍不完整，部分 `source_raw_file_id` 可能为 NULL | 后续补 raw file registry / Blob Storage 归档增强。 |
-| 任务周期已写入 `pipeline_job_config` | 后续 profit/report/email placeholder 待对应功能实现后再启用。 |
-| 利润核算口径已冻结 | 已采用 Settlement-led Financial Profit v1.0；下一步开发手动利润 preview。 |
+| 任务周期已写入 `pipeline_job_config` | 新增 seed 002 用于把配置调整为重叠窗口刷新 + 周度分析；执行后需导出 live schema/行数并记录。 |
+| 利润核算口径已冻结 | 已采用 Settlement-led Financial Profit v1.0；第一版手动利润 preview 已实现，下一步做多周期复核和周报。 |
 | SKU 成本、采购成本、头程/海运成本需要录入机制 | 已实现 xlsx 模板导出/导入脚本，目标表为 `amazon_sku_cost`。 |
-| 2026-01-01 至今各数据源覆盖范围尚需确认 | 已新增 `scripts/audit_data_coverage.py`，先跑 coverage audit，再决定 backfill 范围。 |
+| 2026-01-01 至今各数据源覆盖范围尚需确认 | `scripts/audit_data_coverage.py` 已增强 stable cutoff；先跑 coverage audit，再决定 backfill 和 rolling refresh 范围。 |
 | 周报/月报脚本未实现 | 数据覆盖和利润 preview 人工复核稳定后开发手动周报/月报。 |
 | 自动邮件和 Azure Jobs 未实现 | 手动流程稳定后再自动化。 |
 
@@ -143,7 +153,7 @@ SKU 成本来自 amazon_sku_cost；
 第一版先输出人工复核文件，不立即新增利润结果表。
 ```
 
-下一批建议先运行 `scripts/audit_data_coverage.py --target-start-date 2026-01-01`，确认每个 normalized 数据源实际覆盖范围；再按缺口补 2026 年初至今的 raw data / ingestion；核心源覆盖后，继续运行利润 preview 并用 3月/4月或 5月上旬数据人工复核。
+下一批建议先执行 seed 002 更新 `pipeline_job_config` 的刷新窗口，然后运行 `scripts/audit_data_coverage.py --target-start-date 2026-01-01`，确认每个 normalized 数据源相对 stable cutoff 的实际覆盖范围；再按缺口补 2026 年初至今的 raw data / ingestion，并对最近 10/14/30/60 天做重叠窗口 rolling refresh。核心源覆盖后，继续运行利润 preview 并用 3月/4月或 5月上旬数据人工复核。
 
 ## 9. 当前建议手动运行顺序
 
@@ -158,11 +168,14 @@ docs/operations/ingestion_job_cadence_catalog.md
 
 ```text
 先手动下载 raw data
--> 手动运行各 ingestion CLI
+-> 每 2 天核心源重叠刷新并 upsert
+-> 每周慢源完整刷新
 -> 手动检查数据库
 -> 手动导出/导入 SKU 成本
--> 手动运行数据覆盖审计
--> 手动生成利润 preview / 周报
+-> 手动运行 stable coverage audit
+-> 手动生成周度利润 preview / 周报
 -> 人工复核邮件
 -> 最后才上自动化 Jobs
 ```
+
+注意：数据刷新可以 1-2 天一次，但销售/广告/利润等正式分析产物最短周期为一周。

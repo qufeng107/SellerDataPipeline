@@ -16,16 +16,17 @@ Amazon SP-API / Amazon Ads API / Seller Central raw exports
 
 ## 当前真实进展
 
-截至 2026-05-18：
+截至 2026-05-19：
 
 - Azure SQL `amazon_ops` 已完成核心建表、索引和 001-012 migration，当前真实数据库有 29 张用户表。
 - 核心 normalized ingestion 已完成真实 Azure SQL execute 和第二次 execute 幂等性验证：Ads、Listing、Inventory、Sales & Traffic、Settlement、Orders、FBA Reimbursements、FBA Fee Preview、Promotion/Coupon、Inventory Ledger。
 - Azure SQL 连接层已支持 retry + `SELECT 1` warm-up，并能区分 idle/resume、firewall/IP allowlist 和登录错误。
 - 已新增 `scripts/check_database_status.py` 与 `scripts/export_database_schema_spec.py`，用于检查运行状态和从 live schema 更新数据库 spec。
 - 当前主线从“继续扩 ingestion”转为“手动运营流程 + 利润核算 + 周报/月报”。
-- 已新增 manual-first operations 文档，并执行 `012_create_ingestion_job_config.sql` 与 `001_seed_ingestion_job_config_core_jobs.sql`，当前 `pipeline_job_config` 有 13 条任务配置。
+- 已新增 manual-first operations 文档，并执行 `012_create_ingestion_job_config.sql` 与 `001_seed_ingestion_job_config_core_jobs.sql`，当前 `pipeline_job_config` 有 13 条任务配置；新增 seed 002 用于同步重叠窗口刷新策略。
 - 利润核算口径已冻结为 Settlement-led Financial Profit v1.0：财务利润以 Settlement 为主，Orders / Ads / Promotion-Coupon 只做运营解释，SKU 成本来自 `amazon_sku_cost`。
 - 已实现 SKU 成本 xlsx 模板导出/导入：先导出模板人工填写，再 dry-run/execute 写入 `amazon_sku_cost`。
+- 已冻结数据刷新策略：核心源可每 1-2 天重叠窗口刷新并 upsert，销售/广告/利润等正式分析产物最短周期为一周。
 
 详细进展见：[`docs/project/progress_next_steps.md`](docs/project/progress_next_steps.md)。
 
@@ -42,7 +43,9 @@ Amazon SP-API / Amazon Ads API / Seller Central raw exports
 | [`docs/project/progress_next_steps.md`](docs/project/progress_next_steps.md) | 当前真实进度、已完成里程碑和下一步。 |
 | [`docs/operations/README.md`](docs/operations/README.md) | 手动执行流程、数据更新周期和未来自动化运行手册入口。 |
 | [`docs/operations/manual_execution_workflow.md`](docs/operations/manual_execution_workflow.md) | 手动下载、入库、加工、复核和邮件发送流程。 |
+| [`docs/operations/data_refresh_policy.md`](docs/operations/data_refresh_policy.md) | 数据源重叠窗口刷新、stable cutoff 和周度分析产物规则。 |
 | [`docs/operations/ingestion_job_cadence_catalog.md`](docs/operations/ingestion_job_cadence_catalog.md) | 每类数据源的建议下载/入库周期，未来自动化 Jobs 的调度依据。 |
+| [`docs/operations/data_coverage_audit_workflow.md`](docs/operations/data_coverage_audit_workflow.md) | 利润/周报前检查 normalized 数据覆盖范围和 stable cutoff。 |
 | [`docs/project/core_ingestion_completion_review.md`](docs/project/core_ingestion_completion_review.md) | 核心入库阶段收尾检查。 |
 | [`docs/project/requirements_deprecation_plan.md`](docs/project/requirements_deprecation_plan.md) | 旧 requirements 目录保留/删除规则。 |
 | [`docs/data_access/amazon_data_access_catalog.md`](docs/data_access/amazon_data_access_catalog.md) | Amazon 数据接入总目录，汇总 SP-API、Ads API、手动导出。 |
@@ -61,8 +64,8 @@ Amazon SP-API / Amazon Ads API / Seller Central raw exports
 | [`docs/features/feature_fba_fee_preview_ingestion.md`](docs/features/feature_fba_fee_preview_ingestion.md) | SP-API FBA Fee Preview 入库功能文档；009、dry-run、execute 与幂等验证已完成。 |
 | [`docs/features/feature_promotion_coupon_ingestion.md`](docs/features/feature_promotion_coupon_ingestion.md) | Promotion/Coupon 入库功能文档；010、dry-run、execute 与幂等验证已完成。 |
 | [`docs/features/feature_inventory_ledger_ingestion.md`](docs/features/feature_inventory_ledger_ingestion.md) | Inventory Ledger 入库功能文档；011 已执行，专用 dry-run 已完成，已完成 execute/幂等验证。 |
-| [`docs/features/feature_ingestion_job_config.md`](docs/features/feature_ingestion_job_config.md) | 数据下载/入库/加工/报表任务周期配置表设计；012 migration 和 seed 已执行成功。 |
-| [`docs/features/feature_profit_calculation.md`](docs/features/feature_profit_calculation.md) | 利润核算功能设计；口径已冻结为 Settlement-led Financial Profit v1.0，下一步开发手动利润 preview。 |
+| [`docs/features/feature_ingestion_job_config.md`](docs/features/feature_ingestion_job_config.md) | 数据下载/入库/加工/报表任务周期配置表设计；012 migration 和 seed 001 已执行，seed 002 用于更新刷新策略。 |
+| [`docs/features/feature_profit_calculation.md`](docs/features/feature_profit_calculation.md) | 利润核算功能设计；口径已冻结为 Settlement-led Financial Profit v1.0，第一版利润 preview 已实现。 |
 | [`docs/features/feature_sku_cost_management.md`](docs/features/feature_sku_cost_management.md) | SKU 成本 xlsx 模板导出/导入功能；用于维护 `amazon_sku_cost`。 |
 | [`docs/database/database_current_schema_spec.md`](docs/database/database_current_schema_spec.md) | 当前真实 Azure SQL 表结构、字段、索引与数据来源。 |
 | [`docs/database/database_migration_policy.md`](docs/database/database_migration_policy.md) | 数据库变更和 migration 规则。 |
@@ -204,7 +207,7 @@ SP-API 连接测试：
 python scripts/test_sp_api_connection.py
 ```
 
-利润核算口径已冻结，脚本待开发；规划入口如下：
+利润核算口径已冻结，第一版 preview 已实现；入口如下：
 
 ```bash
 python scripts/calculate_profit_report.py --marketplace-id ATVPDKIKX0DER --period weekly --start-date YYYY-MM-DD --end-date YYYY-MM-DD --dry-run

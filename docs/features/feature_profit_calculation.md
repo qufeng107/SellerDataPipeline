@@ -1,18 +1,18 @@
 # Feature: Profit Calculation
 
-> 文档状态：Policy frozen / implementation planned  
+> 文档状态：Policy frozen / preview implemented  
 > 负责人：AI + Feng  
-> 更新时间：2026-05-18  
-> 功能状态：Planned  
+> 更新时间：2026-05-19  
+> 功能状态：Preview implemented  
 > 相关数据接入文档：`docs/data_access/sp_api_reports_catalog.md`, `docs/data_access/amazon_ads_reports_catalog.md`, `docs/data_access/seller_central_manual_exports.md`  
 > 相关数据库 spec：`docs/database/database_current_schema_spec.md`  
-> 相关 ADR：`docs/adr/ADR-009-settlement-led-profit-policy.md`
+> 相关 ADR：`docs/adr/ADR-009-settlement-led-profit-policy.md`, `docs/adr/ADR-010-overlapping-refresh-weekly-analysis.md`
 
 ---
 
 ## 1. 功能摘要
 
-本功能负责在核心 Amazon normalized ingestion 完成后，基于 Settlement 主财务口径计算周度/月度利润，并为周报、月报、会计核对和清仓判断提供稳定指标。
+本功能负责在核心 Amazon normalized ingestion 完成后，基于 Settlement 主财务口径计算周度/月度利润，并为周报、月报、会计核对和清仓判断提供稳定指标。分析产物最短周期为一周；数据刷新可以更高频，但不产生正式日报结论。
 
 当前阶段只冻结利润核算口径，不立即新增数据库表、不立即自动发送报表。第一版目标是用最不容易混乱、最适合小体量团队人工复核的方式，先产出可解释、可复核的利润结果。
 
@@ -31,17 +31,17 @@ Orders、Sales & Traffic、Ads、Promotion/Coupon 用于运营解释和归因分
 | 口径冻结 | 已冻结：Settlement-led Financial Profit v1.0 |
 | 数据源取样 | 已完成，核心 ingestion 已入库 |
 | Parser | 不适用，读取 normalized SQL |
-| Dry-run preview | 待开发 |
+| Dry-run preview | 已实现：`scripts/calculate_profit_report.py` |
 | Schema guard | 不适用；依赖上游 ingestion guard |
-| Repository/upsert | 待定；第一版可先输出文件，不落利润结果表 |
-| Azure SQL execute | 待开发 |
-| 幂等性验证 | 待开发 |
-| 单元测试 | 待补强 |
+| Repository/upsert | 第一版输出文件，不落利润结果表 |
+| Azure SQL execute | 不适用；读取 normalized SQL，输出本地 preview 文件 |
+| 幂等性验证 | 文件输出可重复生成；利润结果不写库 |
+| 单元测试 | 已补充核心 service/repo 测试 |
 | 文档同步 | 已完成本口径冻结文档 |
 
-功能整体状态：`Planned`。
+功能整体状态：`Preview implemented`。
 
-说明：本功能已完成业务口径冻结，但尚未进入脚本和 SQL 实现。
+说明：本功能已完成业务口径冻结和第一版利润 preview 实现；后续重点是基于 coverage audit 补齐数据、人工复核多期结果，再开发周报/月报。
 
 ## 3. 业务目标
 
@@ -66,7 +66,7 @@ Orders、Sales & Traffic、Ads、Promotion/Coupon 用于运营解释和归因分
 - 定义各数据源在利润计算中的优先级和用途。
 - 定义退款、赔偿、清算、广告费、促销扣减的处理原则。
 - 定义 SKU 标准成本和生效日期的使用方式。
-- 设计第一版手动利润计算脚本的输入、输出和验收标准。
+- 设计并实现第一版手动利润计算脚本的输入、输出和验收标准。
 - 为后续周报/月报提供统一利润指标。
 
 ### 4.2 本功能不包含
@@ -204,7 +204,9 @@ profit_sku_period
 第一版手动流程：
 
 ```text
-确认 raw data 已下载并入库
+按 data_refresh_policy 完成滚动刷新或周度完整刷新
+  -> 运行 coverage audit 并确认 stable cutoff 前核心源覆盖
+  -> 确认 raw data 已下载并入库
   -> 检查 Settlement / Orders / Ads / Promotion / Cost 数据完整性
   -> 按期间读取 Settlement posted date 财务交易
   -> 按 profit_bucket / amount_category 汇总 Amazon 侧净额
@@ -214,6 +216,8 @@ profit_sku_period
   -> 人工复核异常项和差异项
   -> 确认后用于周报/月报/会计准备
 ```
+
+注意：利润 preview 可以按指定期间运行，但正式经营分析输出最短按周/月，不设计日报利润结论。
 
 失败处理：
 
@@ -338,7 +342,7 @@ business_key = marketplace_id + period_type + period_start + period_end + policy
 
 ## 16. 命令行入口
 
-规划入口：
+已实现入口：
 
 ```powershell
 python scripts/calculate_profit_report.py --marketplace-id ATVPDKIKX0DER --period weekly --start-date YYYY-MM-DD --end-date YYYY-MM-DD --dry-run
@@ -361,15 +365,15 @@ python scripts/calculate_profit_report.py --marketplace-id ATVPDKIKX0DER --perio
 
 | 类型 | 路径 | 说明 |
 |---|---|---|
-| script | `scripts/calculate_profit_report.py` | 待开发，手动生成利润 preview/report。 |
-| service | `src/seller_data_pipeline/services/calculate_profit_service.py` | 当前仅有极简 placeholder，后续需改为 Settlement-led 口径。 |
-| db/repository | 待定 | 如第一版只读 SQL，可先不新增复杂 repository。 |
-| tests | `tests/unit/services/test_calculate_profit_service.py` | 需改造/补强。 |
-| docs | `docs/adr/ADR-009-settlement-led-profit-policy.md` | 口径 ADR。 |
+| script | `scripts/calculate_profit_report.py` | 已实现，手动生成利润 preview/report。 |
+| service | `src/seller_data_pipeline/services/calculate_profit_service.py` | 已实现 Settlement-led preview service。 |
+| db/repository | `src/seller_data_pipeline/db/repositories/finance_repo.py` | 读取 Settlement、SKU cost 和辅助运营数据。 |
+| tests | `tests/unit/services/test_calculate_profit_service.py` | 已补充核心利润 preview 测试。 |
+| docs | `docs/adr/ADR-009-settlement-led-profit-policy.md`; `docs/adr/ADR-010-overlapping-refresh-weekly-analysis.md` | 利润口径与刷新/分析节奏 ADR。 |
 
 ## 18. 测试计划
 
-第一版至少补以下测试：
+当前第一版测试重点：
 
 ```bash
 PYTHONPATH=src pytest tests/unit/services/test_calculate_profit_service.py -q
@@ -398,13 +402,15 @@ python -m compileall -q scripts src tests
 5. 能单独列出 settlement bucket 汇总和需要人工复核的 `other/reconciliation` 项。
 6. 不用 Orders / Ads / Promotion 覆盖 Settlement 财务金额。
 7. 单元测试通过。
-8. 文档状态从 `Planned` 更新为 `Implemented` 前，必须至少用一个真实周期人工复核过。
+8. 文档状态从 `Preview implemented` 更新为 `Implemented` 前，必须至少用多个真实周期人工复核过。
 
 ## 20. 当前实现状态
 
 | 日期 | 进展 | 证据/命令 | 备注 |
 |---|---|---|---|
 | 2026-05-18 | 冻结利润核算口径为 Settlement-led Financial Profit v1.0。 | 本文档 + ADR-009。 | 暂不新增 migration。 |
+| 2026-05-18 | 实现第一版利润 preview。 | `scripts/calculate_profit_report.py`。 | 只输出本地文件，不落库。 |
+| 2026-05-19 | 冻结重叠窗口刷新 + 周度最小分析产物。 | ADR-010 + data_refresh_policy。 | 数据可高频刷新，分析不做日报。 |
 
 ## 21. 后续优化
 

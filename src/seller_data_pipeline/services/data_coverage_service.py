@@ -3,9 +3,49 @@ from __future__ import annotations
 import csv
 import json
 from dataclasses import dataclass
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any, Protocol
+
+
+@dataclass(frozen=True)
+class DataCoveragePolicy:
+    data_window_lag_days: int
+    refresh_cadence_days: int | None
+    refresh_lookback_days: int | None
+    reporting_role: str
+    notes: str = ""
+
+
+DEFAULT_COVERAGE_POLICY = DataCoveragePolicy(
+    data_window_lag_days=2,
+    refresh_cadence_days=None,
+    refresh_lookback_days=None,
+    reporting_role="context",
+    notes="Default stable cutoff policy for changing operational data.",
+)
+
+COVERAGE_POLICIES_BY_DOMAIN: dict[str, DataCoveragePolicy] = {
+    "Ads SP campaign daily": DataCoveragePolicy(3, 2, 14, "weekly_context"),
+    "Ads SP targeting daily": DataCoveragePolicy(3, 2, 14, "weekly_context"),
+    "Ads SP search term daily": DataCoveragePolicy(3, 2, 14, "weekly_context"),
+    "Ads SP advertised product daily": DataCoveragePolicy(3, 2, 14, "weekly_context"),
+    "Listing snapshot": DataCoveragePolicy(0, 7, 1, "weekly_snapshot"),
+    "Inventory snapshot": DataCoveragePolicy(0, 2, 1, "weekly_snapshot"),
+    "Sales & Traffic date daily": DataCoveragePolicy(2, 2, 10, "weekly_context"),
+    "Sales & Traffic ASIN daily": DataCoveragePolicy(2, 2, 10, "weekly_context"),
+    "Settlement transaction": DataCoveragePolicy(0, 7, 60, "financial_source_of_truth"),
+    "Orders": DataCoveragePolicy(2, 2, 10, "weekly_context"),
+    "FBA reimbursements": DataCoveragePolicy(7, 7, 60, "weekly_exception_context"),
+    "FBA fee preview": DataCoveragePolicy(0, 7, 1, "weekly_reference_snapshot"),
+    "Promotion performance": DataCoveragePolicy(2, 2, 30, "weekly_context"),
+    "Promotion product performance": DataCoveragePolicy(2, 2, 30, "weekly_context"),
+    "Coupon performance": DataCoveragePolicy(2, 2, 30, "weekly_context"),
+    "Coupon ASIN": DataCoveragePolicy(2, 2, 30, "weekly_context"),
+    "Inventory ledger summary": DataCoveragePolicy(3, 7, 30, "weekly_exception_context"),
+    "Inventory ledger detail": DataCoveragePolicy(3, 7, 30, "weekly_exception_context"),
+    "SKU cost": DataCoveragePolicy(0, None, None, "internal_cost_control"),
+}
 
 
 @dataclass(frozen=True)
@@ -25,8 +65,15 @@ class DataCoverageRow:
     latest_created_at: datetime | None
     latest_updated_at: datetime | None
     status: str
+    stable_status: str
+    data_window_lag_days: int
+    stable_target_end_date: date
+    refresh_cadence_days: int | None
+    refresh_lookback_days: int | None
+    reporting_role: str
     coverage_start_gap_days: int | None
     days_since_latest_business_date: int | None
+    days_since_stable_target_end: int | None
     notes: str
 
     @classmethod
@@ -42,6 +89,11 @@ class DataCoverageRow:
         min_date = _as_date(row.get("min_business_date"))
         max_date = _as_date(row.get("max_business_date"))
         target_rows = _to_int(row.get("target_window_row_count"))
+        data_domain = str(row.get("data_domain") or "")
+        policy = policy_for_data_domain(data_domain)
+        stable_target_end_date = target_end_date - timedelta(days=policy.data_window_lag_days)
+        if stable_target_end_date < target_start_date:
+            stable_target_end_date = target_start_date
         status = classify_coverage_status(
             row_count=row_count,
             dated_row_count=dated_row_count,
@@ -50,8 +102,17 @@ class DataCoverageRow:
             target_window_row_count=target_rows,
             target_start_date=target_start_date,
         )
+        stable_status = classify_stable_coverage_status(
+            row_count=row_count,
+            dated_row_count=dated_row_count,
+            min_business_date=min_date,
+            max_business_date=max_date,
+            target_window_row_count=target_rows,
+            target_start_date=target_start_date,
+            stable_target_end_date=stable_target_end_date,
+        )
         return cls(
-            data_domain=str(row.get("data_domain") or ""),
+            data_domain=data_domain,
             source_table=str(row.get("source_table") or ""),
             business_date_semantics=str(row.get("business_date_semantics") or ""),
             row_count=row_count,
@@ -66,8 +127,24 @@ class DataCoverageRow:
             latest_created_at=_as_datetime(row.get("latest_created_at")),
             latest_updated_at=_as_datetime(row.get("latest_updated_at")),
             status=status,
-            coverage_start_gap_days=(min_date - target_start_date).days if min_date and min_date > target_start_date else None,
-            days_since_latest_business_date=(target_end_date - max_date).days if max_date else None,
+            stable_status=stable_status,
+            data_window_lag_days=policy.data_window_lag_days,
+            stable_target_end_date=stable_target_end_date,
+            refresh_cadence_days=policy.refresh_cadence_days,
+            refresh_lookback_days=policy.refresh_lookback_days,
+            reporting_role=policy.reporting_role,
+            coverage_start_gap_days=_positive_date_gap(
+                start=target_start_date,
+                end=min_date,
+            ),
+            days_since_latest_business_date=_date_gap(
+                start=max_date,
+                end=target_end_date,
+            ),
+            days_since_stable_target_end=_positive_date_gap(
+                start=max_date,
+                end=stable_target_end_date,
+            ),
             notes=str(row.get("notes") or ""),
         )
 
@@ -88,8 +165,15 @@ class DataCoverageRow:
             "latest_created_at": _format_datetime(self.latest_created_at),
             "latest_updated_at": _format_datetime(self.latest_updated_at),
             "status": self.status,
+            "stable_status": self.stable_status,
+            "data_window_lag_days": self.data_window_lag_days,
+            "stable_target_end_date": self.stable_target_end_date.isoformat(),
+            "refresh_cadence_days": self.refresh_cadence_days,
+            "refresh_lookback_days": self.refresh_lookback_days,
+            "reporting_role": self.reporting_role,
             "coverage_start_gap_days": self.coverage_start_gap_days,
             "days_since_latest_business_date": self.days_since_latest_business_date,
+            "days_since_stable_target_end": self.days_since_stable_target_end,
             "notes": self.notes,
         }
 
@@ -160,6 +244,13 @@ class DataCoverageAuditResult:
             counts[row.status] = counts.get(row.status, 0) + 1
         return counts
 
+    @property
+    def stable_status_counts(self) -> dict[str, int]:
+        counts: dict[str, int] = {}
+        for row in self.coverage_rows:
+            counts[row.stable_status] = counts.get(row.stable_status, 0) + 1
+        return counts
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "marketplace_id": self.marketplace_id,
@@ -167,6 +258,7 @@ class DataCoverageAuditResult:
             "target_end_date": self.target_end_date.isoformat(),
             "generated_at_utc": self.generated_at_utc.isoformat(),
             "status_counts": self.status_counts,
+            "stable_status_counts": self.stable_status_counts,
             "coverage_rows": [row.to_dict() for row in self.coverage_rows],
             "report_request_rows": [row.to_dict() for row in self.report_request_rows],
             "output_files": dict(self.output_files),
@@ -253,6 +345,10 @@ class DataCoverageAuditService:
         return result
 
 
+def policy_for_data_domain(data_domain: str) -> DataCoveragePolicy:
+    return COVERAGE_POLICIES_BY_DOMAIN.get(data_domain, DEFAULT_COVERAGE_POLICY)
+
+
 def classify_coverage_status(
     *,
     row_count: int,
@@ -271,6 +367,33 @@ def classify_coverage_status(
     if min_business_date > target_start_date:
         return "starts_after_target_start"
     return "has_target_window_data"
+
+
+def classify_stable_coverage_status(
+    *,
+    row_count: int,
+    dated_row_count: int,
+    min_business_date: date | None,
+    max_business_date: date | None,
+    target_window_row_count: int,
+    target_start_date: date,
+    stable_target_end_date: date,
+) -> str:
+    base_status = classify_coverage_status(
+        row_count=row_count,
+        dated_row_count=dated_row_count,
+        min_business_date=min_business_date,
+        max_business_date=max_business_date,
+        target_window_row_count=target_window_row_count,
+        target_start_date=target_start_date,
+    )
+    if base_status in {"no_rows", "no_business_dates", "outside_target_window"}:
+        return base_status
+    if min_business_date is not None and min_business_date > target_start_date:
+        return "starts_after_target_start"
+    if max_business_date is not None and max_business_date < stable_target_end_date:
+        return "ends_before_stable_target"
+    return "covers_stable_window"
 
 
 def write_coverage_files(
@@ -314,11 +437,22 @@ def render_coverage_markdown(result: DataCoverageAuditResult) -> str:
         f"Target window: `{result.target_start_date}` to `{result.target_end_date}`",
         f"Generated UTC: `{result.generated_at_utc.isoformat()}`",
         "",
-        "## Status summary",
+        "## Stable coverage summary",
         "",
-        "| Status | Count |",
+        "| Stable status | Count |",
         "|---|---:|",
     ]
+    for status, count in sorted(result.stable_status_counts.items()):
+        lines.append(f"| `{status}` | {count} |")
+    lines.extend(
+        [
+            "",
+            "## Raw target-window status summary",
+            "",
+            "| Status | Count |",
+            "|---|---:|",
+        ]
+    )
     for status, count in sorted(result.status_counts.items()):
         lines.append(f"| `{status}` | {count} |")
     lines.extend(
@@ -326,23 +460,41 @@ def render_coverage_markdown(result: DataCoverageAuditResult) -> str:
             "",
             "## Normalized table coverage",
             "",
-            "| Data domain | Table | Status | Rows | Business date range | Target rows | Latest business date age | Entities | Date semantics |",
-            "|---|---|---|---:|---|---:|---:|---:|---|",
+            (
+                "| Data domain | Table | Stable status | Rows | Business date range | "
+                "Stable target end | Lag days | Latest business date age | "
+                "Refresh cadence | Lookback | Role |"
+            ),
+            "|---|---|---|---:|---|---|---:|---:|---:|---:|---|",
         ]
     )
     for row in result.coverage_rows:
-        business_range = f"{_format_date(row.min_business_date)}..{_format_date(row.max_business_date)}"
+        business_range = "{}..{}".format(
+            _format_date(row.min_business_date),
+            _format_date(row.max_business_date),
+        )
+        refresh_cadence = "" if row.refresh_cadence_days is None else row.refresh_cadence_days
+        refresh_lookback = "" if row.refresh_lookback_days is None else row.refresh_lookback_days
         lines.append(
-            "| {domain} | `{table}` | `{status}` | {rows} | {range} | {target_rows} | {age} | {entities} | {semantics} |".format(
+            (
+                "| {domain} | `{table}` | `{stable_status}` | {rows} | {range} | "
+                "{stable_end} | {lag} | {age} | {cadence} | {lookback} | {role} |"
+            ).format(
                 domain=row.data_domain,
                 table=row.source_table,
-                status=row.status,
+                stable_status=row.stable_status,
                 rows=row.row_count,
                 range=business_range,
-                target_rows=row.target_window_row_count,
-                age="" if row.days_since_latest_business_date is None else row.days_since_latest_business_date,
-                entities=row.distinct_entity_count,
-                semantics=row.business_date_semantics,
+                stable_end=row.stable_target_end_date.isoformat(),
+                lag=row.data_window_lag_days,
+                age=(
+                    ""
+                    if row.days_since_latest_business_date is None
+                    else row.days_since_latest_business_date
+                ),
+                cadence=refresh_cadence,
+                lookback=refresh_lookback,
+                role=row.reporting_role,
             )
         )
     lines.extend(
@@ -350,14 +502,23 @@ def render_coverage_markdown(result: DataCoverageAuditResult) -> str:
             "",
             "## Report request coverage",
             "",
-            "| Source | Report type | Requests | Done | Downloaded | Parsed | Requested data window | Target-overlap requests |",
+            (
+                "| Source | Report type | Requests | Done | Downloaded | Parsed | "
+                "Requested data window | Target-overlap requests |"
+            ),
             "|---|---|---:|---:|---:|---:|---|---:|",
         ]
     )
     for row in result.report_request_rows:
-        request_range = f"{_format_date(row.min_data_start_date)}..{_format_date(row.max_data_end_date)}"
+        request_range = "{}..{}".format(
+            _format_date(row.min_data_start_date),
+            _format_date(row.max_data_end_date),
+        )
         lines.append(
-            "| {source} | `{report_type}` | {requests} | {done} | {downloaded} | {parsed} | {range} | {target_overlap} |".format(
+            (
+                "| {source} | `{report_type}` | {requests} | {done} | "
+                "{downloaded} | {parsed} | {range} | {target_overlap} |"
+            ).format(
                 source=row.source_system,
                 report_type=row.report_type,
                 requests=row.request_count,
@@ -373,11 +534,35 @@ def render_coverage_markdown(result: DataCoverageAuditResult) -> str:
             "",
             "## How to read this audit",
             "",
-            "- `has_target_window_data`: the table has rows in the requested target window.",
-            "- `starts_after_target_start`: the table has rows in the target window, but the earliest business date is after the requested start date.",
-            "- `outside_target_window`: the table has rows, but none overlap the requested target window.",
+            (
+                "- `covers_stable_window`: the table reaches the source-specific "
+                "stable cutoff date after applying `data_window_lag_days`."
+            ),
+            (
+                "- `ends_before_stable_target`: the table has target-window data, "
+                "but it does not yet reach the stable cutoff date."
+            ),
+            (
+                "- `starts_after_target_start`: the table has target-window data, "
+                "but historical backfill starts after the requested start date."
+            ),
+            (
+                "- `outside_target_window`: the table has rows, "
+                "but none overlap the requested target window."
+            ),
             "- `no_rows`: the table is empty for this marketplace.",
-            "- Snapshot-style sources such as Listing, Inventory, FBA Fee Preview, and Promotion product details are not expected to contain every calendar day.",
+            (
+                "- `data_window_lag_days` prevents today/yesterday from being "
+                "treated as required final data for volatile sources."
+            ),
+            (
+                "- Analysis/report outputs remain weekly at minimum, "
+                "even when data refresh runs every 1-2 days."
+            ),
+            (
+                "- Snapshot-style sources such as Listing, Inventory, and FBA Fee "
+                "Preview are not expected to contain every calendar day."
+            ),
             "",
         ]
     )
@@ -400,6 +585,19 @@ def write_report_request_csv(rows: tuple[ReportRequestCoverageRow, ...], path: P
         writer.writeheader()
         for row in rows:
             writer.writerow(row.to_dict())
+
+
+def _date_gap(*, start: date | None, end: date) -> int | None:
+    if start is None:
+        return None
+    return (end - start).days
+
+
+def _positive_date_gap(*, start: date | None, end: date) -> int | None:
+    if start is None:
+        return None
+    gap = (end - start).days
+    return gap if gap > 0 else None
 
 
 def _to_int(value: Any) -> int:
@@ -435,10 +633,15 @@ def _format_datetime(value: datetime | None) -> str:
 
 
 __all__ = [
+    "COVERAGE_POLICIES_BY_DOMAIN",
+    "DEFAULT_COVERAGE_POLICY",
     "DataCoverageAuditResult",
     "DataCoverageAuditService",
+    "DataCoveragePolicy",
     "DataCoverageRow",
     "ReportRequestCoverageRow",
     "classify_coverage_status",
+    "classify_stable_coverage_status",
+    "policy_for_data_domain",
     "write_coverage_files",
 ]

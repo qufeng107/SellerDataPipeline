@@ -1,7 +1,7 @@
 # Feature: Ingestion Job Configuration
 
 > 状态：Implemented  
-> 更新时间：2026-05-18  
+> 更新时间：2026-05-19  
 > 文档定位：设计用于记录数据下载、入库、加工和报表任务执行周期的配置表。当前先支持 manual-first 流程；未来 Azure Container Apps Jobs 可读取该配置决定调度频率。
 
 ## 1. 背景
@@ -103,6 +103,14 @@ sql/migrations/012_create_ingestion_job_config.sql  # 4/4 batches
 sql/seeds/001_seed_ingestion_job_config_core_jobs.sql  # 1/1 batch
 ```
 
+新增刷新策略 seed：
+
+```text
+sql/seeds/002_update_ingestion_job_config_refresh_policy.sql
+```
+
+`002` 不改表结构，只更新 `recommended_cadence_*`、`default_lookback_days`、`data_window_lag_days` 和 notes，使配置表符合重叠窗口刷新与周度分析策略。
+
 已执行验证命令：
 
 ```powershell
@@ -170,6 +178,13 @@ WHERE enabled = 1
 
 当前阶段仍先用表作为人工 checklist 和未来自动化准备，不急于开发 scheduler。
 
+调度读取该表时必须区分：
+
+```text
+数据刷新任务：可以每 1-2 天执行，使用重叠窗口 upsert。
+分析/报表任务：最短一周，不生成正式日报。
+```
+
 ## 9. 验收标准
 
 本功能完成的最低标准：
@@ -180,12 +195,13 @@ WHERE enabled = 1
 4. `pipeline_job_config` 行数符合第一批任务清单。
 5. `database_current_schema_spec.md` 来自 live schema 结果并同步更新。
 6. cadence catalog 与 seed 表保持一致。
+7. seed 002 执行后，核心数据源采用重叠窗口刷新配置，profit/report/email 保持周度分析节奏。
 
-当前验收状态：1-5 已完成；第 6 项后续应在每次调整 seed/cadence 时继续复核。
+当前验收状态：1-5 已完成；第 6-7 项通过 seed 002 和 cadence catalog 同步维护。
 
 ## 10. 当前状态
 
-截至 2026-05-18：
+截至 2026-05-19：
 
 ```text
 设计完成
@@ -193,5 +209,6 @@ WHERE enabled = 1
 seed 已执行成功：1/1 batch
 live schema 已导出：after_012_job_config
 pipeline_job_config 当前 13 行
+新增 seed 002 待执行，用于同步 overlapping rolling refresh 策略
 scheduler 未开发
 ```

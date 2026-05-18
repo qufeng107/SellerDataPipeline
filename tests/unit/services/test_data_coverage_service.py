@@ -5,6 +5,8 @@ from datetime import UTC, date, datetime
 from seller_data_pipeline.services.data_coverage_service import (
     DataCoverageAuditService,
     classify_coverage_status,
+    classify_stable_coverage_status,
+    policy_for_data_domain,
     render_coverage_markdown,
 )
 
@@ -69,6 +71,47 @@ def test_classify_coverage_status() -> None:
     )
 
 
+def test_classify_stable_coverage_status_respects_stable_cutoff() -> None:
+    assert (
+        classify_stable_coverage_status(
+            row_count=10,
+            dated_row_count=10,
+            min_business_date=date(2026, 1, 1),
+            max_business_date=date(2026, 5, 15),
+            target_window_row_count=10,
+            target_start_date=date(2026, 1, 1),
+            stable_target_end_date=date(2026, 5, 16),
+        )
+        == "ends_before_stable_target"
+    )
+    assert (
+        classify_stable_coverage_status(
+            row_count=10,
+            dated_row_count=10,
+            min_business_date=date(2026, 1, 1),
+            max_business_date=date(2026, 5, 16),
+            target_window_row_count=10,
+            target_start_date=date(2026, 1, 1),
+            stable_target_end_date=date(2026, 5, 16),
+        )
+        == "covers_stable_window"
+    )
+
+
+def test_policy_for_data_domain_uses_data_refresh_defaults() -> None:
+    sales_policy = policy_for_data_domain("Sales & Traffic date daily")
+    ads_policy = policy_for_data_domain("Ads SP campaign daily")
+    settlement_policy = policy_for_data_domain("Settlement transaction")
+
+    assert sales_policy.refresh_cadence_days == 2
+    assert sales_policy.refresh_lookback_days == 10
+    assert sales_policy.data_window_lag_days == 2
+    assert ads_policy.refresh_lookback_days == 14
+    assert ads_policy.data_window_lag_days == 3
+    assert settlement_policy.refresh_cadence_days == 7
+    assert settlement_policy.reporting_role == "financial_source_of_truth"
+
+
 def test_run_builds_coverage_result_and_status_counts() -> None:
     service = DataCoverageAuditService(repo=FakeCoverageRepo())
 
@@ -83,8 +126,15 @@ def test_run_builds_coverage_result_and_status_counts() -> None:
         "has_target_window_data": 1,
         "starts_after_target_start": 1,
     }
-    assert result.coverage_rows[0].days_since_latest_business_date == 17
+    assert result.stable_status_counts == {
+        "covers_stable_window": 1,
+        "starts_after_target_start": 1,
+    }
+    assert result.coverage_rows[0].stable_target_end_date == date(2026, 5, 18)
+    assert result.coverage_rows[0].days_since_latest_business_date == 0
     assert result.coverage_rows[1].coverage_start_gap_days == 45
+    assert result.coverage_rows[1].data_window_lag_days == 2
+    assert result.coverage_rows[1].stable_target_end_date == date(2026, 5, 16)
     assert result.report_request_rows[0].parsed_count == 1
 
 
@@ -110,8 +160,10 @@ def test_write_and_render_coverage_files(tmp_path) -> None:
 
     markdown = render_coverage_markdown(result)
     assert "Data Coverage Audit" in markdown
+    assert "Stable coverage summary" in markdown
     assert "Settlement transaction" in markdown
     assert "Report request coverage" in markdown
+    assert "Analysis/report outputs remain weekly" in markdown
 
 
 class FakeCoverageRepo:
@@ -133,12 +185,12 @@ class FakeCoverageRepo:
                 "row_count": 10,
                 "dated_row_count": 10,
                 "min_business_date": date(2026, 1, 1),
-                "max_business_date": date(2026, 5, 1),
+                "max_business_date": date(2026, 5, 18),
                 "distinct_business_dates": 5,
                 "distinct_entity_count": 2,
                 "target_window_row_count": 10,
                 "target_min_business_date": date(2026, 1, 1),
-                "target_max_business_date": date(2026, 5, 1),
+                "target_max_business_date": date(2026, 5, 18),
                 "latest_created_at": datetime(2026, 5, 18, 12, 0, tzinfo=UTC),
                 "latest_updated_at": datetime(2026, 5, 18, 12, 0, tzinfo=UTC),
                 "notes": "Financial source of truth.",
@@ -150,12 +202,12 @@ class FakeCoverageRepo:
                 "row_count": 4,
                 "dated_row_count": 4,
                 "min_business_date": date(2026, 2, 15),
-                "max_business_date": date(2026, 5, 10),
+                "max_business_date": date(2026, 5, 16),
                 "distinct_business_dates": 4,
                 "distinct_entity_count": 1,
                 "target_window_row_count": 4,
                 "target_min_business_date": date(2026, 2, 15),
-                "target_max_business_date": date(2026, 5, 10),
+                "target_max_business_date": date(2026, 5, 16),
                 "latest_created_at": datetime(2026, 5, 18, 12, 0, tzinfo=UTC),
                 "latest_updated_at": datetime(2026, 5, 18, 12, 0, tzinfo=UTC),
                 "notes": "Operational source.",

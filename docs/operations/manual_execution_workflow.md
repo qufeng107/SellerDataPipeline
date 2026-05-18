@@ -1,6 +1,6 @@
 # Manual Execution Workflow
 
-> 更新时间：2026-05-18  
+> 更新时间：2026-05-19  
 > 文档定位：本文件定义当前阶段的手动运行流程。目标是在上自动化 Jobs 前，先把每一步都做成可人工执行、可复查、可重复、可审计。
 
 ## 1. 当前阶段定义
@@ -26,6 +26,30 @@ Manual-first operations
 后续 Azure Container Apps Jobs 只是把这些已验收命令按配置定时运行，并补充审计、告警和失败重试。
 
 ## 2. 手动运行总流程
+
+### 2.0 数据刷新与分析节奏
+
+当前冻结规则是：
+
+```text
+数据刷新可以每 1-2 天执行一次；
+每次下载多日重叠窗口并通过 upsert 覆盖当前业务行；
+销售周报、广告周报、利润周报/月报等分析产物最短周期是一周。
+```
+
+因此手动阶段建议分成两类动作：
+
+```text
+Core rolling refresh：每 2 天刷新 Ads / Sales & Traffic / Orders / Promotion-Coupon / Inventory snapshot。
+Weekly analysis run：每周完整刷新慢源，跑 coverage audit、利润 preview 和周报。
+```
+
+详细规则见：
+
+```text
+docs/operations/data_refresh_policy.md
+docs/adr/ADR-010-overlapping-refresh-weekly-analysis.md
+```
 
 ### 2.1 环境检查
 
@@ -55,10 +79,11 @@ python scripts/collect_ready_reports.py ...
 python scripts/collect_ads_reports.py ...
 ```
 
-具体 report type 和建议周期见：
+具体 report type、重叠刷新窗口和 stable cutoff 见：
 
 ```text
 docs/operations/ingestion_job_cadence_catalog.md
+docs/operations/data_refresh_policy.md
 ```
 
 ### 2.3 入库 normalized tables
@@ -175,7 +200,9 @@ docs/features/feature_sku_cost_management.md
 
 ### 2.6 数据加工与报表生成
 
-利润核算口径已冻结为 Settlement-led Financial Profit v1.0。当前已新增利润 preview。预期手动流程是：
+利润核算口径已冻结为 Settlement-led Financial Profit v1.0。当前已新增利润 preview。
+
+注意：数据可以每 1-2 天刷新，但利润、销售、广告等正式分析产物最短按周生成；不要把滚动刷新误当成日报系统。预期手动流程是：
 
 ```powershell
 python scripts/audit_data_coverage.py --marketplace-id ATVPDKIKX0DER --target-start-date 2026-01-01

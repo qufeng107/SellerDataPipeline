@@ -61,7 +61,8 @@ def main() -> None:
     print("Data coverage audit completed.")
     print(f"marketplace={result.marketplace_id}")
     print(f"target_window={result.target_start_date}..{result.target_end_date}")
-    print("status_counts=" + ", ".join(f"{k}:{v}" for k, v in sorted(result.status_counts.items())))
+    print("stable_status_counts=" + ", ".join(f"{k}:{v}" for k, v in sorted(result.stable_status_counts.items())))
+    print("raw_status_counts=" + ", ".join(f"{k}:{v}" for k, v in sorted(result.status_counts.items())))
     for name, path in result.output_files.items():
         print(f"{name}={path}")
 

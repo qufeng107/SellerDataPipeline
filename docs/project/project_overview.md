@@ -1,6 +1,6 @@
 # SellerDataPipeline 项目总览
 
-> 更新时间：2026-05-18  
+> 更新时间：2026-05-19  
 > 文档定位：说明项目目的、边界、阶段目标、整体架构和当前真实状态。详细进度见 `docs/project/progress_next_steps.md`；数据库真实结构见 `docs/database/database_current_schema_spec.md`。
 
 ## 1. 项目背景
@@ -111,7 +111,7 @@ tests/
 
 ## 7. 当前真实状态
 
-截至 2026-05-18，核心数据底座已经完成。已通过真实 Azure SQL execute 和第二次 execute 幂等性验证的模块包括：
+截至 2026-05-19，核心数据底座已经完成。已通过真实 Azure SQL execute 和第二次 execute 幂等性验证的模块包括：
 
 | 模块 | 状态 | 说明 |
 |---|---|---|
@@ -130,8 +130,8 @@ tests/
 | Promotion/Coupon ingestion | Implemented | 首次 inserted=10，重复执行 updated=10。 |
 | Inventory Ledger ingestion | Implemented | Summary + Detail 首次 inserted=357，重复执行 updated=357。 |
 | Manual operations workflow | Planned / documented | 已建立手动执行流程和数据更新周期目录。 |
-| Job cadence config table | Implemented | `012_create_ingestion_job_config.sql` 和 seed 已执行成功；`pipeline_job_config` 当前 13 行。 |
-| 利润核算 | Planned / policy frozen | 已冻结 Settlement-led Financial Profit v1.0；下一步开发手动利润 preview。 |
+| Job cadence config table | Implemented | `012_create_ingestion_job_config.sql` 和 seed 001 已执行；seed 002 用于同步重叠窗口刷新策略。 |
+| 利润核算 | Preview implemented | 已冻结 Settlement-led Financial Profit v1.0；第一版手动利润 preview 已实现。 |
 | 周报/月报/清仓分析 | 待设计/待开发 | 依赖利润 preview 稳定输出。 |
 | Azure Container Apps Jobs | 待开发 | 手动流程稳定后再上云。 |
 
@@ -142,16 +142,17 @@ tests/
 ```text
 手动下载 raw data
 -> 手动入库 normalized tables
--> 手动加工利润 preview 和周报
+-> 每 2 天核心源重叠刷新
+-> 每周手动加工利润 preview 和周报
 -> 手动复核并发送邮件
 -> 再迁移到 Azure Container Apps Jobs
 ```
 
 建议顺序：
 
-1. 按 `docs/features/feature_profit_calculation.md` 和 `docs/adr/ADR-009-settlement-led-profit-policy.md` 开发手动利润 preview。
+1. 执行 seed 002 更新 `pipeline_job_config` 刷新窗口，再运行 stable coverage audit 确认 2026 YTD 覆盖。
 2. 录入/导入 SKU 成本与头程/海运成本，并验证缺成本阻塞规则。
-3. 用真实周期数据人工复核利润结果。
+3. 用真实周期数据人工复核利润 preview，分析产物最短按周。
 4. 开发手动周报/月报输出。
 5. 先人工复核和邮件发送，再自动化 Jobs。
 

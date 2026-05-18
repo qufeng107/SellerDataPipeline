@@ -25,7 +25,10 @@ CORE_COVERAGE_SOURCE_SPECS: tuple[CoverageSourceSpec, ...] = (
         business_date_expression="[report_date]",
         business_date_semantics="report_date",
         entity_expression="[campaign_id]",
-        notes="Advertising spend/performance context; financial ad cost still reconciles to Settlement.",
+        notes=(
+            "Advertising spend/performance context; "
+            "financial ad cost still reconciles to Settlement."
+        ),
     ),
     CoverageSourceSpec(
         data_domain="Ads SP targeting daily",
@@ -147,7 +150,10 @@ CORE_COVERAGE_SOURCE_SPECS: tuple[CoverageSourceSpec, ...] = (
         ),
         business_date_semantics="start_date_time/created_date_time",
         entity_expression="[promotion_id]",
-        notes="Promotion configuration/effect source; financial deductions still reconcile to Settlement.",
+        notes=(
+            "Promotion configuration/effect source; "
+            "financial deductions still reconcile to Settlement."
+        ),
     ),
     CoverageSourceSpec(
         data_domain="Promotion product performance",
@@ -155,7 +161,10 @@ CORE_COVERAGE_SOURCE_SPECS: tuple[CoverageSourceSpec, ...] = (
         business_date_expression="CONVERT(date, [created_at])",
         business_date_semantics="created_at snapshot date",
         entity_expression="[asin]",
-        notes="Promotion product detail has no event date column in current schema; created_at is used only as an ingestion snapshot indicator.",
+        notes=(
+            "Promotion product detail has no event date column in current schema; "
+            "created_at is used only as an ingestion snapshot indicator."
+        ),
     ),
     CoverageSourceSpec(
         data_domain="Coupon performance",
@@ -168,7 +177,10 @@ CORE_COVERAGE_SOURCE_SPECS: tuple[CoverageSourceSpec, ...] = (
         ),
         business_date_semantics="start_date_time",
         entity_expression="[coupon_id]",
-        notes="Coupon configuration/effect source; financial deductions still reconcile to Settlement.",
+        notes=(
+            "Coupon configuration/effect source; "
+            "financial deductions still reconcile to Settlement."
+        ),
     ),
     CoverageSourceSpec(
         data_domain="Coupon ASIN",
@@ -279,10 +291,18 @@ class DataCoverageRepo:
                 COUNT(DISTINCT NULLIF([entity_key], '')) AS [distinct_entity_count],
                 SUM(CASE WHEN [business_date] >= ? AND [business_date] <= ? THEN 1 ELSE 0 END)
                     AS [target_window_row_count],
-                MIN(CASE WHEN [business_date] >= ? AND [business_date] <= ? THEN [business_date] END)
-                    AS [target_min_business_date],
-                MAX(CASE WHEN [business_date] >= ? AND [business_date] <= ? THEN [business_date] END)
-                    AS [target_max_business_date],
+                MIN(
+                    CASE
+                        WHEN [business_date] >= ? AND [business_date] <= ?
+                        THEN [business_date]
+                    END
+                ) AS [target_min_business_date],
+                MAX(
+                    CASE
+                        WHEN [business_date] >= ? AND [business_date] <= ?
+                        THEN [business_date]
+                    END
+                ) AS [target_max_business_date],
                 MAX([created_at]) AS [latest_created_at],
                 MAX([updated_at]) AS [latest_updated_at]
             FROM normalized;
