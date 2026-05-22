@@ -79,11 +79,42 @@ python scripts/collect_ready_reports.py ...
 python scripts/collect_ads_reports.py ...
 ```
 
+历史补数不要继续人工倒推 `--days`，应使用明确日期范围的 backfill CLI：
+
+```powershell
+python scripts/backfill_report_requests.py --marketplace-id ATVPDKIKX0DER --report-type GET_FLAT_FILE_ALL_ORDERS_DATA_BY_ORDER_DATE_GENERAL --start-date 2026-03-01 --end-date 2026-05-17 --chunk-days 30
+python scripts/backfill_ads_reports.py --profile-id 3917953989967300 --start-date 2026-03-17 --end-date 2026-05-20 --chunk-days 14
+```
+
+详见：
+
+```text
+docs/operations/historical_backfill_workflow.md
+```
+
 具体 report type、重叠刷新窗口和 stable cutoff 见：
 
 ```text
 docs/operations/ingestion_job_cadence_catalog.md
 docs/operations/data_refresh_policy.md
+```
+
+
+### 2.2.1 标准定期刷新入口
+
+从 2026-05-21 起，日常“简单几个指令定期下载所有数据入库”统一使用总控脚本，不再临时拼接大量单独命令：
+
+```powershell
+python scripts/run_manual_refresh_plan.py --plan core_rolling --phase submit --marketplace-id ATVPDKIKX0DER --profile-id 3917953989967300 --execute
+python scripts/run_manual_refresh_plan.py --plan core_rolling --phase collect --marketplace-id ATVPDKIKX0DER --profile-id 3917953989967300 --execute
+python scripts/run_manual_refresh_plan.py --plan core_rolling --phase ingest --marketplace-id ATVPDKIKX0DER --profile-id 3917953989967300 --execute
+python scripts/run_manual_refresh_plan.py --plan core_rolling --phase audit --marketplace-id ATVPDKIKX0DER --profile-id 3917953989967300 --target-start-date 2026-03-01 --execute
+```
+
+每周完整刷新使用 `--plan weekly_full`。详见：
+
+```text
+docs/operations/manual_refresh_plan_workflow.md
 ```
 
 ### 2.3 入库 normalized tables

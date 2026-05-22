@@ -10,6 +10,8 @@
 | `data_refresh_policy.md` | 数据源滚动刷新、upsert 覆盖、stable cutoff 与周报/月报加工节奏。 |
 | `ingestion_job_cadence_catalog.md` | 每类数据项的建议下载/入库周期、数据窗口和未来自动化频率。 |
 | `data_coverage_audit_workflow.md` | 利润/周报前如何审计 normalized 数据覆盖范围和 stable cutoff。 |
+| `historical_backfill_workflow.md` | 按明确日期范围分段提交 SP-API / Ads 历史补数请求，替代人工倒推 `--days`。 |
+| `manual_refresh_plan_workflow.md` | 标准“简单几个指令定期下载所有数据入库”流程，定义 `core_rolling` / `weekly_full` plan 和 submit/collect/ingest/audit phase。 |
 
 ## 当前原则
 
@@ -32,3 +34,17 @@
 ```
 
 自动化不应改变业务逻辑，只应复用已经通过手动验收的 CLI、配置和审计表。利润核算当前采用 Settlement-led Financial Profit v1.0，第一版必须先人工复核后再进入周报或邮件。
+
+
+## 标准定期更新入口
+
+定期刷新不再临时拼零散脚本，统一使用：
+
+```powershell
+python scripts/run_manual_refresh_plan.py --plan core_rolling --phase submit --marketplace-id ATVPDKIKX0DER --profile-id 3917953989967300 --execute
+python scripts/run_manual_refresh_plan.py --plan core_rolling --phase collect --marketplace-id ATVPDKIKX0DER --profile-id 3917953989967300 --execute
+python scripts/run_manual_refresh_plan.py --plan core_rolling --phase ingest --marketplace-id ATVPDKIKX0DER --profile-id 3917953989967300 --execute
+python scripts/run_manual_refresh_plan.py --plan core_rolling --phase audit --marketplace-id ATVPDKIKX0DER --profile-id 3917953989967300 --target-start-date 2026-03-01 --execute
+```
+
+每周完整刷新把 `--plan core_rolling` 替换为 `--plan weekly_full`。详见 `manual_refresh_plan_workflow.md`。

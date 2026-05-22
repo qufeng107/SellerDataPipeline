@@ -1,6 +1,6 @@
 # SellerDataPipeline 文档总索引
 
-> 更新时间：2026-05-19  
+> 更新时间：2026-05-22  
 > 文档定位：本目录是 SellerDataPipeline 的正式文档入口。未来新需求、新设计、新数据库变更和开发进度都应优先维护在 `docs/` 下。`requirements_to_be_deprecated/` 中历史文档只作为迁移来源或兼容参考，暂不直接删除。
 
 ## 1. 文档体系目标
@@ -33,6 +33,8 @@ docs/
     data_refresh_policy.md
     ingestion_job_cadence_catalog.md
     data_coverage_audit_workflow.md
+    historical_backfill_workflow.md
+    manual_refresh_plan_workflow.md
 
   data_access/
     README.md
@@ -49,7 +51,9 @@ docs/
     feature_listing_snapshot_ingestion.md
     feature_profit_calculation.md
     feature_sku_cost_management.md
-    # feature_weekly_operations_report.md
+    feature_monthly_financial_close_report.md
+    feature_weekly_business_review.md
+    feature_weekly_ads_optimization_report.md
 
   database/
     database_current_schema_spec.md
@@ -95,6 +99,8 @@ docs/
 8. [`operations/data_refresh_policy.md`](operations/data_refresh_policy.md)
 9. [`operations/ingestion_job_cadence_catalog.md`](operations/ingestion_job_cadence_catalog.md)
 10. [`operations/data_coverage_audit_workflow.md`](operations/data_coverage_audit_workflow.md)
+11. [`operations/historical_backfill_workflow.md`](operations/historical_backfill_workflow.md)
+12. [`operations/manual_refresh_plan_workflow.md`](operations/manual_refresh_plan_workflow.md)
 9. [`data_access/amazon_data_access_catalog.md`](data_access/amazon_data_access_catalog.md)
 7. [`database/database_migration_policy.md`](database/database_migration_policy.md)
 8. [`database/database_schema_export_tool.md`](database/database_schema_export_tool.md)
@@ -112,7 +118,10 @@ docs/
 20. 已实现功能：[`features/feature_ingestion_job_config.md`](features/feature_ingestion_job_config.md)，012 和 seed 已执行，当前 `pipeline_job_config` 13 行
 21. 已实现/规划功能：[`features/feature_profit_calculation.md`](features/feature_profit_calculation.md)，利润口径已冻结为 Settlement-led Financial Profit v1.0，当前已实现利润 preview
 22. 已实现功能：[`features/feature_sku_cost_management.md`](features/feature_sku_cost_management.md)，通过 xlsx 模板导出/导入维护 `amazon_sku_cost`
-23. 相关 ADR，尤其 `ADR-005-progressive-generalization.md`、`ADR-006-azure-sql-connection-warmup.md` 与 `ADR-009-settlement-led-profit-policy.md` 与 `ADR-010-overlapping-refresh-weekly-analysis.md`
+23. 已冻结设计：[`features/feature_monthly_financial_close_report.md`](features/feature_monthly_financial_close_report.md)，基于 Settlement-led Financial Profit 生成月度 CEO/CFO 财务结算报表
+24. 已冻结设计：[`features/feature_weekly_business_review.md`](features/feature_weekly_business_review.md)，基于 Sales & Traffic / Orders / Ads / SKU Cost / Inventory 生成每周经营复盘
+25. 已冻结设计：[`features/feature_weekly_ads_optimization_report.md`](features/feature_weekly_ads_optimization_report.md)，基于 Sponsored Products Ads 数据生成每周广告优化动作清单
+25. 相关 ADR，尤其 `ADR-005-progressive-generalization.md`、`ADR-006-azure-sql-connection-warmup.md` 与 `ADR-009-settlement-led-profit-policy.md` 与 `ADR-010-overlapping-refresh-weekly-analysis.md`
 
 ## 5. 当前迁移与治理进展
 
@@ -138,7 +147,11 @@ docs/
 18. 新增并执行 job config：`feature_ingestion_job_config.md`，`012_create_ingestion_job_config.sql` 和 seed 已执行成功，`pipeline_job_config` 当前 13 行。
 19. 已冻结利润核算口径：`feature_profit_calculation.md` + `ADR-009-settlement-led-profit-policy.md` 与 `ADR-010-overlapping-refresh-weekly-analysis.md`。后续进入利润 preview、周报、清仓决策等业务分析功能实现。
 20. 已实现 SKU 成本模板导出/导入功能：`feature_sku_cost_management.md`，用于手动维护 `amazon_sku_cost`。
+21. 已实现标准定期刷新总控脚本：`scripts/run_manual_refresh_plan.py`，将日常更新固化为 `core_rolling` / `weekly_full` plan 与 submit/collect/ingest/audit phase。
 21. 已冻结数据刷新策略：`data_refresh_policy.md` + `ADR-010-overlapping-refresh-weekly-analysis.md`，采用重叠窗口刷新、upsert 覆盖和周度最小分析产物。
+22. 已冻结月度财务结算报表设计：`features/feature_monthly_financial_close_report.md`。
+23. 已冻结每周经营周报设计：`features/feature_weekly_business_review.md`。
+24. 已冻结每周广告优化报表设计：`features/feature_weekly_ads_optimization_report.md`。
 
 ## 6. 维护硬规则
 

@@ -46,6 +46,7 @@ Amazon SP-API / Amazon Ads API / Seller Central raw exports
 | [`docs/operations/data_refresh_policy.md`](docs/operations/data_refresh_policy.md) | 数据源重叠窗口刷新、stable cutoff 和周度分析产物规则。 |
 | [`docs/operations/ingestion_job_cadence_catalog.md`](docs/operations/ingestion_job_cadence_catalog.md) | 每类数据源的建议下载/入库周期，未来自动化 Jobs 的调度依据。 |
 | [`docs/operations/data_coverage_audit_workflow.md`](docs/operations/data_coverage_audit_workflow.md) | 利润/周报前检查 normalized 数据覆盖范围和 stable cutoff。 |
+| [`docs/operations/manual_refresh_plan_workflow.md`](docs/operations/manual_refresh_plan_workflow.md) | 标准定期刷新入口，用少数固定命令完成 submit / collect / ingest / audit。 |
 | [`docs/project/core_ingestion_completion_review.md`](docs/project/core_ingestion_completion_review.md) | 核心入库阶段收尾检查。 |
 | [`docs/project/requirements_deprecation_plan.md`](docs/project/requirements_deprecation_plan.md) | 旧 requirements 目录保留/删除规则。 |
 | [`docs/data_access/amazon_data_access_catalog.md`](docs/data_access/amazon_data_access_catalog.md) | Amazon 数据接入总目录，汇总 SP-API、Ads API、手动导出。 |
@@ -67,6 +68,9 @@ Amazon SP-API / Amazon Ads API / Seller Central raw exports
 | [`docs/features/feature_ingestion_job_config.md`](docs/features/feature_ingestion_job_config.md) | 数据下载/入库/加工/报表任务周期配置表设计；012 migration 和 seed 001 已执行，seed 002 用于更新刷新策略。 |
 | [`docs/features/feature_profit_calculation.md`](docs/features/feature_profit_calculation.md) | 利润核算功能设计；口径已冻结为 Settlement-led Financial Profit v1.0，第一版利润 preview 已实现。 |
 | [`docs/features/feature_sku_cost_management.md`](docs/features/feature_sku_cost_management.md) | SKU 成本 xlsx 模板导出/导入功能；用于维护 `amazon_sku_cost`。 |
+| [`docs/features/feature_monthly_financial_close_report.md`](docs/features/feature_monthly_financial_close_report.md) | 月度财务结算报表设计；CEO/CFO 财务结算和 SKU 利润分析。 |
+| [`docs/features/feature_weekly_business_review.md`](docs/features/feature_weekly_business_review.md) | 每周经营周报设计；销售、流量、广告、SKU、库存和风险行动建议。 |
+| [`docs/features/feature_weekly_ads_optimization_report.md`](docs/features/feature_weekly_ads_optimization_report.md) | 每周广告优化报表设计；输出 campaign/keyword/search term/SKU 广告动作清单。 |
 | [`docs/database/database_current_schema_spec.md`](docs/database/database_current_schema_spec.md) | 当前真实 Azure SQL 表结构、字段、索引与数据来源。 |
 | [`docs/database/database_migration_policy.md`](docs/database/database_migration_policy.md) | 数据库变更和 migration 规则。 |
 | [`docs/database/database_schema_export_tool.md`](docs/database/database_schema_export_tool.md) | 从真实 Azure SQL 导出 schema snapshot 的工具说明。 |
@@ -138,6 +142,16 @@ ruff format src tests scripts
 ```
 
 ## 常用命令
+
+标准定期更新入口：
+
+```bash
+python scripts/run_manual_refresh_plan.py --plan core_rolling --phase submit --marketplace-id ATVPDKIKX0DER --profile-id 3917953989967300 --execute
+python scripts/run_manual_refresh_plan.py --plan core_rolling --phase collect --marketplace-id ATVPDKIKX0DER --profile-id 3917953989967300 --execute
+python scripts/run_manual_refresh_plan.py --plan core_rolling --phase ingest --marketplace-id ATVPDKIKX0DER --profile-id 3917953989967300 --execute
+python scripts/run_manual_refresh_plan.py --plan core_rolling --phase audit --marketplace-id ATVPDKIKX0DER --profile-id 3917953989967300 --target-start-date 2026-03-01 --execute
+```
+
 
 Azure SQL 连接测试：
 

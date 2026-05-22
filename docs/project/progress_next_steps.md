@@ -1,7 +1,7 @@
 # SellerDataPipeline 当前进展与下一步计划
 
-> 更新时间：2026-05-19  
-> 当前版本：v1.55 overlapping refresh policy implemented; weekly analysis cadence frozen  
+> 更新时间：2026-05-22  
+> 当前版本：v1.62 monthly financial close report v1 implemented  
 > 文档定位：记录项目真实进展、已完成里程碑、当前非阻塞问题和下一步开发顺序。本文不承载详细字段设计；功能细节见 `docs/features/`。
 
 ## 1. 当前一句话状态
@@ -15,7 +15,7 @@
 -> SKU 成本模板导出/导入
 -> 数据覆盖审计 + stable cutoff
 -> 重叠窗口 rolling refresh
--> 利润 preview/周报/月报生成
+-> 月度财务结算报表 / 每周经营周报 / 广告优化周报
 -> 邮件发送
 -> Azure Container Apps Jobs 自动化
 ```
@@ -97,6 +97,8 @@ docs/operations/manual_execution_workflow.md
 docs/operations/data_refresh_policy.md
 docs/operations/ingestion_job_cadence_catalog.md
 docs/operations/data_coverage_audit_workflow.md
+docs/operations/historical_backfill_workflow.md
+docs/operations/manual_refresh_plan_workflow.md
 docs/features/feature_ingestion_job_config.md
 docs/project/core_ingestion_completion_review.md
 docs/project/requirements_deprecation_plan.md
@@ -130,8 +132,8 @@ docs/project/requirements_deprecation_plan.md
 | 任务周期已写入 `pipeline_job_config` | 新增 seed 002 用于把配置调整为重叠窗口刷新 + 周度分析；执行后需导出 live schema/行数并记录。 |
 | 利润核算口径已冻结 | 已采用 Settlement-led Financial Profit v1.0；第一版手动利润 preview 已实现，下一步做多周期复核和周报。 |
 | SKU 成本、采购成本、头程/海运成本需要录入机制 | 已实现 xlsx 模板导出/导入脚本，目标表为 `amazon_sku_cost`。 |
-| 2026-01-01 至今各数据源覆盖范围尚需确认 | `scripts/audit_data_coverage.py` 已增强 stable cutoff；先跑 coverage audit，再决定 backfill 和 rolling refresh 范围。 |
-| 周报/月报脚本未实现 | 数据覆盖和利润 preview 人工复核稳定后开发手动周报/月报。 |
+| 2026-03 起核心数据已完成第一轮补数 | Orders 历史 backfill 已逐 raw file 入库；Ads 历史 backfill 已入库；coverage audit 中 covers_stable_window 提升到 4。后续日常更新改用 `run_manual_refresh_plan.py`。 |
+| 周报脚本未实现；月报脚本待真实复核 | Monthly Financial Close Report v1 已实现 JSON + 单个 XLSX 多 sheet 输出；下一步在真实 Azure SQL 跑 2026-03 / 2026-04 dry-run 并人工复核，然后开发 Weekly Business Review。 |
 | 自动邮件和 Azure Jobs 未实现 | 手动流程稳定后再自动化。 |
 
 ## 8. 下一步建议
@@ -153,9 +155,29 @@ SKU 成本来自 amazon_sku_cost；
 第一版先输出人工复核文件，不立即新增利润结果表。
 ```
 
-下一批建议先执行 seed 002 更新 `pipeline_job_config` 的刷新窗口，然后运行 `scripts/audit_data_coverage.py --target-start-date 2026-01-01`，确认每个 normalized 数据源相对 stable cutoff 的实际覆盖范围；再按缺口补 2026 年初至今的 raw data / ingestion，并对最近 10/14/30/60 天做重叠窗口 rolling refresh。核心源覆盖后，继续运行利润 preview 并用 3月/4月或 5月上旬数据人工复核。
+当前已新增 historical backfill CLI，并已补齐 2026-03 起的 Orders 与 Ads 主要历史数据。为避免日常操作继续变成零散命令，已新增 `scripts/run_manual_refresh_plan.py`，将标准定期更新固化为 `core_rolling` / `weekly_full` 两个 plan，以及 `submit` / `collect` / `ingest` / `audit` 四个 phase。三类管理报表设计已全部冻结；Monthly Financial Close Report v1 已实现，默认输出 JSON + 单个 XLSX 多 sheet，不默认输出 Markdown 或多个 CSV。下一步先用真实 Azure SQL 对 2026-03 / 2026-04 做 dry-run 人工复核，再按 Weekly Business Review -> Weekly Ads Optimization Report 的顺序继续。
 
-## 9. 当前建议手动运行顺序
+## 9. 管理报表设计进展
+
+当前报表体系冻结为三类：
+
+```text
+1. Monthly Financial Close Report：月度财务结算报表，偏 CFO/会计/股东汇报。
+2. Weekly Business Review：每周经营周报，偏 CEO/运营负责人每周复盘。
+3. Weekly Ads Optimization Report：每周广告优化报表，偏广告动作清单。
+```
+
+已完成设计：
+
+```text
+docs/features/feature_monthly_financial_close_report.md  # v1 默认输出 JSON + 单个 XLSX 多 sheet
+docs/features/feature_weekly_business_review.md
+docs/features/feature_weekly_ads_optimization_report.md
+```
+
+代码实现进展：Monthly Financial Close Report v1 已完成本地 unit tests/compileall；下一步真实跑 2026-03 / 2026-04 并复核。之后建议顺序：Weekly Business Review -> Weekly Ads Optimization Report。
+
+## 10. 当前建议手动运行顺序
 
 参考：
 
@@ -167,15 +189,12 @@ docs/operations/ingestion_job_cadence_catalog.md
 短期规则：
 
 ```text
-先手动下载 raw data
--> 每 2 天核心源重叠刷新并 upsert
--> 每周慢源完整刷新
--> 手动检查数据库
--> 手动导出/导入 SKU 成本
--> 手动运行 stable coverage audit
--> 手动生成周度利润 preview / 周报
--> 人工复核邮件
--> 最后才上自动化 Jobs
+core_rolling：每 1-2 天按 submit -> collect -> ingest -> audit 刷新核心源
+weekly_full：每周按 submit -> collect -> ingest -> audit 刷新核心源 + 慢源
+SKU 成本：按需通过 xlsx 模板维护
+周报/月报：只在 stable coverage audit 后生成
+邮件发送：人工复核后再发送
+Azure Jobs：复用 run_manual_refresh_plan.py 的固定 plan，不另起一套逻辑
 ```
 
 注意：数据刷新可以 1-2 天一次，但销售/广告/利润等正式分析产物最短周期为一周。

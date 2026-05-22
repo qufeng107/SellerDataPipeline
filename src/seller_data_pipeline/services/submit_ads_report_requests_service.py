@@ -38,7 +38,9 @@ class SubmitAdsReportRequestsService:
         ad_product: str,
         group_by: list[str],
         columns: list[str],
-        days: int,
+        days: int | None = 14,
+        start_date: date | None = None,
+        end_date: date | None = None,
         time_unit: str = "DAILY",
         name: str | None = None,
         today: date | None = None,
@@ -48,20 +50,34 @@ class SubmitAdsReportRequestsService:
             raise ConfigurationError(
                 "AMAZON_ADS_PROFILE_ID is required or pass --profile-id explicitly"
             )
-        window = recent_days_window(today=today or date.today(), days=days)
-        report_name = name or f"SellerDataPipeline {report_type_id} {window.start} to {window.end}"
+        if days is not None and (start_date is not None or end_date is not None):
+            raise ValueError("Pass either days or start_date/end_date, not both")
+        if start_date is not None or end_date is not None:
+            if start_date is None or end_date is None:
+                raise ValueError("start_date and end_date must be provided together")
+            if end_date < start_date:
+                raise ValueError("end_date must be on or after start_date")
+            window_start = start_date
+            window_end = end_date
+        else:
+            if days is None:
+                raise ValueError("days is required when start_date/end_date are not provided")
+            window = recent_days_window(today=today or date.today(), days=days)
+            window_start = window.start
+            window_end = window.end
+        report_name = name or f"SellerDataPipeline {report_type_id} {window_start} to {window_end}"
         logger.info(
             "Submitting Amazon Ads report: profile_id=%s report_type_id=%s start=%s end=%s",
             profile_id,
             report_type_id,
-            window.start,
-            window.end,
+            window_start,
+            window_end,
         )
         result = self.ads_api_client.create_report(
             profile_id=profile_id,
             name=report_name,
-            start_date=window.start,
-            end_date=window.end,
+            start_date=window_start,
+            end_date=window_end,
             ad_product=ad_product,
             report_type_id=report_type_id,
             group_by=group_by,
@@ -77,8 +93,8 @@ class SubmitAdsReportRequestsService:
             "group_by": group_by,
             "columns": columns,
             "time_unit": time_unit,
-            "data_start_date": window.start.isoformat(),
-            "data_end_date": window.end.isoformat(),
+            "data_start_date": window_start.isoformat(),
+            "data_end_date": window_end.isoformat(),
             "processing_status": str(result.payload.get("status") or "SUBMITTED").upper(),
             "download_status": "NOT_STARTED",
             "parse_status": "NOT_STARTED",

@@ -1,6 +1,6 @@
 # 功能设计文档索引
 
-> 更新时间：2026-05-19  
+> 更新时间：2026-05-22  
 > 文档定位：本目录记录 SellerDataPipeline 的单功能设计、实现状态、验收标准和相关代码路径。每个功能文档必须以 `FEATURE_TEMPLATE.md` 为标准，不应把多个功能混在同一份文档里。
 
 ## 1. 功能文档维护规则
@@ -30,6 +30,10 @@
 | [`feature_ingestion_job_config.md`](feature_ingestion_job_config.md) | Implemented | 数据下载/入库/加工/报表任务周期配置表；012 migration 和 seed 001 已执行，seed 002 用于同步重叠窗口刷新策略。 |
 | [`feature_profit_calculation.md`](feature_profit_calculation.md) | Preview implemented | 利润核算口径已冻结为 Settlement-led Financial Profit v1.0；第一版 `calculate_profit_report.py` 已实现文件型 preview，不落利润结果表。 |
 | [`feature_sku_cost_management.md`](feature_sku_cost_management.md) | Implemented | SKU 成本 xlsx 模板导出与导入；默认 dry-run、按 marketplace + SKU + effective_from 幂等写入 `amazon_sku_cost`。 |
+| [`feature_monthly_financial_close_report.md`](feature_monthly_financial_close_report.md) | Implemented / pending live verification | 月度财务结算报表设计；基于 Settlement-led Financial Profit，按月输出 CEO/CFO 管理口径 P&L、费用结构、SKU 利润和对账检查；v1 默认输出 JSON + 单个 XLSX 多 sheet。 |
+| [`feature_weekly_business_review.md`](feature_weekly_business_review.md) | Design frozen | 每周经营周报设计；自然周销售、流量、订单、广告、SKU、库存和风险行动建议，定位为 CEO/运营负责人每周复盘。 |
+| [`feature_weekly_ads_optimization_report.md`](feature_weekly_ads_optimization_report.md) | Design frozen | 每周广告优化报表设计；Sponsored Products campaign、targeting、search term、advertised product 维度分析，输出否词/加词/调价/观察动作清单。 |
+| Historical backfill CLI | Implemented | `scripts/backfill_report_requests.py` / `scripts/backfill_ads_reports.py`；按明确日期范围分段提交历史补数请求，详见 `docs/operations/historical_backfill_workflow.md`。 |
 
 ## 3. 下一批建议
 
@@ -37,9 +41,10 @@
 
 1. 执行 `sql/seeds/002_update_ingestion_job_config_refresh_policy.sql`，使 `pipeline_job_config` 与重叠窗口刷新策略一致。
 2. 运行 `scripts/audit_data_coverage.py --target-start-date 2026-01-01`，按 stable cutoff 判断 2026 YTD 数据覆盖。
-3. 按缺口进行历史 backfill，并对最近 10/14/30/60 天做 rolling refresh。
+3. 使用 historical backfill CLI 按明确日期范围补 Orders / Ads 等历史缺口，并对最近 10/14/30/60 天做 rolling refresh。
 4. 使用 `feature_sku_cost_management.md` 维护 SKU 成本，并验证缺成本阻塞规则。
 5. 用真实 3月/4月或 5月上旬数据人工复核利润 preview。
-6. 连续几期稳定后，再开发 `feature_weekly_operations_report.md` 和邮件草稿/发送流程。
+6. 当前已冻结 `feature_monthly_financial_close_report.md`、`feature_weekly_business_review.md` 与 `feature_weekly_ads_optimization_report.md` 三份管理报表设计。Monthly Financial Close Report v1 已进入代码实现；下一步先在真实 Azure SQL 跑 2026-03 / 2026-04 并人工复核，再继续 Weekly Business Review -> Weekly Ads Optimization Report。
+7. 报表实现建议顺序：先复核 Monthly Financial Close Report v1 真实输出，再实现 Weekly Business Review -> Weekly Ads Optimization Report -> 邮件草稿/发送流程。
 
 注意：数据刷新可以每 1-2 天执行一次；销售、广告、利润等正式分析产物最短周期为一周。
