@@ -163,6 +163,20 @@ class Settings:
 
     report_receiver_email: str | None = _env("REPORT_RECEIVER_EMAIL")
 
+    report_email_smtp_host: str | None = _env("REPORT_EMAIL_SMTP_HOST")
+    report_email_smtp_port: int = _env_int("REPORT_EMAIL_SMTP_PORT", 587)
+    report_email_smtp_security: str = _env("REPORT_EMAIL_SMTP_SECURITY", "starttls") or "starttls"
+    report_email_smtp_username: str | None = _env("REPORT_EMAIL_SMTP_USERNAME")
+    report_email_smtp_password: str | None = _env("REPORT_EMAIL_SMTP_PASSWORD")
+    report_email_from: str | None = _env("REPORT_EMAIL_FROM")
+    report_email_from_name: str = (
+        _env("REPORT_EMAIL_FROM_NAME", "SellerDataPipeline Reports")
+        or "SellerDataPipeline Reports"
+    )
+    report_email_reply_to: str | None = _env("REPORT_EMAIL_REPLY_TO")
+    report_email_smtp_timeout_seconds: int = _env_int("REPORT_EMAIL_SMTP_TIMEOUT_SECONDS", 30)
+    report_email_smtp_max_retries: int = _env_int("REPORT_EMAIL_SMTP_MAX_RETRIES", 2)
+
 
 def get_settings() -> Settings:
     return Settings()

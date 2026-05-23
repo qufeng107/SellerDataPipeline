@@ -1,9 +1,9 @@
 # Feature: Weekly Business Review
 
-> 文档状态：Design frozen / ready for implementation  
+> 文档状态：Implemented / pending live verification  
 > 负责人：AI + Feng  
-> 更新时间：2026-05-21  
-> 功能状态：Design only  
+> 更新时间：2026-05-23  
+> 功能状态：Implemented / pending live verification  
 > 相关数据接入文档：`docs/data_access/sp_api_reports_catalog.md`, `docs/data_access/amazon_ads_reports_catalog.md`, `docs/data_access/seller_central_manual_exports.md`  
 > 相关数据库 spec：`docs/database/database_current_schema_spec.md`  
 > 相关功能：`docs/features/feature_monthly_financial_close_report.md`, `docs/features/feature_profit_calculation.md`, `docs/features/feature_sku_cost_management.md`, `docs/operations/manual_refresh_plan_workflow.md`, `docs/operations/data_refresh_policy.md`  
@@ -31,7 +31,7 @@ WBR 的特点是：
 追求稳定、及时、可指导运营动作。
 ```
 
-第一版 WBR 不新增数据库结果表，不自动发送邮件，不替代月度财务结算报表。它读取已经入库的 normalized 表，输出 Markdown / JSON / CSV 文件，供人工复核和每周运营决策使用。
+第一版 WBR 不新增数据库结果表，不自动发送邮件，不生成正式 PDF。它读取已经入库的 normalized 表，默认输出一个结构化 JSON 和一个多 sheet XLSX，供人工复核、每周经营决策、后续邮件/PDF/Dashboard 自动化使用。
 
 ---
 
@@ -40,13 +40,14 @@ WBR 的特点是：
 | 项目 | 状态 |
 |---|---|
 | 需求确认 | 已确认：报表体系为 Monthly Financial Close Report、Weekly Business Review、Weekly Ads Optimization Report 三类。 |
-| 设计状态 | 本文冻结 WBR v1 设计到指标、字段和公式级别。 |
-| 数据源可用性 | 足够支持 v1：Sales & Traffic、Orders、Ads、SKU Cost、Inventory snapshot、Settlement preview 均已入库或已完成补数链路。 |
+| 设计状态 | 本文已刷新并实现 WBR v1 到指标、字段、公式、JSON 结构和 XLSX sheet 级别。 |
+| 数据源可用性 | 足够支持 v1：Sales & Traffic、Orders、SKU Cost、Inventory snapshot、Settlement preview 均已入库；Ads campaign daily 当前真实库只覆盖 2026-05-06 起，历史缺口应作为广告运营解释缺失 warning，不影响销售/库存/成本周报主体。 |
 | 数据刷新依赖 | 依赖 `core_rolling` 每 1-2 天刷新；建议在周报生成前执行一次 `weekly_full` 或至少 `core_rolling`。 |
 | 数据库变更 | v1 不新增数据库表，不新增 migration。 |
-| 代码实现 | 待开发。 |
-| 输出形式 | v1 输出 Markdown / JSON / CSV，可在 v1.1 增加 xlsx。 |
-| 验收样本 | 先以 2026-03 起的完整自然周为主，尤其 2026-03-23、2026-03-30、2026-04-06、2026-04-13、2026-04-20 等周。 |
+| 代码实现 | 已完成 v1：`scripts/generate_weekly_business_review.py` + service/repo/unit tests。 |
+| 默认输出形式 | `weekly_business_review.json` + `weekly_business_review.xlsx`。 |
+| 不再默认输出 | 不默认输出 Markdown；不默认输出多个 CSV。 |
+| 验收样本 | 先以 2026-03 起的完整自然周为主，尤其 2026-03-23、2026-03-30、2026-04-06、2026-04-13、2026-04-20 等周。对于 3/4 月样本，Ads API context 可能 partial；5 月 6 日之后样本可验证 Ads campaign daily 加工。 |
 
 ---
 
@@ -73,8 +74,9 @@ WBR 应帮助回答：
 先用 Amazon 美国站真实数据；
 先按 SKU 维度，不强行建立复杂 SPU/产品线主数据；
 先用标准 SKU 成本，不做 FIFO；
-先做人工复核，不自动发送给外部人员；
-稳定后再做 xlsx、邮件草稿、自动化调度和可视化仪表盘。
+先 JSON/XLSX 稳定，再生成 PDF/邮件；
+先人工复核，不自动发送给外部人员；
+稳定后再做邮件草稿、自动化调度和可视化仪表盘。
 ```
 
 ---
@@ -90,6 +92,7 @@ WBR 应帮助回答：
 5. 输出广告总览指标，但不做深度搜索词优化。
 6. 输出经营风险提醒和下周行动建议。
 7. 输出数据覆盖与稳定性检查。
+8. 输出一个结构化 JSON 和一个多 sheet XLSX。
 
 ### 4.2 本功能不包含
 
@@ -101,82 +104,55 @@ WBR 应帮助回答：
 6. 不做 FIFO / 批次成本 / 汇率重估。
 7. 不做复杂 SPU 映射；v1 先按 `seller_sku` 分析。
 8. 不把今天/昨天的不稳定数据作为正式周报结论。
+9. 不默认生成 Markdown，因为股东、会计和管理层实际使用场景主要是 XLSX / PDF / Email。
+10. 不默认生成多个 CSV；如调试需要，可后续增加 `--export-csv`。
 
 ---
 
-## 5. 输入数据
+## 5. 报表命名与使用场景
 
-### 5.1 读取表清单
-
-| 数据域 | 表 | 用途 | v1 使用方式 |
-|---|---|---|---|
-| Sales & Traffic | `amazon_sales_traffic_daily` | 周度销售、销量、订单、sessions、page views、转化率 | 主运营口径 |
-| Orders | `amazon_order_item` | SKU 级订单数量、订单销售、促销折扣、地区 | SKU 运营口径 |
-| Ads campaign | `amazon_ads_sp_campaign_daily` | 广告总花费、点击、曝光、7日归因销售和订单 | 广告总览主表 |
-| Ads advertised product | `amazon_ads_sp_advertised_product_daily` | SKU/ASIN 维度广告花费与销售 | SKU 广告贡献 |
-| Ads search term | `amazon_ads_sp_search_term_daily` | 搜索词表现 | v1 只做 top warning；深度分析留给广告优化报表 |
-| Settlement | `amazon_settlement_transaction` | posted-date 财务预览、退款/费用风险 | 辅助财务 preview，不作为 WBR 主销售口径 |
-| SKU Cost | `amazon_sku_cost` | 单件标准成本 | 估算 COGS / 毛利 |
-| Inventory snapshot | `amazon_inventory_daily` | 当前 FBA 可售、预留、不可售、总库存 | 库存风险 |
-| Listing snapshot | `amazon_listing_snapshot` | 标题、价格、listing 状态 | SKU 名称/状态补充 |
-| Promotion/Coupon | `amazon_promotion_performance`, `amazon_coupon_performance` | 活动概览 | v1 只做活动上下文，不做精确跨周归因 |
-| FBA Reimbursements | `amazon_fba_reimbursement` | 赔偿异常 | v1 作为风险提示和财务背景 |
-
-### 5.2 数据充分性判断
-
-当前项目数据足够支持 WBR v1：
+正式名称：
 
 ```text
-Sales & Traffic 可支撑周度销售/流量/转化。
-Orders 已通过 historical backfill 补齐 2026-03 起主要历史，可支撑 SKU 级订单分析。
-Ads 已通过 historical backfill 补齐 2026-03-17 起主要历史，可支撑广告总览和 SKU 广告贡献。
-SKU Cost 已可通过 xlsx 维护，可支撑标准成本 COGS。
-Inventory snapshot 已可定期刷新，可支撑库存风险。
-Settlement 可作为 posted-date 财务 preview，但不适合作为 WBR 的唯一周度运营口径。
+Weekly Business Review
+每周经营周报 / 每周运营复盘报表
 ```
 
-### 5.3 当前已知限制
-
-| 限制 | 影响 | v1 处理 |
+| 使用者 | 用途 | 推荐文件 |
 |---|---|---|
-| Settlement posted-date 不等于订单业务日期 | 周度财务金额不能视为最终利润 | WBR 只显示 `settlement_finance_preview`，不叫 final profit |
-| Ads 归因会回填 | 最近几天广告销售可能变化 | 依赖 rolling refresh；WBR 使用上周完整自然周，建议周二生成 |
-| Sales & Traffic 最近 1-2 天可能延迟 | 今天/昨天不稳定 | WBR 只生成已过稳定截止日的周 |
-| Orders `purchase_date_raw` 是 raw 字符串 | 周维度需要解析日期 | v1 按 ISO/UTC 解析；失败行进入 warning |
-| SKU/SPU 主数据尚未建立 | 只能按 SKU 看，不按产品线 | v1 只按 `seller_sku`，未来可加 `product_group` 映射表 |
-| 库存是快照，不是历史每日库存 | 周内库存变动不完整 | v1 使用最新 snapshot；Ledger 仅作补充说明 |
+| CEO / 运营负责人 | 每周判断增长、流量、广告、库存和 SKU 优先级。 | XLSX + 后续 PDF 摘要。 |
+| 广告/运营执行者 | 看 campaign 总览、SKU 贡献、异常提示和下周动作。 | XLSX。 |
+| 股东 / 管理层 | 简洁理解业务趋势，不看过细搜索词。 | 后续由 JSON 生成 PDF / Email；必要时附 XLSX。 |
+| 后续自动化 | 邮件正文、PDF、Dashboard、趋势分析、自动预警。 | JSON。 |
 
 ---
 
-## 6. 输出结果
+## 6. 周期口径
 
-### 6.1 输出目录
+### 6.1 自然周定义
+
+WBR 以自然周为最小单位：
 
 ```text
-runtime/analysis_reports/weekly_business_review/{marketplace_id}/{week_start}_{week_end}/
+week_start = Monday
+week_end = Sunday
 ```
 
 示例：
 
 ```text
-runtime/analysis_reports/weekly_business_review/ATVPDKIKX0DER/2026-04-06_2026-04-12/
+2026-04-06 .. 2026-04-12
 ```
 
-### 6.2 输出文件
+建议每周二生成上周周报：
 
-| 文件 | 用途 |
-|---|---|
-| `weekly_business_review.md` | 人工阅读主报告。 |
-| `weekly_business_review.json` | 完整结构化结果，供后续 xlsx/email/BI 使用。 |
-| `weekly_business_summary.csv` | 本周总览 KPI，一行或少量行。 |
-| `weekly_daily_trend.csv` | 周内每日销售、流量、广告趋势。 |
-| `weekly_sku_performance.csv` | SKU 销量、销售额、成本、库存、广告贡献。 |
-| `weekly_ads_summary.csv` | 广告总览与 campaign 级摘要。 |
-| `weekly_inventory_risk.csv` | SKU 库存天数、缺货/滞销风险。 |
-| `weekly_alerts.csv` | 异常、风险和行动建议。 |
-| `weekly_reconciliation_checks.csv` | 数据覆盖、稳定性和口径检查。 |
+```text
+周一：数据可能仍有延迟；
+周二：Sales & Traffic / Orders / Ads 更稳定；
+周二上午先运行 core_rolling 或 weekly_full，再生成 WBR。
+```
 
-### 6.3 CLI 设计
+### 6.2 CLI 设计
 
 ```powershell
 python scripts/generate_weekly_business_review.py `
@@ -201,34 +177,186 @@ python scripts/generate_weekly_business_review.py `
 | `--ads-stable-lag-days` | `3` | Ads 最小稳定滞后天数。 |
 | `--output-dir` | 自动 | 自定义输出目录。 |
 
----
+### 6.3 `--dry-run` 语义
 
-## 7. 周期与稳定性规则
-
-### 7.1 自然周定义
-
-WBR 以自然周为最小单位：
+WBR v1 不写数据库，因此 `--dry-run` 定义为：
 
 ```text
-week_start = Monday
-week_end = Sunday
+只读数据库；
+不写数据库；
+不发送邮件；
+不触发任何外部动作；
+但仍生成 runtime JSON/XLSX 文件，方便人工复核。
+```
+
+---
+
+## 7. 输出设计
+
+### 7.1 输出目录
+
+```text
+runtime/analysis_reports/weekly_business_review/{marketplace_id}/{week_start}_{week_end}/
 ```
 
 示例：
 
 ```text
-2026-04-06 .. 2026-04-12
+runtime/analysis_reports/weekly_business_review/ATVPDKIKX0DER/2026-04-06_2026-04-12/
 ```
 
-建议每周二生成上周周报：
+### 7.2 默认输出文件
+
+v1 默认只输出两个文件：
+
+| 文件 | 用途 |
+|---|---|
+| `weekly_business_review.json` | 结构化 source of truth，供后续 PDF / Email / Dashboard / 自动预警使用。 |
+| `weekly_business_review.xlsx` | 人工复核和每周经营会议使用的多 sheet 表格。 |
+
+不再默认输出：
 
 ```text
-周一：数据可能仍有延迟；
-周二：Sales & Traffic / Orders / Ads 更稳定；
-周二上午先运行 core_rolling 或 weekly_full，再生成 WBR。
+weekly_business_review.md
+weekly_business_summary.csv
+weekly_daily_trend.csv
+weekly_sku_performance.csv
+weekly_ads_summary.csv
+weekly_inventory_risk.csv
+weekly_alerts.csv
+weekly_reconciliation_checks.csv
 ```
 
-### 7.2 稳定截止日
+如后续调试需要，可以新增 `--export-csv`，但 v1 默认不做，避免文件过碎。
+
+### 7.3 JSON 与 XLSX 分工
+
+```text
+JSON = 机器可读的完整周报结果，是后续 PDF / Email / Dashboard 的 source of truth。
+XLSX = 人可读、可筛选、可复核的表格版周报，适合运营会议和人工归档。
+```
+
+JSON 可以包含嵌套结构、状态、warnings、action recommendations、summary text seed；XLSX 应尽量扁平化，一张 sheet 对应一个分析主题。
+
+### 7.4 XLSX sheets
+
+默认 XLSX 包含：
+
+| Sheet | 用途 |
+|---|---|
+| `01_Executive_Summary` | 本周核心 KPI、环比、状态、结论。 |
+| `02_Daily_Trend` | 周内每日 Sales & Traffic + Ads 趋势。 |
+| `03_Sales_Traffic` | 销售、销量、订单、sessions、page views、转化率细表。 |
+| `04_SKU_Performance` | SKU 销售、成本、毛利、广告后贡献、库存摘要。 |
+| `05_Ads_Overview` | Ads campaign daily 总览和 campaign 摘要。 |
+| `06_Inventory_Risk` | SKU 库存天数、低库存、滞销、库存价值。 |
+| `07_Alerts_Actions` | 异常、风险和下周建议动作。 |
+| `08_Reconciliation_Checks` | 数据覆盖、稳定性和口径检查。 |
+| `09_Raw_Metadata` | 报表参数、生成时间、源表、row counts、notes。 |
+
+### 7.5 代码路径
+
+v1 实现路径：
+
+```text
+scripts/generate_weekly_business_review.py
+src/seller_data_pipeline/db/repositories/weekly_business_review_repo.py
+src/seller_data_pipeline/services/weekly_business_review_service.py
+tests/unit/db/test_weekly_business_review_repo.py
+tests/unit/services/test_weekly_business_review_service.py
+```
+
+### 7.6 JSON 顶层结构
+
+建议：
+
+```json
+{
+  "report_type": "weekly_business_review",
+  "version": "v1.0",
+  "marketplace_id": "ATVPDKIKX0DER",
+  "profile_id": "3917953989967300",
+  "period": {
+    "week_start": "2026-04-06",
+    "week_end": "2026-04-12",
+    "previous_week_start": "2026-03-30",
+    "previous_week_end": "2026-04-05"
+  },
+  "status": "ok",
+  "currency": "USD",
+  "executive_summary": {},
+  "kpi_summary": {},
+  "daily_trend": [],
+  "sales_traffic_summary": {},
+  "sku_performance": [],
+  "ads_overview": {},
+  "inventory_risk": [],
+  "settlement_finance_preview": {},
+  "alerts": [],
+  "reconciliation_checks": [],
+  "warnings": [],
+  "output_files": {}
+}
+```
+
+---
+
+## 8. 输入数据
+
+### 8.1 读取表清单
+
+| 数据域 | 表 | 用途 | v1 使用方式 |
+|---|---|---|---|
+| Sales & Traffic | `amazon_sales_traffic_daily` | 周度销售、销量、订单、sessions、page views、转化率 | 主运营口径 |
+| Orders | `amazon_order_item` | SKU 级订单数量、订单销售、促销折扣、地区 | SKU 运营口径 |
+| Ads campaign | `amazon_ads_sp_campaign_daily` | 广告总花费、点击、曝光、7日归因销售和订单 | 广告总览主表；缺失时 WBR partial，不阻塞销售周报 |
+| Ads advertised product | `amazon_ads_sp_advertised_product_daily` | SKU/ASIN 维度广告花费与销售 | SKU 广告贡献；缺失时该列为空/0 并 warning |
+| Ads search term | `amazon_ads_sp_search_term_daily` | 搜索词表现 | v1 只做 top warning；深度分析留给广告优化报表 |
+| Settlement | `amazon_settlement_transaction` | posted-date 财务预览、退款/费用风险 | 辅助财务 preview，不作为 WBR 主销售口径 |
+| SKU Cost | `amazon_sku_cost` | 单件标准成本 | 估算 COGS / 毛利 |
+| Inventory snapshot | `amazon_inventory_daily` | 当前 FBA 可售、预留、不可售、总库存 | 库存风险 |
+| Listing snapshot | `amazon_listing_snapshot` | 标题、价格、listing 状态 | SKU 名称/状态补充 |
+| Promotion/Coupon | `amazon_promotion_performance`, `amazon_coupon_performance` | 活动概览 | v1 只做活动上下文，不做精确跨周归因 |
+| FBA Reimbursements | `amazon_fba_reimbursement` | 赔偿异常 | v1 作为风险提示和财务背景 |
+
+### 8.2 数据充分性判断
+
+当前项目数据足够支持 WBR v1 主体：
+
+```text
+Sales & Traffic 可支撑周度销售/流量/转化。
+Orders 已通过 historical backfill 补齐 2026-03 起主要历史，可支撑 SKU 级订单分析。
+SKU Cost 已可通过 xlsx 维护，可支撑标准成本 COGS。
+Inventory snapshot 已可定期刷新，可支撑库存风险。
+Settlement 可作为 posted-date 财务 preview，但不适合作为 WBR 的唯一周度运营口径。
+```
+
+Ads 需要单独说明：
+
+```text
+当前真实库 amazon_ads_sp_campaign_daily 只有 2026-05-06 起数据。
+因此 2026-03 / 2026-04 WBR 样本中 Ads API context 应被标记为 partial / missing context。
+这不影响 WBR 的销售、流量、订单、SKU 成本和库存主体结论。
+未来只要 core_rolling / weekly_full 按周期运行，5 月之后的 Ads campaign daily 应可进入周报加工。
+```
+
+### 8.3 当前已知限制
+
+| 限制 | 影响 | v1 处理 |
+|---|---|---|
+| Settlement posted-date 不等于订单业务日期 | 周度财务金额不能视为最终利润 | WBR 只显示 `settlement_finance_preview`，不叫 final profit |
+| Ads 归因会回填 | 最近几天广告销售可能变化 | 依赖 rolling refresh；WBR 使用上周完整自然周，建议周二生成 |
+| Ads 历史报表可能存在可下载窗口限制 | 老月份 Ads API context 可能补不回来 | 不阻塞 WBR；对历史周标记 `ads_api_context_missing` |
+| Sales & Traffic 最近 1-2 天可能延迟 | 今天/昨天不稳定 | WBR 只生成已过稳定截止日的周 |
+| Orders `purchase_date_raw` 是 raw 字符串 | 周维度需要解析日期 | v1 按 ISO/UTC 解析；失败行进入 warning |
+| SKU/SPU 主数据尚未建立 | 只能按 SKU 看，不按产品线 | v1 只按 `seller_sku`，未来可加 `product_group` 映射表 |
+| 库存是快照，不是历史每日库存 | 周内库存变动不完整 | v1 使用最新 snapshot；Ledger 仅作补充说明 |
+
+---
+
+## 9. 稳定性规则
+
+### 9.1 稳定截止日
 
 ```text
 sales_stable_end = today - 2 days
@@ -248,9 +376,9 @@ status = preview_unstable
 status = needs_review
 ```
 
-### 7.3 建议生成前置动作
+### 9.2 建议生成前置动作
 
-生成周报前应执行：
+生成周报前应执行一次 `core_rolling`，完整周复盘前建议执行 `weekly_full`：
 
 ```powershell
 python scripts/run_manual_refresh_plan.py --plan core_rolling --phase submit --marketplace-id ATVPDKIKX0DER --profile-id 3917953989967300 --execute
@@ -263,9 +391,9 @@ python scripts/run_manual_refresh_plan.py --plan core_rolling --phase audit --ma
 
 ---
 
-## 8. 核心指标设计
+## 10. 核心指标设计
 
-### 8.1 Executive KPI Summary
+### 10.1 Executive KPI Summary
 
 | 指标 | 字段名 | 数据源 | 公式 | 说明 |
 |---|---|---|---|---|
@@ -276,7 +404,7 @@ python scripts/run_manual_refresh_plan.py --plan core_rolling --phase audit --ma
 | Sessions | `sessions` | `amazon_sales_traffic_daily` | `SUM(sessions)` | 本周访问 sessions。 |
 | Page Views | `page_views` | `amazon_sales_traffic_daily` | `SUM(page_views)` | 本周页面浏览。 |
 | Unit Session Percentage | `unit_session_percentage` | Sales & Traffic | `units_ordered / sessions` | 用汇总值重算转化率。 |
-| Ads Spend | `ads_spend` | `amazon_ads_sp_campaign_daily` | `SUM(cost)` | 本周广告花费。 |
+| Ads Spend | `ads_spend` | `amazon_ads_sp_campaign_daily` | `SUM(cost)` | 本周广告花费；无 Ads 数据时为 0/NULL 并 partial warning。 |
 | Ads Sales 7d | `ads_sales_7d` | `amazon_ads_sp_campaign_daily` | `SUM(sales_7d)` | 7日归因广告销售。 |
 | Ads Orders 7d | `ads_orders_7d` | `amazon_ads_sp_campaign_daily` | `SUM(purchases_7d)` | 7日归因购买数。 |
 | ACOS | `acos` | Ads | `ads_spend / ads_sales_7d` | 广告销售成本比。 |
@@ -288,7 +416,7 @@ python scripts/run_manual_refresh_plan.py --plan core_rolling --phase audit --ma
 | Contribution Margin After Ads | `contribution_margin_after_ads` | derived | `contribution_after_ads / ordered_product_sales` | 用于周度趋势。 |
 | Settlement Net Preview | `settlement_net_preview` | `amazon_settlement_transaction` | `SUM(amount)` by posted_date | posted-date 财务预览。 |
 
-### 8.2 环比指标
+### 10.2 环比指标
 
 所有核心 KPI 默认和上一自然周比较：
 
@@ -323,9 +451,9 @@ change_label
 
 ---
 
-## 9. 销售与流量模块
+## 11. 销售与流量模块
 
-### 9.1 读取条件
+### 11.1 读取条件
 
 ```sql
 FROM dbo.amazon_sales_traffic_daily
@@ -333,7 +461,9 @@ WHERE marketplace_id = @marketplace_id
   AND report_date BETWEEN @week_start AND @week_end
 ```
 
-### 9.2 每日趋势字段
+### 11.2 每日趋势字段
+
+`02_Daily_Trend` sheet 应包含：
 
 | 字段 | 公式 |
 |---|---|
@@ -345,8 +475,11 @@ WHERE marketplace_id = @marketplace_id
 | `page_views` | `page_views` |
 | `unit_session_percentage` | `units_ordered / sessions` |
 | `avg_selling_price` | `ordered_product_sales_amount / units_ordered` |
+| `ads_spend` | Ads campaign daily 当日 `SUM(cost)` |
+| `ads_sales_7d` | Ads campaign daily 当日 `SUM(sales_7d)` |
+| `tacos` | `ads_spend / ordered_product_sales` |
 
-### 9.3 质量检查
+### 11.3 质量检查
 
 | 场景 | 处理 |
 |---|---|
@@ -357,9 +490,9 @@ WHERE marketplace_id = @marketplace_id
 
 ---
 
-## 10. Orders 与 SKU 模块
+## 12. Orders 与 SKU 模块
 
-### 10.1 读取条件
+### 12.1 读取条件
 
 `amazon_order_item.purchase_date_raw` 需要解析为 `purchase_date`。v1 规则：
 
@@ -377,7 +510,9 @@ order_status NOT IN ('Cancelled', 'Canceled') OR order_status IS NULL
 item_status NOT IN ('Cancelled', 'Canceled') OR item_status IS NULL
 ```
 
-### 10.2 SKU 销售字段
+### 12.2 SKU 销售字段
+
+`04_SKU_Performance` sheet 应包含：
 
 | 字段 | 来源/公式 |
 |---|---|
@@ -396,9 +531,9 @@ item_status NOT IN ('Cancelled', 'Canceled') OR item_status IS NULL
 | `gross_margin_before_ads` | `order_item_sales - order_discount_total - estimated_cogs` |
 | `gross_margin_rate_before_ads` | `gross_margin_before_ads / order_item_sales` |
 
-### 10.3 SKU 成本匹配规则
+### 12.3 SKU 成本匹配规则
 
-对于每个 `seller_sku`，用周中订单日期或逐行订单日期匹配：
+对于每个 `seller_sku`，用逐行订单日期匹配：
 
 ```text
 cost.marketplace_id = @marketplace_id
@@ -428,9 +563,9 @@ missing_cost_skus += seller_sku
 
 ---
 
-## 11. Ads 总览模块
+## 13. Ads 总览模块
 
-### 11.1 读取条件
+### 13.1 读取条件
 
 ```sql
 FROM dbo.amazon_ads_sp_campaign_daily
@@ -439,10 +574,13 @@ WHERE profile_id = @profile_id
   AND report_date BETWEEN @week_start AND @week_end
 ```
 
-### 11.2 广告总览字段
+### 13.2 广告总览字段
+
+`05_Ads_Overview` sheet 应包含总览区和 campaign 摘要区。总览字段：
 
 | 字段 | 公式 |
 |---|---|
+| `ads_row_count` | `COUNT(*)` |
 | `ads_impressions` | `SUM(impressions)` |
 | `ads_clicks` | `SUM(clicks)` |
 | `ads_spend` | `SUM(cost)` |
@@ -456,13 +594,15 @@ WHERE profile_id = @profile_id
 | `roas` | `ads_sales_7d / ads_spend` |
 | `tacos` | `ads_spend / ordered_product_sales` |
 
-### 11.3 Campaign 摘要
+### 13.3 Campaign 摘要
 
 按 `campaign_id + campaign_name` 聚合：
 
 | 字段 | 公式 |
 |---|---|
+| `campaign_id` | `campaign_id` |
 | `campaign_name` | `campaign_name` |
+| `campaign_status` | 最新状态；如字段存在。 |
 | `campaign_spend` | `SUM(cost)` |
 | `campaign_sales_7d` | `SUM(sales_7d)` |
 | `campaign_orders_7d` | `SUM(purchases_7d)` |
@@ -472,21 +612,32 @@ WHERE profile_id = @profile_id
 
 WBR v1 只输出 campaign top summary。搜索词级 winners/losers 归 `Weekly Ads Optimization Report`。
 
-### 11.4 广告质量检查
+### 13.4 广告质量检查
 
 | 场景 | 默认阈值 | warning |
 |---|---:|---|
+| `ads_row_count = 0` 且本周处于 Ads 已知覆盖期之后 | - | `ads_api_context_missing` |
 | `acos > target_acos` | 30% | `high_acos` |
 | `tacos > target_tacos` | 20% | `high_tacos` |
 | `ads_spend > 0 and ads_sales_7d = 0` | 任意 | `ads_spend_without_sales` |
 | `clicks > 30 and purchases_7d = 0` | 30 clicks | `clicks_without_orders` |
 | 广告花费环比上升 > 30%，销售额环比未上升 | 30% | `spend_up_sales_not_up` |
 
+Ads 数据缺失时：
+
+```text
+不把 WBR 整体改成 no_data；
+如果销售/订单/SKU 成本完整，则 status 可为 partial；
+XLSX 05_Ads_Overview 写明 Ads API context missing；
+07_Alerts_Actions 增加 warning；
+08_Reconciliation_Checks 记录 ads coverage check。
+```
+
 ---
 
-## 12. SKU 广告与贡献模块
+## 14. SKU 广告与贡献模块
 
-### 12.1 数据源
+### 14.1 数据源
 
 优先使用：
 
@@ -503,7 +654,9 @@ WHERE profile_id = @profile_id
 GROUP BY advertised_sku
 ```
 
-### 12.2 SKU 贡献字段
+### 14.2 SKU 贡献字段
+
+合并到 `04_SKU_Performance`：
 
 | 字段 | 公式 |
 |---|---|
@@ -518,7 +671,7 @@ GROUP BY advertised_sku
 | `sku_tacos` | `sku_ads_spend / sku_order_sales` |
 | `sku_ads_dependency_rate` | `sku_ads_sales_7d / sku_order_sales`，仅作粗略参考。 |
 
-### 12.3 SKU 排名
+### 14.3 SKU 排名
 
 WBR v1 输出：
 
@@ -533,9 +686,9 @@ Low inventory high velocity SKU
 
 ---
 
-## 13. Inventory 风险模块
+## 15. Inventory 风险模块
 
-### 13.1 快照选择规则
+### 15.1 快照选择规则
 
 库存是快照数据，不是历史每日库存。WBR v1 使用最新可用快照：
 
@@ -551,10 +704,14 @@ WHERE marketplace_id = @marketplace_id
 warning = stale_inventory_snapshot
 ```
 
-### 13.2 库存指标
+### 15.2 库存指标
+
+`06_Inventory_Risk` sheet 应包含：
 
 | 字段 | 来源/公式 |
 |---|---|
+| `seller_sku` | Inventory / Orders SKU |
+| `asin` | Inventory / Orders / Listing |
 | `afn_fulfillable_quantity` | `amazon_inventory_daily.afn_fulfillable_quantity` |
 | `afn_reserved_quantity` | `amazon_inventory_daily.afn_reserved_quantity` |
 | `afn_unsellable_quantity` | `amazon_inventory_daily.afn_unsellable_quantity` |
@@ -563,6 +720,7 @@ warning = stale_inventory_snapshot
 | `avg_daily_units_ordered_7d` | `weekly_units_ordered / 7` |
 | `days_of_supply` | `afn_fulfillable_quantity / avg_daily_units_ordered_7d` |
 | `inventory_value_at_cost` | `afn_total_quantity * unit_standard_cost` |
+| `inventory_risk` | 按第 15.3 节分级 |
 
 如果 `avg_daily_units_ordered_7d = 0`：
 
@@ -571,7 +729,7 @@ days_of_supply = NULL
 inventory_velocity_status = no_recent_sales
 ```
 
-### 13.3 库存风险分级
+### 15.3 库存风险分级
 
 | 风险 | 条件 |
 |---|---|
@@ -583,29 +741,32 @@ inventory_velocity_status = no_recent_sales
 
 ---
 
-## 14. Settlement 财务 preview 模块
+## 16. Settlement 财务 preview 模块
 
-### 14.1 读取条件
+### 16.1 读取条件
 
 ```sql
 FROM dbo.amazon_settlement_transaction
 WHERE marketplace_id = @marketplace_id
   AND is_settlement_summary = 0
+  AND amount IS NOT NULL
   AND posted_date BETWEEN @week_start AND @week_end
 ```
 
-### 14.2 字段
+`posted_date` 解析规则沿用 Monthly Financial Close / Profit Preview 的 Settlement posted-date 逻辑。
+
+### 16.2 字段
 
 | 字段 | 公式 | 说明 |
 |---|---|---|
 | `settlement_net_preview` | `SUM(amount)` | posted-date 维度本周净额。 |
 | `settlement_product_sales` | `SUM(amount WHERE profit_bucket='product_sales')` | 如 bucket 可用。 |
-| `settlement_advertising_fee` | `SUM(amount WHERE profit_bucket='advertising')` | 财务扣费口径广告费。 |
-| `settlement_fba_fee` | `SUM(amount WHERE profit_bucket='fba_fees')` | FBA 配送/仓储相关。 |
-| `settlement_refund_amount` | `SUM(amount WHERE transaction_type='Refund' OR profit_bucket='refunds')` | posted-date 退款。 |
-| `settlement_promotion_amount` | `SUM(amount WHERE profit_bucket='promotions')` | posted-date 促销。 |
+| `settlement_advertising_fee` | `SUM(amount WHERE profit_bucket='advertising_cost')` 或对应 advertising bucket | 财务扣费口径广告费。 |
+| `settlement_fba_fee` | `SUM(amount WHERE profit_bucket='fba_fee')` 或对应 fba bucket | FBA 配送/仓储相关。 |
+| `settlement_refund_amount` | `SUM(amount WHERE transaction_type='Refund' OR profit_bucket='refund')` | posted-date 退款。 |
+| `settlement_promotion_amount` | `SUM(amount WHERE profit_bucket IN ('promotion_cost','promotion_fee'))` | posted-date 促销。 |
 
-### 14.3 使用原则
+### 16.3 使用原则
 
 WBR 中 Settlement 只作为财务 preview，不作为核心销售趋势口径。原因：
 
@@ -623,9 +784,9 @@ Settlement preview is posted-date financial context, not final weekly profit.
 
 ---
 
-## 15. Alerts 与行动建议
+## 17. Alerts 与行动建议
 
-### 15.1 默认阈值
+### 17.1 默认阈值
 
 | 阈值 | 默认值 | 说明 |
 |---|---:|---|
@@ -638,7 +799,7 @@ Settlement preview is posted-date financial context, not final weekly profit.
 | `watch_stock_days` | 30 | 库存观察阈值。 |
 | `stale_inventory_days` | 7 | 库存快照过期。 |
 
-### 15.2 Alert 规则
+### 17.2 Alert 规则
 
 | Alert | 条件 | 建议动作 |
 |---|---|---|
@@ -647,6 +808,7 @@ Settlement preview is posted-date financial context, not final weekly profit.
 | `high_tacos` | `tacos > target_tacos` | 降低低效广告预算，检查搜索词。 |
 | `high_acos` | `acos > target_acos` | 下调高 ACOS campaign/target。 |
 | `ads_spend_without_sales` | 广告花费 > 0 且广告销售为 0 | 检查投放词，必要时否定。 |
+| `ads_api_context_missing` | Ads campaign daily 在本周无数据 | 检查 Ads rolling refresh / backfill，不影响 Sales & Traffic 主体周报。 |
 | `sku_negative_contribution` | SKU contribution after ads < 0 | 检查广告、促销、价格和成本。 |
 | `missing_sku_cost` | SKU 无成本 | 先补 `amazon_sku_cost`，否则不输出成本结论。 |
 | `stockout` | 可售库存为 0 且近期有销量 | 补货/关广告/避免浪费流量。 |
@@ -655,9 +817,9 @@ Settlement preview is posted-date financial context, not final weekly profit.
 | `stale_inventory_snapshot` | 库存快照超过 7 天 | 先跑 inventory refresh。 |
 | `settlement_refund_spike` | posted-date refund rate > 10% | 检查退货原因、质量、listing 误导。 |
 
-### 15.3 Action List 输出格式
+### 17.3 Action List 输出格式
 
-`weekly_alerts.csv` 字段：
+`07_Alerts_Actions` sheet 字段：
 
 | 字段 | 说明 |
 |---|---|
@@ -674,19 +836,19 @@ Settlement preview is posted-date financial context, not final weekly profit.
 
 ---
 
-## 16. 数据质量与状态规则
+## 18. 数据质量与状态规则
 
-### 16.1 报告状态
+### 18.1 报告状态
 
 | 状态 | 条件 | 是否可用于运营决策 |
 |---|---|---|
 | `ok` | 核心数据覆盖完整，无缺 SKU 成本，无严重异常。 | 是 |
 | `preview_unstable` | 周期未过稳定截止日，或 Ads/Sales 最近数据可能回填。 | 只做观察 |
 | `needs_review` | 缺核心数据、缺 SKU 成本、关键字段解析失败。 | 需人工修复后再用 |
-| `partial` | 非核心模块缺失，如库存快照过旧、Settlement preview 缺失。 | 可用，但需看 warning |
+| `partial` | 非核心模块缺失，如 Ads context 缺失、库存快照过旧、Settlement preview 缺失。 | 可用，但需看 warning |
 | `no_data` | 核心销售数据为空。 | 不可用 |
 
-### 16.2 核心数据必需性
+### 18.2 核心数据必需性
 
 | 数据 | 必需性 | 缺失影响 |
 |---|---|---|
@@ -698,7 +860,7 @@ Settlement preview is posted-date financial context, not final weekly profit.
 | Settlement | 可选 | 财务 preview 缺失，不阻塞 WBR。 |
 | Promotion/Coupon | 可选 | 活动上下文缺失，不阻塞 WBR。 |
 
-### 16.3 数据覆盖检查
+### 18.3 数据覆盖检查
 
 报表生成前建议检查：
 
@@ -718,9 +880,9 @@ SKU Cost 是否覆盖所有本周销售 SKU。
 
 ---
 
-## 17. 字段映射与公式总表
+## 19. 字段映射与公式总表
 
-### 17.1 Summary 字段
+### 19.1 Summary 字段
 
 | 输出字段 | 来源表/字段 | 公式/规则 |
 |---|---|---|
@@ -728,7 +890,7 @@ SKU Cost 是否覆盖所有本周销售 SKU。
 | `profile_id` | 参数 | 原样输出。 |
 | `week_start` | 参数 | 必须为 Monday。 |
 | `week_end` | derived | `week_start + 6 days`。 |
-| `report_status` | derived | 按第 16 节规则。 |
+| `report_status` | derived | 按第 18 节规则。 |
 | `ordered_product_sales` | `amazon_sales_traffic_daily.ordered_product_sales_amount` | SUM。 |
 | `units_ordered` | `amazon_sales_traffic_daily.units_ordered` | SUM。 |
 | `total_order_items` | `amazon_sales_traffic_daily.total_order_items` | SUM。 |
@@ -747,7 +909,7 @@ SKU Cost 是否覆盖所有本周销售 SKU。
 | `settlement_net_preview` | `amazon_settlement_transaction.amount` | SUM by posted_date。 |
 | `alert_count` | alerts | COUNT。 |
 
-### 17.2 SKU 字段
+### 19.2 SKU 字段
 
 | 输出字段 | 来源/公式 |
 |---|---|
@@ -765,56 +927,11 @@ SKU Cost 是否覆盖所有本周销售 SKU。
 | `contribution_after_ads` | `gross_margin_before_ads - ads_spend`。 |
 | `fulfillable_quantity` | 最新 Inventory snapshot。 |
 | `days_of_supply` | `fulfillable_quantity / (units_ordered / 7)`。 |
-| `inventory_risk` | 按第 13 节分级。 |
+| `inventory_risk` | 按第 15 节分级。 |
 
 ---
 
-## 18. 报告 Markdown 结构
-
-`weekly_business_review.md` 建议结构：
-
-```text
-# Weekly Business Review - {marketplace_id} - {week_start} to {week_end}
-
-## 1. Executive Summary
-- 本周一句话结论
-- 核心 KPI 表
-- 主要风险和机会
-
-## 2. Sales & Traffic
-- 销售额、销量、订单数、sessions、转化率
-- 环比变化
-- 每日趋势表
-
-## 3. Ads Overview
-- Spend、Sales、ACOS、ROAS、TACOS
-- Campaign top summary
-- 广告风险提示
-
-## 4. SKU Performance
-- SKU 销量/销售额/毛利/广告后贡献
-- Top / bottom SKU
-
-## 5. Inventory Risk
-- 可售库存、库存天数、低库存/滞销提醒
-
-## 6. Finance Preview
-- Settlement posted-date preview
-- 退款/费用风险
-- 明确提示：不是最终财务结算
-
-## 7. Alerts & Recommended Actions
-- 下周建议动作
-
-## 8. Data Quality & Reconciliation
-- 覆盖情况
-- 缺失数据
-- refresh/audit 时间
-```
-
----
-
-## 19. 处理流程
+## 20. 处理流程
 
 ```text
 CLI params
@@ -829,7 +946,7 @@ CLI params
   -> attach settlement finance preview
   -> compute KPI and week-over-week changes
   -> generate alerts and recommended actions
-  -> write JSON / Markdown / CSV
+  -> write JSON / XLSX
 ```
 
 失败处理：
@@ -845,39 +962,24 @@ CLI params
 
 ---
 
-## 20. 幂等性设计
+## 21. 幂等性设计
 
 WBR v1 不写数据库，只写 runtime 输出文件。
 
 同一参数重复执行：
 
 ```text
-覆盖同一输出目录下的文件；
+覆盖同一输出目录下的 JSON/XLSX 文件；
 不新增数据库记录；
 不影响 normalized 表；
 输出应只随源数据更新而变化。
 ```
 
-推荐输出元数据：
-
-```json
-{
-  "report_type": "weekly_business_review",
-  "marketplace_id": "ATVPDKIKX0DER",
-  "profile_id": "3917953989967300",
-  "week_start": "2026-04-06",
-  "week_end": "2026-04-12",
-  "generated_at_utc": "...",
-  "source_tables": [...],
-  "report_status": "ok"
-}
-```
-
 ---
 
-## 21. 验收标准
+## 22. 验收标准
 
-### 21.1 功能验收
+### 22.1 功能验收
 
 第一版开发完成后，应能运行：
 
@@ -888,28 +990,35 @@ python scripts/generate_weekly_business_review.py --marketplace-id ATVPDKIKX0DER
 并输出：
 
 ```text
-runtime/analysis_reports/weekly_business_review/ATVPDKIKX0DER/2026-04-06_2026-04-12/weekly_business_review.md
 runtime/analysis_reports/weekly_business_review/ATVPDKIKX0DER/2026-04-06_2026-04-12/weekly_business_review.json
-runtime/analysis_reports/weekly_business_review/ATVPDKIKX0DER/2026-04-06_2026-04-12/weekly_business_summary.csv
-runtime/analysis_reports/weekly_business_review/ATVPDKIKX0DER/2026-04-06_2026-04-12/weekly_daily_trend.csv
-runtime/analysis_reports/weekly_business_review/ATVPDKIKX0DER/2026-04-06_2026-04-12/weekly_sku_performance.csv
-runtime/analysis_reports/weekly_business_review/ATVPDKIKX0DER/2026-04-06_2026-04-12/weekly_ads_summary.csv
-runtime/analysis_reports/weekly_business_review/ATVPDKIKX0DER/2026-04-06_2026-04-12/weekly_inventory_risk.csv
-runtime/analysis_reports/weekly_business_review/ATVPDKIKX0DER/2026-04-06_2026-04-12/weekly_alerts.csv
-runtime/analysis_reports/weekly_business_review/ATVPDKIKX0DER/2026-04-06_2026-04-12/weekly_reconciliation_checks.csv
+runtime/analysis_reports/weekly_business_review/ATVPDKIKX0DER/2026-04-06_2026-04-12/weekly_business_review.xlsx
 ```
 
-### 21.2 数字验收
+XLSX 至少包含：
+
+```text
+01_Executive_Summary
+02_Daily_Trend
+03_Sales_Traffic
+04_SKU_Performance
+05_Ads_Overview
+06_Inventory_Risk
+07_Alerts_Actions
+08_Reconciliation_Checks
+09_Raw_Metadata
+```
+
+### 22.2 数字验收
 
 1. `ordered_product_sales` 应等于 `amazon_sales_traffic_daily` 周内金额之和。
 2. `units_ordered` 应等于 `amazon_sales_traffic_daily.units_ordered` 周内之和。
-3. `ads_spend` 应等于 `amazon_ads_sp_campaign_daily.cost` 周内之和。
+3. `ads_spend` 应等于 `amazon_ads_sp_campaign_daily.cost` 周内之和；若该周无 Ads API 数据，应明确 partial/warning。
 4. `acos`、`roas`、`tacos` 应由汇总值重算，不使用源表已算百分比。
 5. SKU COGS 应能追溯到 `amazon_sku_cost` 生效记录。
 6. 库存天数应能追溯到最新 `amazon_inventory_daily` 快照。
 7. 同一周重复生成，若源数据不变，输出数值应一致。
 
-### 21.3 人工复核样本
+### 22.3 人工复核样本
 
 建议先用以下自然周验收：
 
@@ -921,16 +1030,44 @@ runtime/analysis_reports/weekly_business_review/ATVPDKIKX0DER/2026-04-06_2026-04
 2026-04-20 .. 2026-04-26
 ```
 
-这些周处于当前补数较完整范围内，适合验证 Sales & Traffic、Orders、Ads、SKU 成本和库存快照链路。
+这些周适合验证 Sales & Traffic、Orders、SKU 成本和库存快照链路。由于当前 Ads campaign daily 真实覆盖从 2026-05-06 起，3/4 月样本的 Ads 模块应允许 partial。另建议额外用 2026-05-11 之后的完整周验证 Ads campaign daily 加工。
 
 ---
 
-## 22. 后续版本
+## 23. v1 实现与验证记录
+
+本轮已实现 WBR v1 文件型报表：
+
+```text
+python scripts/generate_weekly_business_review.py \
+  --marketplace-id ATVPDKIKX0DER \
+  --profile-id 3917953989967300 \
+  --week-start 2026-04-06 \
+  --dry-run
+```
+
+默认输出：
+
+```text
+runtime/analysis_reports/weekly_business_review/{marketplace_id}/{week_start}_{week_end}/weekly_business_review.json
+runtime/analysis_reports/weekly_business_review/{marketplace_id}/{week_start}_{week_end}/weekly_business_review.xlsx
+```
+
+验证命令：
+
+```text
+PYTHONPATH=src pytest tests/unit -q
+python -m compileall -q scripts src tests
+```
+
+当前 sandbox 未安装 ruff，因此 `ruff check src tests scripts` 需在本地或 GitHub Action 中执行。
+
+## 24. 后续版本
 
 ### v1.1
 
-- 增加 xlsx 输出。
 - 增加邮件草稿模板。
+- 增加 PDF 摘要生成。
 - 增加更完整的同比/月内累计对比。
 - 增加 configurable thresholds 文件。
 
@@ -939,6 +1076,7 @@ runtime/analysis_reports/weekly_business_review/ATVPDKIKX0DER/2026-04-06_2026-04
 - 增加 SKU -> SPU / 产品线映射。
 - 增加库存 Ledger movement 解释。
 - 增加 Buy Box / Listing price 变化解释。
+- 增加可选 `--export-csv` 调试输出。
 
 ### v2.0
 
@@ -949,7 +1087,7 @@ runtime/analysis_reports/weekly_business_review/ATVPDKIKX0DER/2026-04-06_2026-04
 
 ---
 
-## 23. 当前冻结结论
+## 24. 当前冻结结论
 
 WBR v1 冻结为：
 
@@ -963,5 +1101,7 @@ SKU 广告贡献使用 Ads advertised product daily；
 Settlement 只做 posted-date finance preview，不作为最终周利润；
 不新增数据库表；
 不自动发邮件；
-先输出 Markdown / JSON / CSV，人工复核稳定后再实现自动化。
+默认输出 JSON + 单个 XLSX 多 sheet；
+不默认输出 Markdown 或多个 CSV；
+人工复核稳定后再实现 PDF / Email / Dashboard 自动化。
 ```

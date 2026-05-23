@@ -26,6 +26,13 @@ REPORT_VERSION = "v1.0"
 DEFAULT_OUTPUT_ROOT = "runtime/analysis_reports/monthly_financial_close"
 REVIEW_BUCKETS = {"unknown", "unclassified"}
 REVIEW_CATEGORIES = {"unknown", "unclassified"}
+SKU_PROFIT_SCOPE_NOTE = (
+    "SKU profit is before allocation of account-level expenses such as advertising fees, "
+    "subscription fees, coupon fees, storage fees, and other non-SKU settlement rows."
+)
+SETTLEMENT_LED_POLICY_NOTE = (
+    "Settlement is the financial source of truth; operational sources are context only."
+)
 
 
 @dataclass(frozen=True)
@@ -249,6 +256,10 @@ class MonthlyFinancialCloseResult:
             "reconciliation_checks": [check.to_dict() for check in self.reconciliation_checks],
             "warnings": [warning.to_dict() for warning in self.warnings],
             "raw_metadata": _json_safe_mapping(self.raw_metadata),
+            "methodology_notes": {
+                "settlement_led_policy": SETTLEMENT_LED_POLICY_NOTE,
+                "sku_profit_scope": SKU_PROFIT_SCOPE_NOTE,
+            },
             "output_files": dict(self.output_files),
         }
         return payload
@@ -298,8 +309,23 @@ class MonthlyFinancialCloseResult:
         ]
         if margin is not None:
             key_points.insert(1, f"Operating profit margin was {_format_ratio(margin)}.")
-        if self.warnings:
-            key_points.append(f"Review warning count: {len(self.warnings)}.")
+        reconciliation_warning_count = sum(
+            1 for check in self.reconciliation_checks if check.status == "warning"
+        )
+        reconciliation_needs_review_count = sum(
+            1 for check in self.reconciliation_checks if check.status == "needs_review"
+        )
+        non_info_warning_count = sum(
+            1 for warning in self.warnings if warning.severity != "info"
+        )
+        if reconciliation_warning_count or reconciliation_needs_review_count:
+            key_points.append(
+                "Reconciliation warnings: "
+                f"{reconciliation_warning_count}; needs_review checks: "
+                f"{reconciliation_needs_review_count}."
+            )
+        if non_info_warning_count:
+            key_points.append(f"Non-info warning count: {non_info_warning_count}.")
         return {"headline": headline, "key_points": key_points}
 
 
@@ -598,6 +624,8 @@ class MonthlyFinancialCloseService:
             missing_cost_skus=missing_cost_skus,
             currency_mismatch_skus=currency_mismatch_skus,
             product_sales_units=product_sales_units,
+            financial_summary=financial_summary,
+            ads_summary=ads_summary or {},
             reconciliation_checks=reconciliation_checks,
         )
         status = _result_status(
@@ -787,6 +815,12 @@ def _summary_rows(result: MonthlyFinancialCloseResult) -> list[dict[str, Any]]:
             result.currency,
             "Settlement reimbursement bucket.",
         ),
+        _metric_row(
+            "SKU Profit Table Scope",
+            "Before account-level expense allocation",
+            None,
+            SKU_PROFIT_SCOPE_NOTE,
+        ),
     ]
 
 
@@ -811,6 +845,7 @@ def _metadata_rows(result: MonthlyFinancialCloseResult) -> list[dict[str, Any]]:
 def _flatten_sku_row(row: MonthlySkuProfitRow) -> dict[str, Any]:
     payload = row.to_dict()
     payload["notes"] = "; ".join(row.notes)
+    payload["scope_note"] = SKU_PROFIT_SCOPE_NOTE
     return payload
 
 
@@ -1446,6 +1481,8 @@ def _build_warnings(
     missing_cost_skus: set[str],
     currency_mismatch_skus: set[str],
     product_sales_units: int,
+    financial_summary: MonthlyFinancialSummary,
+    ads_summary: Mapping[str, Any],
     reconciliation_checks: Sequence[ReconciliationCheck],
 ) -> list[WarningEntry]:
     warnings = []
@@ -1487,6 +1524,25 @@ def _build_warnings(
                 related_source="amazon_sku_cost",
             )
         )
+    ads_row_count = _optional_int(ads_summary.get("ads_row_count")) or 0
+    ads_api_spend = _to_decimal(ads_summary.get("ads_cost"))
+    if (
+        abs(financial_summary.advertising_cost) != ZERO
+        and ads_row_count == 0
+        and ads_api_spend == ZERO
+    ):
+        warnings.append(
+            WarningEntry(
+                "ads_api_context_missing",
+                "warning",
+                (
+                    "Settlement has advertising fees but Ads API campaign daily context has "
+                    "zero rows for this period/profile. This affects operational context only; "
+                    "financial profit remains Settlement-led."
+                ),
+                related_source="amazon_ads_sp_campaign_daily",
+            )
+        )
     for check in reconciliation_checks:
         if check.status == "needs_review" and check.check_name not in {
             "missing_cost_skus",
@@ -1504,7 +1560,7 @@ def _build_warnings(
         WarningEntry(
             "settlement_led_policy",
             "info",
-            "Settlement is the financial source of truth; operational sources are context only.",
+            SETTLEMENT_LED_POLICY_NOTE,
         )
     )
     return warnings

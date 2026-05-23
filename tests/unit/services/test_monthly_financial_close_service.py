@@ -90,6 +90,41 @@ def test_missing_sku_cost_marks_needs_review() -> None:
     assert any(warning.warning_code == "missing_sku_cost" for warning in result.warnings)
 
 
+def test_missing_ads_api_context_adds_warning_but_keeps_settlement_profit_ok() -> None:
+    result = MonthlyFinancialCloseService().calculate_from_rows(
+        marketplace_id="ATVPDKIKX0DER",
+        profile_id="3917953989967300",
+        month="2026-03",
+        start_date=date(2026, 3, 1),
+        end_date=date(2026, 3, 31),
+        settlement_rows=[
+            _settlement_row(1, "SKU-1", Decimal("100.00"), "product_sales", "revenue", 1),
+            _settlement_row(
+                2,
+                None,
+                Decimal("-10.00"),
+                "advertising_fee",
+                "advertising_cost",
+                None,
+            ),
+        ],
+        sku_cost_rows=[
+            _cost_row("SKU-1", Decimal("20.00"), Decimal("5.00"), date(2026, 1, 1))
+        ],
+        ads_summary={"ads_cost": Decimal("0.00"), "ads_row_count": 0},
+        sales_traffic_summary={"ordered_product_sales_amount": Decimal("100.00")},
+    )
+
+    assert result.status == "ok"
+    assert result.financial_summary.estimated_operating_profit == Decimal("65.00")
+    assert any(
+        warning.warning_code == "ads_api_context_missing" for warning in result.warnings
+    )
+    assert "Reconciliation warnings:" in " ".join(
+        result.executive_summary()["key_points"]
+    )
+
+
 def test_monthly_cost_matching_uses_effective_date_per_unit() -> None:
     result = MonthlyFinancialCloseService().calculate_from_rows(
         marketplace_id="ATVPDKIKX0DER",

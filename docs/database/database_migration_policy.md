@@ -43,7 +43,16 @@
 
 ## 2.1 当前已准备但尚未执行的 migration
 
-当前无已准备但尚未执行的 migration。后续新结构变化从 `013_xxx.sql` 开始。
+| 文件 | 状态 | 说明 |
+|---|---|---|
+| `sql/migrations/013_create_report_email_recipient_config.sql` | pending | 新增 `report_email_recipient_config`，用于 Report Delivery SMTP 的数据库收件人路由配置；执行成功并导出 live schema 后才能更新 `docs/database/database_current_schema_spec.md`。 |
+
+当前已准备但尚未执行的 seed：
+
+| 文件 | 状态 | 说明 |
+|---|---|---|
+| `sql/seeds/003_seed_report_email_recipient_config_initial.sql` | pending | 初始化全局 `*/*/to` 收件人：`feng@cuidena.cn`, `yufei@cuidena.cn`, `qian@cuidena.cn`。 |
+
 
 ## 3. Migration 命名规则
 

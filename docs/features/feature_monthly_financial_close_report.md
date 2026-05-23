@@ -608,6 +608,11 @@ Settlement Ads Fee 是财务实际扣费指标。
 两者并列展示，差异作为 reconciliation note，不互相覆盖。
 ```
 
+若 Settlement 存在 `advertising_cost`，但指定 `profile_id + month` 在
+`amazon_ads_sp_campaign_daily` 中没有任何行，则报表输出
+`ads_api_context_missing` warning。该 warning 只说明 Ads API 运营解释数据缺失，
+不影响 Settlement-led 财务利润。
+
 ### 10.4 Promotion / Coupon 指标
 
 | 指标 | 字段名建议 | 公式 / 来源 |
@@ -929,7 +934,12 @@ sku_profit_share
 currency
 status
 notes
+scope_note
 ```
+
+`scope_note` 必须说明：SKU 利润表是 SKU 归属收入、退款、SKU 层费用与内部 COGS
+的分析视角，未分摊广告费、订阅费、coupon fee、仓储费等账号级费用或非 SKU
+Settlement 行。因此 SKU 表合计不应被解释为公司最终月度经营利润。
 
 ### 13.6 `05_Operational_Context`
 
@@ -1092,7 +1102,9 @@ diff = settlement_ads_fee_abs - ads_api_spend
 diff_pct = diff / ads_api_spend
 ```
 
-只解释，不强制一致。
+只解释，不强制一致。若 `settlement_ads_fee_abs != 0` 且 Ads API campaign daily
+在指定月份/profile 下 `ads_row_count = 0`、`ads_api_spend = 0`，输出
+`ads_api_context_missing` warning，提示需要检查 Ads backfill/ingestion 覆盖。
 
 ### 15.5 SKU cost coverage
 
@@ -1337,12 +1349,13 @@ v1 稳定后再考虑：
 |---|---|---|
 | 2026-05-21 | 初版 Monthly Financial Close Report 设计冻结，默认输出 Markdown / JSON / CSV，Excel 放 v1.1。 | 先完成指标、字段和公式级设计。 |
 | 2026-05-22 | 调整 v1 默认输出为 JSON + 单个 XLSX 多 sheet；取消默认 Markdown 和多个 CSV。 | 股东/会计不会使用 Markdown；多个 CSV 太碎；JSON 更适合作为后续 PDF/Email 的结构化源，XLSX 更适合人工复核。 |
+| 2026-05-23 | 增加 Ads API context 缺失 warning、console reconciliation 计数、SKU Profit scope note。 | 真实 2026-03 / 2026-04 复核发现 Ads campaign daily 仅覆盖 2026-05-06 起，需避免把运营解释数据缺失误读为财务利润异常；同时避免将 SKU 表误读为最终公司利润。 |
 ---
 
 ## 18. v1 代码实现记录
 
-> 更新时间：2026-05-22  
-> 实现状态：本地 unit tests / compileall 通过；真实 Azure SQL 运行待用户环境执行。
+> 更新时间：2026-05-23  
+> 实现状态：本地 unit tests / compileall 通过；真实 Azure SQL 2026-03 / 2026-04 已生成并初步复核。
 
 ### 18.1 新增代码路径
 

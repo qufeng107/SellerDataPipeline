@@ -1,7 +1,7 @@
 # SellerDataPipeline 当前真实数据库 Schema Spec
 
-> 文档版本：v1.13  
-> 更新日期：2026-05-18  
+> 文档版本：v1.14  
+> 更新日期：2026-05-23  
 > 文档定位：**当前真实实现记录**。本文件只记录已经在 Azure SQL `amazon_ops` 执行成功的表、字段、索引与数据来源；不写未来设计。设计变更请先更新对应的 `docs/features/feature_*.md` 或 `docs/data_access/*.md`；如涉及库结构变化，先对比本文件，再新增 migration；migration 执行成功后优先运行 `scripts/export_database_schema_spec.py` 导出 live schema snapshot，再更新本文件。
 
 ## 1. 当前数据库状态
@@ -10,23 +10,23 @@
 |---|---|
 | Azure SQL database | `amazon_ops` |
 | Server | `amazon-ops-sql` |
-| 已执行 migration | `001_create_core_tables.sql` 29/29 batches；`002_create_indexes.sql` 54/54 batches；`003_add_listing_snapshot_business_key_hash.sql` 3/3 batches；`004_add_inventory_daily_business_key_hash.sql` 3/3 batches；`005_add_sales_traffic_business_key_hashes.sql` 5/5 batches；`006_add_settlement_transaction_business_key.sql` 4/4 batches；`007_add_order_item_business_key.sql` 4/4 batches；`008_add_fba_reimbursement_business_key.sql` 4/4 batches；`009_add_fba_fee_preview_business_key.sql` 4/4 batches；`010_add_promotion_coupon_business_keys.sql` 8/8 batches；`011_add_inventory_ledger_business_keys.sql` 4/4 batches；`012_create_ingestion_job_config.sql` 4/4 batches；`001_seed_ingestion_job_config_core_jobs.sql` 1/1 batch |
-| 用户表数量 | 29 |
+| 已执行 migration | `001_create_core_tables.sql` 29/29 batches；`002_create_indexes.sql` 54/54 batches；`003_add_listing_snapshot_business_key_hash.sql` 3/3 batches；`004_add_inventory_daily_business_key_hash.sql` 3/3 batches；`005_add_sales_traffic_business_key_hashes.sql` 5/5 batches；`006_add_settlement_transaction_business_key.sql` 4/4 batches；`007_add_order_item_business_key.sql` 4/4 batches；`008_add_fba_reimbursement_business_key.sql` 4/4 batches；`009_add_fba_fee_preview_business_key.sql` 4/4 batches；`010_add_promotion_coupon_business_keys.sql` 8/8 batches；`011_add_inventory_ledger_business_keys.sql` 4/4 batches；`012_create_ingestion_job_config.sql` 4/4 batches；`001_seed_ingestion_job_config_core_jobs.sql` 1/1 batch；`013_create_report_email_recipient_config.sql` 3/3 batches；`003_seed_report_email_recipient_config_initial.sql` 2/2 batches |
+| 用户表数量 | 30 |
 | 已真实入库验证 | Amazon Ads 4 张 SP 日表，首次 inserted=200、重复执行 inserted=0/updated=200；Listing 快照表首次 inserted=6、重复执行 inserted=0/updated=6；Inventory 快照表首次 inserted=5、重复执行 inserted=0/updated=5；Sales & Traffic 首次 inserted=7、重复执行 inserted=0/updated=7；Settlement 首次 inserted=4911、重复执行 inserted=0/updated=4911；Orders 首次 inserted=112、重复执行 inserted=0/updated=112；FBA Reimbursements 首次 inserted=19、重复执行 inserted=0/updated=19；FBA Fee Preview 首次 inserted=8、重复执行 inserted=0/updated=8；Promotion/Coupon 首次 inserted=10、重复执行 inserted=0/updated=10；Inventory Ledger 首次 inserted=357、重复执行 inserted=0/updated=357 |
-| 当前限制 | `amazon_sync_run_log` 尚无 rows_inserted / rows_updated 字段；normalized 表当前 `source_raw_file_id` 仍可能为 NULL；`pipeline_job_config` 已创建并 seed 13 条任务配置，其中利润、周报、邮件任务仍是 disabled placeholder，待功能实现后再启用 |
+| 当前限制 | `amazon_sync_run_log` 尚无 rows_inserted / rows_updated 字段；normalized 表当前 `source_raw_file_id` 仍可能为 NULL；`pipeline_job_config` 已创建并 seed 13 条任务配置，其中利润、周报、邮件任务仍是 disabled placeholder，待功能实现后再启用；`report_email_recipient_config` 已创建并 seed 3 条全局收件人路由 |
 
 ## 1.1 最新执行记录
 
-`012_create_ingestion_job_config.sql` 已在 Azure SQL `amazon_ops` 执行成功，执行结果为 4/4 batches。随后 `sql/seeds/001_seed_ingestion_job_config_core_jobs.sql` 已执行成功，执行结果为 1/1 batch。
+`013_create_report_email_recipient_config.sql` 已在 Azure SQL `amazon_ops` 执行成功，执行结果为 3/3 batches。随后 `sql/seeds/003_seed_report_email_recipient_config_initial.sql` 已执行成功，执行结果为 2/2 batches。
 
 最新 live schema 已导出到：
 
 ```text
-runtime/schema_exports/after_012_job_config.json
-runtime/schema_exports/after_012_job_config.md
+runtime/schema_exports/azure_sql_schema_20260523_213026.json
+runtime/schema_exports/azure_sql_schema_20260523_213026.md
 ```
 
-导出结果显示当前用户表数量为 29，`pipeline_job_config` 当前行数为 13。
+导出结果显示当前用户表数量为 30，`report_email_recipient_config` 已存在，初始 seed 使用 `*/*/to` 全局路由配置 3 个收件人。
 
 ## 1.2 Schema 更新辅助工具
 
@@ -71,6 +71,7 @@ python scripts/export_database_schema_spec.py --output-prefix after_NNN_xxx --in
 | `amazon_sku_cost` | 成本配置 | 手工维护/会计成本输入 | SKU 采购、头程、包装等单位成本。 |
 | `amazon_sync_run_log` | 审计控制 | 所有采集/解析/入库任务 | 任务运行状态、行数、耗时、错误信息。 |
 | `pipeline_job_config` | 任务配置 | 手动 seed / 未来自动化配置 | 数据下载、入库、加工、报表和邮件任务的周期、脚本路径、默认参数和执行阶段。 |
+| `report_email_recipient_config` | 邮件收件人路由配置 | 手动 seed / 后续后台维护 | 报表类型 + audience -> to/cc/bcc 收件人路由；不保存 SMTP 密码。 |
 
 ## 3. 索引清单
 
@@ -147,6 +148,8 @@ python scripts/export_database_schema_spec.py --output-prefix after_NNN_xxx --in
 | `pipeline_job_config` | `IX_pipeline_job_config_enabled_phase` | 否 | `enabled, execution_phase, job_group, manual_run_order` | `` |
 | `pipeline_job_config` | `IX_pipeline_job_config_marketplace_domain` | 否 | `marketplace_id, data_domain, job_group` | `` |
 | `pipeline_job_config` | `UX_pipeline_job_config_job_key` | 是 | `job_key` | `` |
+| `report_email_recipient_config` | `IX_report_email_recipient_config_lookup` | 否 | `enabled, report_type, audience, recipient_type, sort_order` | `` |
+| `report_email_recipient_config` | `UX_report_email_recipient_config_active_route` | 是 | `report_type, audience, recipient_type, email` | `([enabled]=(1))` |
 
 ## 4. 字段结构
 
@@ -1340,6 +1343,28 @@ python scripts/export_database_schema_spec.py --output-prefix after_NNN_xxx --in
 | `created_at` | `DATETIME2(7)` | NOT NULL | `(sysutcdatetime())` | 数据库记录创建时间 UTC。 |
 | `updated_at` | `DATETIME2(7)` | NOT NULL | `(sysutcdatetime())` | 数据库记录最后更新时间 UTC。 |
 
+### 4.30 `report_email_recipient_config`
+
+- 数据来源：手动 seed / 后续后台维护
+- 表用途：记录三类报表邮件的收件人路由；按 `report_type + audience + recipient_type` 解析 to/cc/bcc。
+- 当前索引：`UX_report_email_recipient_config_active_route`(report_type, audience, recipient_type, email, unique, enabled=1)；`IX_report_email_recipient_config_lookup`(enabled, report_type, audience, recipient_type, sort_order)
+- 当前说明：该表只保存收件人路由，不保存 SMTP host、username、password、邮件正文、附件或发送日志。SMTP 敏感配置仍走 `.env` / 环境变量；发送结果先保存在 delivery pack 的 `send_result.json`。
+- 初始 seed：`*/*/to` 全局路由包含 `feng@cuidena.cn`、`yufei@cuidena.cn`、`qian@cuidena.cn`。
+
+| 字段 | 类型 | 可空 | 默认值 | 字段说明 |
+|---|---|---|---|---|
+| `id` | `BIGINT` | NOT NULL | `` | 数据库自增主键。 |
+| `report_type` | `NVARCHAR(80)` | NOT NULL | `` | 报表类型，例如 `monthly_financial_close`、`weekly_business_review`、`weekly_ads_optimization`；`*` 表示全局默认。 |
+| `audience` | `NVARCHAR(80)` | NOT NULL | `` | 收件人场景，例如 `shareholders`、`accountant`、`operations`、`ads_operator`、`internal`；`*` 表示全局默认。 |
+| `recipient_type` | `NVARCHAR(10)` | NOT NULL | `` | 收件人类型，只允许 `to` / `cc` / `bcc`。 |
+| `email` | `NVARCHAR(320)` | NOT NULL | `` | 收件人邮箱地址。 |
+| `display_name` | `NVARCHAR(200)` | NULL | `` | 可选展示名称。 |
+| `enabled` | `BIT` | NOT NULL | `((1))` | 是否启用；禁用后不参与发送路由解析。 |
+| `sort_order` | `INT` | NOT NULL | `((100))` | 同一匹配范围内的排序值。 |
+| `notes` | `NVARCHAR(MAX)` | NULL | `` | 配置说明或变更备注。 |
+| `created_at` | `DATETIME2(7)` | NOT NULL | `(sysutcdatetime())` | 数据库记录创建时间 UTC。 |
+| `updated_at` | `DATETIME2(7)` | NOT NULL | `(sysutcdatetime())` | 数据库记录最后更新时间 UTC。 |
+
 ## 6. 当前已准备但尚未执行的 migration
 
-当前无已准备但未执行的 migration。后续新增结构变更从 `013_xxx.sql` 开始。
+当前无已准备但未执行的 migration。后续新增结构变更从 `014_xxx.sql` 开始。

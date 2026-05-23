@@ -1,7 +1,7 @@
 # SellerDataPipeline 当前进展与下一步计划
 
-> 更新时间：2026-05-22  
-> 当前版本：v1.62 monthly financial close report v1 implemented  
+> 更新时间：2026-05-23  
+> 当前版本：v1.69 SMTP report email sending design frozen  
 > 文档定位：记录项目真实进展、已完成里程碑、当前非阻塞问题和下一步开发顺序。本文不承载详细字段设计；功能细节见 `docs/features/`。
 
 ## 1. 当前一句话状态
@@ -16,7 +16,8 @@
 -> 数据覆盖审计 + stable cutoff
 -> 重叠窗口 rolling refresh
 -> 月度财务结算报表 / 每周经营周报 / 广告优化周报
--> 邮件发送
+-> Report Delivery 邮件草稿包
+-> SMTP 邮件发送设计已冻结，待实现
 -> Azure Container Apps Jobs 自动化
 ```
 
@@ -133,8 +134,8 @@ docs/project/requirements_deprecation_plan.md
 | 利润核算口径已冻结 | 已采用 Settlement-led Financial Profit v1.0；第一版手动利润 preview 已实现，下一步做多周期复核和周报。 |
 | SKU 成本、采购成本、头程/海运成本需要录入机制 | 已实现 xlsx 模板导出/导入脚本，目标表为 `amazon_sku_cost`。 |
 | 2026-03 起核心数据已完成第一轮补数 | Orders 历史 backfill 已逐 raw file 入库；Ads 历史 backfill 已入库；coverage audit 中 covers_stable_window 提升到 4。后续日常更新改用 `run_manual_refresh_plan.py`。 |
-| 周报脚本未实现；月报脚本待真实复核 | Monthly Financial Close Report v1 已实现 JSON + 单个 XLSX 多 sheet 输出；下一步在真实 Azure SQL 跑 2026-03 / 2026-04 dry-run 并人工复核，然后开发 Weekly Business Review。 |
-| 自动邮件和 Azure Jobs 未实现 | 手动流程稳定后再自动化。 |
+| 周报脚本已实现；月报脚本已初步复核 | Monthly Financial Close Report v1 已实现 JSON + 单个 XLSX 多 sheet 输出，且 2026-03 / 2026-04 dry-run 已初步复核；Weekly Business Review v1 已实现 JSON + 单个 XLSX 多 sheet 输出，并用 2026-05-11..2026-05-17 真实数据生成 status=ok。Ads API campaign daily 目前 5 月后可用于周度加工，3/4 月 Ads context 缺失仅作为运营解释 warning。Weekly Ads Optimization Report v1 已完成代码实现，并已用 2026-05-11..2026-05-17 真实 Ads 数据执行 live dry-run，结果 status=ok、reconciliation_warnings=0。Report Delivery / Email Pack v1 已实现草稿包生成；SMTP 真实发送 v1.1 已实现，采用 Python 标准库 `smtplib` / `EmailMessage`，收件人默认通过 Azure SQL `report_email_recipient_config` 按 `report_type + audience` 配置，runtime JSON 仅作 fallback；真实发送必须显式 `--execute`。 |
+| 自动邮件和 Azure Jobs 未实现 | Report Delivery / Email Pack v1 已实现邮件草稿包生成；SMTP 真实发送 v1.1 已实现；Azure Jobs 在人工复核稳定后再实现。 |
 
 ## 8. 下一步建议
 
@@ -155,7 +156,7 @@ SKU 成本来自 amazon_sku_cost；
 第一版先输出人工复核文件，不立即新增利润结果表。
 ```
 
-当前已新增 historical backfill CLI，并已补齐 2026-03 起的 Orders 与 Ads 主要历史数据。为避免日常操作继续变成零散命令，已新增 `scripts/run_manual_refresh_plan.py`，将标准定期更新固化为 `core_rolling` / `weekly_full` 两个 plan，以及 `submit` / `collect` / `ingest` / `audit` 四个 phase。三类管理报表设计已全部冻结；Monthly Financial Close Report v1 已实现，默认输出 JSON + 单个 XLSX 多 sheet，不默认输出 Markdown 或多个 CSV。下一步先用真实 Azure SQL 对 2026-03 / 2026-04 做 dry-run 人工复核，再按 Weekly Business Review -> Weekly Ads Optimization Report 的顺序继续。
+当前已新增 historical backfill CLI，并已补齐 2026-03 起的 Orders 与核心经营数据；Ads campaign daily 目前 5 月后数据已可稳定用于周度加工。为避免日常操作继续变成零散命令，已新增 `scripts/run_manual_refresh_plan.py`，将标准定期更新固化为 `core_rolling` / `weekly_full` 两个 plan，以及 `submit` / `collect` / `ingest` / `audit` 四个 phase。Monthly Financial Close Report v1 已实现，默认输出 JSON + 单个 XLSX 多 sheet，不默认输出 Markdown 或多个 CSV；2026-03 / 2026-04 真实 dry-run 已初步复核，Ads API campaign daily 在 3/4 月缺失仅作为运营解释 warning，不影响 Settlement-led 财务利润。Weekly Business Review v1 已实现，默认输出 JSON + 单个 XLSX 多 sheet，并用 2026-05-11..2026-05-17 真实数据生成 status=ok。Weekly Ads Optimization Report v1 已完成代码实现，并已用同一周真实数据执行 live dry-run 验证通过。
 
 ## 9. 管理报表设计进展
 
@@ -171,11 +172,12 @@ SKU 成本来自 amazon_sku_cost；
 
 ```text
 docs/features/feature_monthly_financial_close_report.md  # v1 默认输出 JSON + 单个 XLSX 多 sheet
-docs/features/feature_weekly_business_review.md
-docs/features/feature_weekly_ads_optimization_report.md
+docs/features/feature_weekly_business_review.md  # v1 默认输出 JSON + 单个 XLSX 多 sheet
+docs/features/feature_weekly_ads_optimization_report.md  # v1 默认输出 JSON + 单个 XLSX 多 sheet
+docs/features/feature_report_delivery_email.md  # 统一邮件草稿包 v1、SMTP 发送 v1.1、DB 收件人路由 v1.2 已实现
 ```
 
-代码实现进展：Monthly Financial Close Report v1 已完成本地 unit tests/compileall；下一步真实跑 2026-03 / 2026-04 并复核。之后建议顺序：Weekly Business Review -> Weekly Ads Optimization Report。
+代码实现进展：Monthly Financial Close Report v1 已完成本地 unit tests/compileall，并根据真实 2026-03 / 2026-04 输出完成一轮小修补。Weekly Business Review v1 已完成代码实现、unit tests 和 compileall，默认输出 JSON + 单个 XLSX 多 sheet，并用 2026-05-11..2026-05-17 真实数据生成 status=ok。Weekly Ads Optimization Report v1 已完成代码实现，默认输出 JSON + 单个 XLSX 多 sheet，不调用 Ads 写接口。之后建议顺序：配置腾讯企业邮 SMTP 环境变量 -> `send_report_email.py --dry-run` 从 DB 校验收件人/附件/guard -> `--execute` 发送测试邮件 -> Azure Jobs。
 
 ## 10. 当前建议手动运行顺序
 
@@ -193,8 +195,18 @@ core_rolling：每 1-2 天按 submit -> collect -> ingest -> audit 刷新核心�
 weekly_full：每周按 submit -> collect -> ingest -> audit 刷新核心源 + 慢源
 SKU 成本：按需通过 xlsx 模板维护
 周报/月报：只在 stable coverage audit 后生成
-邮件发送：人工复核后再发送
+邮件发送：Report Delivery v1 已可生成草稿包；SMTP v1.1/v1.2 已实现，先用 `send_report_email.py --dry-run` 校验，再使用 `--execute` 发送
 Azure Jobs：复用 run_manual_refresh_plan.py 的固定 plan，不另起一套逻辑
 ```
 
 注意：数据刷新可以 1-2 天一次，但销售/广告/利润等正式分析产物最短周期为一周。
+
+
+### 2026-05-23 — Report Delivery DB recipient routing implemented
+
+- Executed `sql/migrations/013_create_report_email_recipient_config.sql` successfully against Azure SQL, 3/3 batches.
+- Executed `sql/seeds/003_seed_report_email_recipient_config_initial.sql` successfully, 2/2 batches.
+- Exported live schema to `runtime/schema_exports/azure_sql_schema_20260523_213026.md/json`.
+- Updated `docs/database/database_current_schema_spec.md` to v1.14 with `report_email_recipient_config`.
+- Implemented DB recipient lookup in `send_report_email.py`; default `--recipient-source db`, optional `json` or `auto`.
+- Initial DB recipients: `feng@cuidena.cn`, `yufei@cuidena.cn`, `qian@cuidena.cn`.
