@@ -1,6 +1,6 @@
 # SellerDataPipeline 数据库 Migration 与 Schema Spec 维护规则
 
-> 更新时间：2026-05-17  
+> 更新时间：2026-05-18  
 > 文档定位：定义 Azure SQL 表结构变更、migration 编写、执行、验证和文档同步规则。当前真实表结构见 `docs/database/database_current_schema_spec.md`。
 
 ## 1. 核心原则
@@ -16,18 +16,28 @@
 
 ## 2. 当前已执行 migration
 
-截至 2026-05-17，已执行成功：
+截至 2026-05-18，已执行成功并锁定：
 
 | 文件 | 状态 | 执行结果 |
 |---|---|---|
-| `sql/migrations/001_create_core_tables.sql` | executed | 29/29 batches |
-| `sql/migrations/002_create_indexes.sql` | executed | 54/54 batches |
-| `sql/migrations/003_add_listing_snapshot_business_key_hash.sql` | executed | 3/3 batches；为 `amazon_listing_snapshot` 增加 `business_key_hash` 和唯一过滤索引，支持 Listing 入库幂等 upsert |
-| `sql/migrations/004_add_inventory_daily_business_key_hash.sql` | executed | 3/3 batches；为 `amazon_inventory_daily` 增加 `business_key_hash` 和唯一过滤索引，支持 Inventory 入库幂等 upsert |
-| `sql/migrations/005_add_sales_traffic_business_key_hashes.sql` | executed | 5/5 batches；为 `amazon_sales_traffic_daily` 和 `amazon_sales_traffic_asin_daily` 增加 `business_key_hash` 和唯一过滤索引，支持 Sales & Traffic 入库幂等 upsert |
-| `sql/migrations/006_add_settlement_transaction_business_key.sql` | executed | 4/4 batches；为 `amazon_settlement_transaction` 增加 `source_row_index`、`business_key_hash` 和唯一过滤索引，支持 Settlement 入库幂等 upsert |
-| `sql/migrations/007_add_order_item_business_key.sql` | executed | 4/4 batches；为 `amazon_order_item` 增加 `source_row_index`、`business_key_hash` 和唯一过滤索引，支持 Orders 入库幂等 upsert |
-| `sql/migrations/008_add_fba_reimbursement_business_key.sql` | executed | 4/4 batches；为 `amazon_fba_reimbursement` 增加 `source_row_index`、`business_key_hash` 和唯一过滤索引，支持 FBA Reimbursements 入库幂等 upsert |
+| `sql/migrations/001_create_core_tables.sql` | executed; locked | 29/29 batches |
+| `sql/migrations/002_create_indexes.sql` | executed; locked | 54/54 batches |
+| `sql/migrations/003_add_listing_snapshot_business_key_hash.sql` | executed; locked | 3/3 batches；为 `amazon_listing_snapshot` 增加 `business_key_hash` 和唯一过滤索引，支持 Listing 入库幂等 upsert |
+| `sql/migrations/004_add_inventory_daily_business_key_hash.sql` | executed; locked | 3/3 batches；为 `amazon_inventory_daily` 增加 `business_key_hash` 和唯一过滤索引，支持 Inventory 入库幂等 upsert |
+| `sql/migrations/005_add_sales_traffic_business_key_hashes.sql` | executed; locked | 5/5 batches；为 `amazon_sales_traffic_daily` 和 `amazon_sales_traffic_asin_daily` 增加 `business_key_hash` 和唯一过滤索引，支持 Sales & Traffic 入库幂等 upsert |
+| `sql/migrations/006_add_settlement_transaction_business_key.sql` | executed; locked | 4/4 batches；为 `amazon_settlement_transaction` 增加 `source_row_index`、`business_key_hash` 和唯一过滤索引，支持 Settlement 入库幂等 upsert |
+| `sql/migrations/007_add_order_item_business_key.sql` | executed; locked | 4/4 batches；为 `amazon_order_item` 增加 `source_row_index`、`business_key_hash` 和唯一过滤索引，支持 Orders 入库幂等 upsert |
+| `sql/migrations/008_add_fba_reimbursement_business_key.sql` | executed; locked | 4/4 batches；为 `amazon_fba_reimbursement` 增加 `source_row_index`、`business_key_hash` 和唯一过滤索引，支持 FBA Reimbursements 入库幂等 upsert |
+| `sql/migrations/009_add_fba_fee_preview_business_key.sql` | executed; locked | 4/4 batches；为 `amazon_fba_fee_preview` 增加 `source_row_index`、`business_key_hash` 和唯一过滤索引 |
+| `sql/migrations/010_add_promotion_coupon_business_keys.sql` | executed; locked | 8/8 batches；为 Promotion/Coupon 相关表增加幂等 business key |
+| `sql/migrations/011_add_inventory_ledger_business_keys.sql` | executed; locked | 4/4 batches；为 Inventory Ledger summary/detail 表增加幂等 business key |
+| `sql/migrations/012_create_ingestion_job_config.sql` | executed; locked | 4/4 batches；新增 `pipeline_job_config` 任务周期配置表 |
+
+已执行 seed：
+
+| 文件 | 状态 | 执行结果 |
+|---|---|---|
+| `sql/seeds/001_seed_ingestion_job_config_core_jobs.sql` | executed; safe to re-run | 1/1 batch；当前 `pipeline_job_config` 13 行 |
 
 以上 executed 文件后续不允许回改。即使发现注释滞后，也以 `docs/project/progress_next_steps.md` 和 `docs/database/database_current_schema_spec.md` 记录的真实执行状态为准。
 
@@ -35,18 +45,22 @@
 
 | 文件 | 状态 | 说明 |
 |---|---|---|
-| `sql/migrations/009_add_fba_fee_preview_business_key.sql` | executed; locked | 为 `amazon_fba_fee_preview` 增加 `source_row_index`、`business_key_hash` 和唯一过滤索引；已执行并同步 current schema spec。 |
+| `sql/migrations/013_create_report_email_recipient_config.sql` | pending | 新增 `report_email_recipient_config`，用于 Report Delivery SMTP 的数据库收件人路由配置；执行成功并导出 live schema 后才能更新 `docs/database/database_current_schema_spec.md`。 |
 
-`009_add_fba_fee_preview_business_key.sql` 已执行成功并锁定；后续新结构变化从 `010_xxx.sql` 开始。
+当前已准备但尚未执行的 seed：
+
+| 文件 | 状态 | 说明 |
+|---|---|---|
+| `sql/seeds/003_seed_report_email_recipient_config_initial.sql` | pending | 初始化全局 `*/*/to` 收件人：`feng@cuidena.cn`, `yufei@cuidena.cn`, `qian@cuidena.cn`。 |
+
 
 ## 3. Migration 命名规则
 
 新 migration 使用三位递增编号：
 
 ```text
-sql/migrations/009_add_fba_fee_preview_business_key.sql  # executed; locked
-sql/migrations/010_xxx.sql
-sql/migrations/011_xxx.sql
+sql/migrations/012_create_ingestion_job_config.sql  # executed; locked
+sql/migrations/013_xxx.sql
 ```
 
 命名要求：
@@ -123,7 +137,7 @@ Migration 应尽量具备防重复执行能力。
 先 dry-run 查看 batches：
 
 ```bash
-python scripts/run_sql_migration.py --file sql/migrations/010_xxx.sql --dry-run --show-batches
+python scripts/run_sql_migration.py --file sql/migrations/013_xxx.sql --dry-run --show-batches
 ```
 
 如果 dry-run 输出的 batch 数异常，先不要执行。dry-run 不连接数据库；它只能验证 SQL 文件拆分结果，不能唤醒或检查 Azure SQL 在线状态。
@@ -140,7 +154,7 @@ python scripts/test_azure_sql_connection.py --json --max-attempts 8 --retry-dela
 然后执行 migration：
 
 ```bash
-python scripts/run_sql_migration.py --file sql/migrations/010_xxx.sql
+python scripts/run_sql_migration.py --file sql/migrations/013_xxx.sql
 ```
 
 执行成功后，立即检查数据库状态：
@@ -154,7 +168,7 @@ python scripts/check_database_status.py
 随后优先运行 live schema 导出脚本，从 Azure SQL 系统 catalog 读取真实 schema：
 
 ```bash
-python scripts/export_database_schema_spec.py --output-prefix after_009_fba_fee_preview_business_key --include-row-counts
+python scripts/export_database_schema_spec.py --output-prefix after_013_xxx --include-row-counts
 ```
 
 该脚本会读取 `sys.tables`、`sys.columns`、`sys.indexes`、`sys.key_constraints`、`sys.foreign_keys` 等真实数据库信息。必要时再按照 `docs/project/iteration_workflow.md` 中的手工 SQL 精查。只有确认字段/索引/约束真实存在后，才能更新 `database_current_schema_spec.md`。
@@ -272,41 +286,39 @@ updated_at
 
 ## 10. 禁止事项
 
-1. 禁止修改已执行的 `001_create_core_tables.sql`、`002_create_indexes.sql`、`003_add_listing_snapshot_business_key_hash.sql`、`004_add_inventory_daily_business_key_hash.sql`、`005_add_sales_traffic_business_key_hashes.sql`、`006_add_settlement_transaction_business_key.sql`、`007_add_order_item_business_key.sql` 和 `008_add_fba_reimbursement_business_key.sql`。
+1. 禁止修改已执行的 `001`-`012` migration 文件；这些文件已经在 Azure SQL `amazon_ops` 成功执行并锁定。
 2. 禁止为了让测试通过而让代码和真实数据库 spec 偏移。
 3. 禁止在 feature 文档未说明原因时新增表或字段。
 4. 禁止把未执行的目标 schema 写进 current schema spec。
 5. 禁止直接在业务代码中散落 SQL 写入逻辑，应通过 repository 层。
-6. 禁止在 migration 中写入真实密钥或敏感经营数据。
+6. 禁止在 migration 或 seed 中写入真实密钥、敏感经营数据或客户隐私数据。
 
 ## 11. 当前已知待评估数据库优化
 
-以下不是当前阻塞项，后续如决定实施，应新增 migration：
+以下不是当前阻塞项，后续如决定实施，应先进入对应 feature 文档，再新增 migration；后续新增结构变更从 `013_xxx.sql` 开始。
 
 | 议题 | 当前状态 | 可能 migration |
 |---|---|---|
-| `amazon_sync_run_log` 记录 inserted/updated 拆分 | CLI 有统计，数据库无字段 | 后续编号，从 010 起 |
-| Ads/raw_file_id 关联 | 当前 `schema_validation_event.raw_file_id` 可为 NULL，主要靠 path | 后续结合 raw file registry 设计 |
-| Orders business key | Orders 功能设计已完成，表已补充 `source_row_index` / `business_key_hash` | `007_add_order_item_business_key.sql` 已执行，后续如需变化从 `009` 之后的新 migration 开始 |
-| FBA Reimbursements business key | FBA Reimbursements 功能设计已完成，表已补充 `source_row_index` / `business_key_hash` | `008_add_fba_reimbursement_business_key.sql` 已执行，后续如需变化从 `009` 之后的新 migration 开始 |
+| `amazon_sync_run_log` 记录 inserted/updated 拆分 | CLI 有统计，数据库无独立 rows_inserted / rows_updated 字段 | 后续 `013` 或更高编号 |
+| raw file registry 关联 | 部分 normalized 表仍可能只有 `source_raw_file_path`，`source_raw_file_id` 为 NULL | 后续结合 raw file registry / Blob Storage 归档设计 |
+| 利润核算结果落库 | 利润口径已冻结为 Settlement-led Financial Profit v1.0；第一版先输出人工复核文件 | 连续几期人工复核稳定后，再决定是否新增 profit fact 表或 view |
+| 周报/月报输出记录 | 周报脚本未实现，当前不需要过早建表 | 待 `feature_weekly_operations_report.md` 后决定 |
+| `pipeline_job_config` 自动调度字段增强 | 当前只记录 unit/value/lookback/manual phase，不实现复杂 cron | 待 Azure Container Apps Jobs scheduler 设计后决定 |
 
-这些优化必须先进入对应 feature 文档，再决定是否写 migration。
+## 12. 012 Job Config Migration Status
 
-
-## 9. 当前待执行 migration
-
-截至 2026-05-17，以下 migration 已准备但尚未由用户本地执行：
+`012_create_ingestion_job_config.sql` 已执行成功并锁定，seed 也已执行成功：
 
 ```text
-010_add_promotion_coupon_business_keys.sql
-011_add_inventory_ledger_business_keys.sql
+sql/migrations/012_create_ingestion_job_config.sql  # 4/4 batches
+sql/seeds/001_seed_ingestion_job_config_core_jobs.sql  # 1/1 batch
 ```
 
-执行后必须运行：
+用途：新增 `pipeline_job_config` 表，用于记录手动和未来自动化任务的执行周期、默认回看窗口、脚本路径和执行阶段。当前 live schema 导出为：
 
-```powershell
-python scripts/export_database_schema_spec.py --output-prefix after_010_promotion_coupon_business_keys --include-row-counts
-python scripts/export_database_schema_spec.py --output-prefix after_011_inventory_ledger_business_keys --include-row-counts
+```text
+runtime/schema_exports/after_012_job_config.json
+runtime/schema_exports/after_012_job_config.md
 ```
 
-并据 live schema 更新 `docs/database/database_current_schema_spec.md`。
+后续新增结构变更从 `013_xxx.sql` 开始。

@@ -65,14 +65,8 @@ def main() -> None:
     print(f"Ads ingestion dry-run status={result.status}")
     print(f"output_dir={result.output_dir}")
     print(
-        "processed_files={files} parsed_rows={parsed} prepared_rows={prepared} "
-        "preview_files={preview} requires_review={review}".format(
-            files=result.processed_file_count,
-            parsed=result.parsed_row_count,
-            prepared=result.prepared_row_count,
-            preview=result.preview_file_count,
-            review=result.requires_review,
-        )
+        f"processed_files={result.processed_file_count} parsed_rows={result.parsed_row_count} prepared_rows={result.prepared_row_count} "
+        f"preview_files={result.preview_file_count} requires_review={result.requires_review}"
     )
     for report_result in result.report_results:
         print(

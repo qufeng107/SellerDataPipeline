@@ -54,8 +54,7 @@ def main() -> None:
 
     if result.dry_run:
         print(
-            f"Dry run passed: {result.file_path} contains "
-            f"{result.batch_count} executable batches."
+            f"Dry run passed: {result.file_path} contains {result.batch_count} executable batches."
         )
         return
 

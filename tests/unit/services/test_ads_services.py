@@ -149,3 +149,30 @@ def test_collect_ads_reports_downloads_completed_report(tmp_path: Path) -> None:
     raw_manifest = store._read_json(Path(manifest["raw_file_manifest_path"]))
     assert raw_manifest["schema_validation"]["status"] == "missing_fields"
     assert fake_client.download_calls == ["https://example.test/report"]
+
+
+def test_submit_ads_report_request_accepts_explicit_dates(tmp_path: Path) -> None:
+    settings = _settings(tmp_path)
+    fake_client = FakeAdsApiClient()
+    store = AdsManifestStore(root_dir=settings.local_sampling_root)
+    service = SubmitAdsReportRequestsService(
+        settings=settings,
+        ads_api_client=fake_client,  # type: ignore[arg-type]
+        manifest_store=store,
+    )
+
+    service.run(
+        profile_id=None,
+        report_type_id="spCampaigns",
+        ad_product="SPONSORED_PRODUCTS",
+        group_by=["campaign"],
+        columns=["date", "campaignId", "clicks"],
+        days=None,
+        start_date=__import__("datetime").date(2026, 5, 1),
+        end_date=__import__("datetime").date(2026, 5, 17),
+    )
+
+    manifest = store.read_report_request("ads-report-123")
+    assert manifest["data_start_date"] == "2026-05-01"
+    assert manifest["data_end_date"] == "2026-05-17"
+    assert fake_client.create_calls[0]["start_date"].isoformat() == "2026-05-01"

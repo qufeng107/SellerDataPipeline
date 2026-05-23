@@ -26,7 +26,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--output-md",
-        default="requirements/data_samples/GET_V2_SETTLEMENT_REPORT_DATA_FLAT_FILE_V2.md",
+        default="docs/data_access/sample_notes/GET_V2_SETTLEMENT_REPORT_DATA_FLAT_FILE_V2.md",
         help="Markdown output path for the aggregate settlement analysis.",
     )
     return parser.parse_args()

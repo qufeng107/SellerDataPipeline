@@ -460,7 +460,10 @@ def _write_previews_or_review(
                 schema_validation_status="duplicate_business_key_requires_review",
                 requires_review=True,
                 skipped=True,
-                skip_reason=f"duplicate_business_key_requires_review:{table_name}:{duplicate_issue}",
+                skip_reason=(
+                    "duplicate_business_key_requires_review:"
+                    f"{table_name}:{duplicate_issue}"
+                ),
                 parsed_row_count=sum(len(items) for items in table_rows.values()),
                 prepared_row_count=0,
                 table_row_counts={},

@@ -5,10 +5,10 @@ import argparse
 from seller_data_pipeline.common.logging import configure_logging
 from seller_data_pipeline.config.settings import get_settings
 from seller_data_pipeline.integrations.amazon.report_types import SETTLEMENT_V2
+from seller_data_pipeline.jobs.discover_available_reports_job import run
 from seller_data_pipeline.services.discover_available_reports_service import (
     SAFE_REPORT_DISCOVERY_LOOKBACK_DAYS,
 )
-from seller_data_pipeline.jobs.discover_available_reports_job import run
 
 
 def main() -> None:

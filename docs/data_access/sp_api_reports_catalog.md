@@ -1,6 +1,6 @@
 # SP-API Reports 数据接入目录
 
-> 更新时间：2026-05-16  
+> 更新时间：2026-05-18  
 > 文档定位：记录本项目通过 Amazon SP-API Reports 可以接入的 report type、获取方式、样例格式和已观察字段。本文只描述数据接入能力，不定义业务功能和数据库设计。
 
 ## 1. 获取方式
@@ -43,12 +43,12 @@ createReport
 |---|---|
 | Source | SP-API Reports |
 | Acquisition | createReport with couponStartDateFrom / couponStartDateTo reportOptions |
-| Current sample file | `requirements/data_samples/GET_COUPON_PERFORMANCE_REPORT.md` |
+| Current sample file | `requirements_to_be_deprecated/data_samples/GET_COUPON_PERFORMANCE_REPORT.md` |
 | Format | `json` |
 | Delimiter | `n/a` |
 | Current sample rows | `2` |
 | Observed field/path count | `23` |
-| Status | `sampled + analyzed` |
+| Status | `real ingestion verified` |
 | Data domain | Coupon performance |
 
 Observed source fields:
@@ -65,12 +65,12 @@ Notes:
 |---|---|
 | Source | SP-API Reports |
 | Acquisition | createReport -> getReport/getReportDocument |
-| Current sample file | `requirements/data_samples/GET_FBA_ESTIMATED_FBA_FEES_TXT_DATA.md` |
+| Current sample file | `requirements_to_be_deprecated/data_samples/GET_FBA_ESTIMATED_FBA_FEES_TXT_DATA.md` |
 | Format | `delimited` |
 | Delimiter | `tab` |
 | Current sample rows | `8` |
 | Observed field/path count | `31` |
-| Status | `sampled + analyzed` |
+| Status | `real ingestion verified` |
 | Data domain | FBA estimated fee preview |
 
 Observed source fields:
@@ -83,7 +83,7 @@ Observed source fields:
 |---|---|
 | Source | SP-API Reports |
 | Acquisition | createReport -> getReport/getReportDocument |
-| Current sample file | `requirements/data_samples/GET_FBA_INVENTORY_PLANNING_DATA.md` |
+| Current sample file | `requirements_to_be_deprecated/data_samples/GET_FBA_INVENTORY_PLANNING_DATA.md` |
 | Format | `delimited` |
 | Delimiter | `tab` |
 | Current sample rows | `4` |
@@ -101,12 +101,12 @@ Observed source fields:
 |---|---|
 | Source | SP-API Reports |
 | Acquisition | createReport -> getReport/getReportDocument |
-| Current sample file | `requirements/data_samples/GET_FBA_MYI_UNSUPPRESSED_INVENTORY_DATA.md` |
+| Current sample file | `requirements_to_be_deprecated/data_samples/GET_FBA_MYI_UNSUPPRESSED_INVENTORY_DATA.md` |
 | Format | `delimited` |
 | Delimiter | `tab` |
 | Current sample rows | `5` |
 | Observed field/path count | `22` |
-| Status | `sampled + analyzed` |
+| Status | `real ingestion verified` |
 | Data domain | FBA inventory availability and quantity snapshot |
 
 Observed source fields:
@@ -119,12 +119,12 @@ Observed source fields:
 |---|---|
 | Source | SP-API Reports |
 | Acquisition | createReport -> getReport/getReportDocument |
-| Current sample file | `requirements/data_samples/GET_FBA_REIMBURSEMENTS_DATA.md` |
+| Current sample file | `requirements_to_be_deprecated/data_samples/GET_FBA_REIMBURSEMENTS_DATA.md` |
 | Format | `delimited` |
 | Delimiter | `tab` |
 | Current sample rows | `19` |
 | Observed field/path count | `18` |
-| Status | `sampled + analyzed` |
+| Status | `real ingestion verified` |
 | Data domain | FBA reimbursement report |
 
 Observed source fields:
@@ -137,12 +137,12 @@ Observed source fields:
 |---|---|
 | Source | SP-API Reports |
 | Acquisition | createReport -> getReport/getReportDocument |
-| Current sample file | `requirements/data_samples/GET_FLAT_FILE_ALL_ORDERS_DATA_BY_ORDER_DATE_GENERAL.md` |
+| Current sample file | `requirements_to_be_deprecated/data_samples/GET_FLAT_FILE_ALL_ORDERS_DATA_BY_ORDER_DATE_GENERAL.md` |
 | Format | `delimited` |
 | Delimiter | `tab` |
 | Current sample rows | `112` |
 | Observed field/path count | `33` |
-| Status | `sampled + analyzed` |
+| Status | `real ingestion verified` |
 | Data domain | Order-item level order report by order date |
 
 Observed source fields:
@@ -155,7 +155,7 @@ Observed source fields:
 |---|---|
 | Source | SP-API Reports |
 | Acquisition | createReport -> getReport/getReportDocument |
-| Current sample file | `requirements/data_samples/GET_FLAT_FILE_RETURNS_DATA_BY_RETURN_DATE.md` |
+| Current sample file | `requirements_to_be_deprecated/data_samples/GET_FLAT_FILE_RETURNS_DATA_BY_RETURN_DATE.md` |
 | Format | `delimited` |
 | Delimiter | `tab` |
 | Current sample rows | `0` |
@@ -173,12 +173,12 @@ Observed source fields:
 |---|---|
 | Source | SP-API Reports |
 | Acquisition | createReport -> getReport/getReportDocument |
-| Current sample file | `requirements/data_samples/GET_LEDGER_DETAIL_VIEW_DATA.md` |
+| Current sample file | `requirements_to_be_deprecated/data_samples/GET_LEDGER_DETAIL_VIEW_DATA.md` |
 | Format | `delimited` |
 | Delimiter | `tab` |
 | Current sample rows | `207` |
 | Observed field/path count | `16` |
-| Status | `sampled + analyzed` |
+| Status | `real ingestion verified` |
 | Data domain | Inventory ledger detail events |
 
 Observed source fields:
@@ -191,12 +191,12 @@ Observed source fields:
 |---|---|
 | Source | SP-API Reports |
 | Acquisition | createReport with reportOptions aggregateByLocation=COUNTRY, aggregatedByTimePeriod=DAILY in current plan |
-| Current sample file | `requirements/data_samples/GET_LEDGER_SUMMARY_VIEW_DATA.md` |
+| Current sample file | `requirements_to_be_deprecated/data_samples/GET_LEDGER_SUMMARY_VIEW_DATA.md` |
 | Format | `delimited` |
 | Delimiter | `tab` |
 | Current sample rows | `150` |
 | Observed field/path count | `22` |
-| Status | `sampled + analyzed` |
+| Status | `real ingestion verified` |
 | Data domain | Inventory ledger summary |
 
 Observed source fields:
@@ -209,12 +209,12 @@ Observed source fields:
 |---|---|
 | Source | SP-API Reports |
 | Acquisition | createReport -> getReport/getReportDocument |
-| Current sample file | `requirements/data_samples/GET_MERCHANT_LISTINGS_ALL_DATA.md` |
+| Current sample file | `requirements_to_be_deprecated/data_samples/GET_MERCHANT_LISTINGS_ALL_DATA.md` |
 | Format | `delimited` |
 | Delimiter | `tab` |
 | Current sample rows | `6` |
 | Observed field/path count | `29` |
-| Status | `sampled + analyzed` |
+| Status | `real ingestion verified` |
 | Data domain | Listing snapshot and SKU/ASIN listing metadata |
 
 Observed source fields:
@@ -227,12 +227,12 @@ Observed source fields:
 |---|---|
 | Source | SP-API Reports |
 | Acquisition | createReport with promotionStartDateFrom / promotionStartDateTo reportOptions |
-| Current sample file | `requirements/data_samples/GET_PROMOTION_PERFORMANCE_REPORT.md` |
+| Current sample file | `requirements_to_be_deprecated/data_samples/GET_PROMOTION_PERFORMANCE_REPORT.md` |
 | Format | `json` |
 | Delimiter | `n/a` |
 | Current sample rows | `1` |
 | Observed field/path count | `24` |
-| Status | `sampled + analyzed` |
+| Status | `real ingestion verified` |
 | Data domain | Promotion performance |
 
 Observed source fields:
@@ -249,7 +249,7 @@ Notes:
 |---|---|
 | Source | SP-API Reports |
 | Acquisition | createReport -> getReport/getReportDocument |
-| Current sample file | `requirements/data_samples/GET_RESERVED_INVENTORY_DATA.md` |
+| Current sample file | `requirements_to_be_deprecated/data_samples/GET_RESERVED_INVENTORY_DATA.md` |
 | Format | `delimited` |
 | Delimiter | `tab` |
 | Current sample rows | `5` |
@@ -267,7 +267,7 @@ Observed source fields:
 |---|---|
 | Source | SP-API Reports |
 | Acquisition | createReport -> getReport/getReportDocument |
-| Current sample file | `requirements/data_samples/GET_RESTOCK_INVENTORY_RECOMMENDATIONS_REPORT.md` |
+| Current sample file | `requirements_to_be_deprecated/data_samples/GET_RESTOCK_INVENTORY_RECOMMENDATIONS_REPORT.md` |
 | Format | `delimited` |
 | Delimiter | `tab` |
 | Current sample rows | `5` |
@@ -285,12 +285,12 @@ Observed source fields:
 |---|---|
 | Source | SP-API Reports |
 | Acquisition | createReport -> getReport/getReportDocument |
-| Current sample file | `requirements/data_samples/GET_SALES_AND_TRAFFIC_REPORT.md` |
+| Current sample file | `requirements_to_be_deprecated/data_samples/GET_SALES_AND_TRAFFIC_REPORT.md` |
 | Format | `json` |
 | Delimiter | `n/a` |
 | Current sample rows | `6` |
 | Observed field/path count | `94` |
-| Status | `sampled + analyzed` |
+| Status | `real ingestion verified` |
 | Data domain | Sales and traffic metrics by date and ASIN |
 
 Observed source fields:
@@ -303,12 +303,12 @@ Observed source fields:
 |---|---|
 | Source | SP-API Reports |
 | Acquisition | getReports discovery; Amazon-generated settlement report, not createReport |
-| Current sample file | `requirements/data_samples/GET_V2_SETTLEMENT_REPORT_DATA_FLAT_FILE_V2.md` |
+| Current sample file | `requirements_to_be_deprecated/data_samples/GET_V2_SETTLEMENT_REPORT_DATA_FLAT_FILE_V2.md` |
 | Format | `delimited` |
 | Delimiter | `tab` |
 | Current sample rows | `4911` |
 | Observed field/path count | `24` |
-| Status | `discovered + sampled aggregate` |
+| Status | `real ingestion verified` |
 | Data domain | Settlement financial ledger and settlement summary |
 
 Observed source fields:
@@ -337,8 +337,8 @@ Notes:
 
 | Diagnostic file | 说明 |
 |---|---|
-| `requirements/data_samples/GET_PROMOTION_PERFORMANCE_REPORT_DIAGNOSTIC.md` | 用于确认 promotion report 需要 `promotionStartDateFrom` / `promotionStartDateTo`。 |
-| `requirements/data_samples/GET_COUPON_PERFORMANCE_REPORT_DIAGNOSTIC.md` | 用于确认 coupon report 需要 `couponStartDateFrom` / `couponStartDateTo`。 |
+| `requirements_to_be_deprecated/data_samples/GET_PROMOTION_PERFORMANCE_REPORT_DIAGNOSTIC.md` | 用于确认 promotion report 需要 `promotionStartDateFrom` / `promotionStartDateTo`。 |
+| `requirements_to_be_deprecated/data_samples/GET_COUPON_PERFORMANCE_REPORT_DIAGNOSTIC.md` | 用于确认 coupon report 需要 `couponStartDateFrom` / `couponStartDateTo`。 |
 
 ## 6. 与后续功能的关系
 

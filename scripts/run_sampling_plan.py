@@ -4,19 +4,18 @@ import argparse
 import logging
 import time
 from pathlib import Path
-from typing import Any
 
 from seller_data_pipeline.common.logging import configure_logging
 from seller_data_pipeline.config.settings import get_settings
-from seller_data_pipeline.services.discover_available_reports_service import (
-    DiscoverAvailableReportsService,
-)
-from seller_data_pipeline.services.submit_report_requests_service import SubmitReportRequestsService
 from seller_data_pipeline.sampling.local_manifest_store import LocalManifestStore
 from seller_data_pipeline.sampling.report_sampling_plan import (
     ReportSamplingPlanItem,
     get_sampling_plan,
 )
+from seller_data_pipeline.services.discover_available_reports_service import (
+    DiscoverAvailableReportsService,
+)
+from seller_data_pipeline.services.submit_report_requests_service import SubmitReportRequestsService
 
 logger = logging.getLogger(__name__)
 
@@ -105,10 +104,14 @@ def main() -> None:
         if args.dry_run:
             continue
 
-        if not args.force and item.mode == "request" and _has_matching_manifest(
-            store=store,
-            item=item,
-            marketplace_ids=args.marketplace_ids,
+        if (
+            not args.force
+            and item.mode == "request"
+            and _has_matching_manifest(
+                store=store,
+                item=item,
+                marketplace_ids=args.marketplace_ids,
+            )
         ):
             logger.info("Skipping existing report sample: report_type=%s", item.report_type)
             skipped.append(item)

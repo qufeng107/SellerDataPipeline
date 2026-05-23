@@ -34,3 +34,42 @@ def stable_profit_week(today: date) -> DateWindow:
     start = current_week_monday - timedelta(days=14)
     end = current_week_monday - timedelta(days=8)
     return DateWindow(start=start, end=end)
+
+
+def chunk_inclusive_date_range(
+    *,
+    start: date,
+    end: date,
+    chunk_days: int,
+) -> tuple[DateWindow, ...]:
+    """Split an inclusive date range into contiguous inclusive DateWindow chunks.
+
+    DateWindow.end is inclusive for this helper. This is intended for human-facing
+    backfill commands where users think in closed calendar ranges such as
+    2026-03-01..2026-03-31.
+    """
+
+    if chunk_days <= 0:
+        raise ValueError("chunk_days must be positive")
+    if end < start:
+        raise ValueError("end must be on or after start")
+
+    chunks: list[DateWindow] = []
+    current_start = start
+    while current_start <= end:
+        current_end = min(current_start + timedelta(days=chunk_days - 1), end)
+        chunks.append(DateWindow(start=current_start, end=current_end))
+        current_start = current_end + timedelta(days=1)
+    return tuple(chunks)
+
+
+def inclusive_date_range_to_exclusive_end_datetime(
+    *,
+    start: date,
+    end: date,
+) -> tuple[date, date]:
+    """Return the calendar start and exclusive end date for SP-API dateTime reports."""
+
+    if end < start:
+        raise ValueError("end must be on or after start")
+    return start, end + timedelta(days=1)

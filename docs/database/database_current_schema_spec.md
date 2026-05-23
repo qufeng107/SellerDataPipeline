@@ -1,7 +1,7 @@
 # SellerDataPipeline 当前真实数据库 Schema Spec
 
-> 文档版本：v1.11  
-> 更新日期：2026-05-17  
+> 文档版本：v1.14  
+> 更新日期：2026-05-23  
 > 文档定位：**当前真实实现记录**。本文件只记录已经在 Azure SQL `amazon_ops` 执行成功的表、字段、索引与数据来源；不写未来设计。设计变更请先更新对应的 `docs/features/feature_*.md` 或 `docs/data_access/*.md`；如涉及库结构变化，先对比本文件，再新增 migration；migration 执行成功后优先运行 `scripts/export_database_schema_spec.py` 导出 live schema snapshot，再更新本文件。
 
 ## 1. 当前数据库状态
@@ -10,12 +10,25 @@
 |---|---|
 | Azure SQL database | `amazon_ops` |
 | Server | `amazon-ops-sql` |
-| 已执行 migration | `001_create_core_tables.sql` 29/29 batches；`002_create_indexes.sql` 54/54 batches；`003_add_listing_snapshot_business_key_hash.sql` 3/3 batches；`004_add_inventory_daily_business_key_hash.sql` 3/3 batches；`005_add_sales_traffic_business_key_hashes.sql` 5/5 batches；`006_add_settlement_transaction_business_key.sql` 4/4 batches；`007_add_order_item_business_key.sql` 4/4 batches；`008_add_fba_reimbursement_business_key.sql` 4/4 batches；`009_add_fba_fee_preview_business_key.sql` 4/4 batches；`010_add_promotion_coupon_business_keys.sql` 8/8 batches；`011_add_inventory_ledger_business_keys.sql` 4/4 batches |
-| 用户表数量 | 28 |
+| 已执行 migration | `001_create_core_tables.sql` 29/29 batches；`002_create_indexes.sql` 54/54 batches；`003_add_listing_snapshot_business_key_hash.sql` 3/3 batches；`004_add_inventory_daily_business_key_hash.sql` 3/3 batches；`005_add_sales_traffic_business_key_hashes.sql` 5/5 batches；`006_add_settlement_transaction_business_key.sql` 4/4 batches；`007_add_order_item_business_key.sql` 4/4 batches；`008_add_fba_reimbursement_business_key.sql` 4/4 batches；`009_add_fba_fee_preview_business_key.sql` 4/4 batches；`010_add_promotion_coupon_business_keys.sql` 8/8 batches；`011_add_inventory_ledger_business_keys.sql` 4/4 batches；`012_create_ingestion_job_config.sql` 4/4 batches；`001_seed_ingestion_job_config_core_jobs.sql` 1/1 batch；`013_create_report_email_recipient_config.sql` 3/3 batches；`003_seed_report_email_recipient_config_initial.sql` 2/2 batches |
+| 用户表数量 | 30 |
 | 已真实入库验证 | Amazon Ads 4 张 SP 日表，首次 inserted=200、重复执行 inserted=0/updated=200；Listing 快照表首次 inserted=6、重复执行 inserted=0/updated=6；Inventory 快照表首次 inserted=5、重复执行 inserted=0/updated=5；Sales & Traffic 首次 inserted=7、重复执行 inserted=0/updated=7；Settlement 首次 inserted=4911、重复执行 inserted=0/updated=4911；Orders 首次 inserted=112、重复执行 inserted=0/updated=112；FBA Reimbursements 首次 inserted=19、重复执行 inserted=0/updated=19；FBA Fee Preview 首次 inserted=8、重复执行 inserted=0/updated=8；Promotion/Coupon 首次 inserted=10、重复执行 inserted=0/updated=10；Inventory Ledger 首次 inserted=357、重复执行 inserted=0/updated=357 |
-| 当前限制 | `amazon_sync_run_log` 尚无 rows_inserted / rows_updated 字段；Ads/Listing/Inventory/Sales & Traffic/Settlement/Orders/FBA Reimbursements/FBA Fee Preview/Promotion/Coupon 当前 `raw_file_id` 仍可能为 NULL；Inventory Ledger 已完成 execute/幂等验证；当前 `raw_file_id` 仍可能为 NULL |
+| 当前限制 | `amazon_sync_run_log` 尚无 rows_inserted / rows_updated 字段；normalized 表当前 `source_raw_file_id` 仍可能为 NULL；`pipeline_job_config` 已创建并 seed 13 条任务配置，其中利润、周报、邮件任务仍是 disabled placeholder，待功能实现后再启用；`report_email_recipient_config` 已创建并 seed 3 条全局收件人路由 |
 
-## 1.1 Schema 更新辅助工具
+## 1.1 最新执行记录
+
+`013_create_report_email_recipient_config.sql` 已在 Azure SQL `amazon_ops` 执行成功，执行结果为 3/3 batches。随后 `sql/seeds/003_seed_report_email_recipient_config_initial.sql` 已执行成功，执行结果为 2/2 batches。
+
+最新 live schema 已导出到：
+
+```text
+runtime/schema_exports/azure_sql_schema_20260523_213026.json
+runtime/schema_exports/azure_sql_schema_20260523_213026.md
+```
+
+导出结果显示当前用户表数量为 30，`report_email_recipient_config` 已存在，初始 seed 使用 `*/*/to` 全局路由配置 3 个收件人。
+
+## 1.2 Schema 更新辅助工具
 
 后续 migration 执行成功后，优先使用以下命令从真实 Azure SQL 导出 schema snapshot：
 
@@ -57,6 +70,8 @@ python scripts/export_database_schema_spec.py --output-prefix after_NNN_xxx --in
 | `amazon_settlement_transaction` | 结算明细 | GET_V2_SETTLEMENT_REPORT_DATA_FLAT_FILE_V2 | 实际入账财务明细、费用、退款、广告扣费、Coupon/Deal 费用、分类字段。 |
 | `amazon_sku_cost` | 成本配置 | 手工维护/会计成本输入 | SKU 采购、头程、包装等单位成本。 |
 | `amazon_sync_run_log` | 审计控制 | 所有采集/解析/入库任务 | 任务运行状态、行数、耗时、错误信息。 |
+| `pipeline_job_config` | 任务配置 | 手动 seed / 未来自动化配置 | 数据下载、入库、加工、报表和邮件任务的周期、脚本路径、默认参数和执行阶段。 |
+| `report_email_recipient_config` | 邮件收件人路由配置 | 手动 seed / 后续后台维护 | 报表类型 + audience -> to/cc/bcc 收件人路由；不保存 SMTP 密码。 |
 
 ## 3. 索引清单
 
@@ -130,6 +145,11 @@ python scripts/export_database_schema_spec.py --output-prefix after_NNN_xxx --in
 | `amazon_sync_run_log` | `IX_amazon_sync_run_log_job_started` | 否 | `job_name, started_at DESC` | `` |
 | `amazon_sync_run_log` | `IX_amazon_sync_run_log_status_started` | 否 | `status, started_at DESC` | `` |
 | `amazon_sync_run_log` | `IX_amazon_sync_run_log_workflow_started` | 否 | `workflow_name, started_at DESC` | `` |
+| `pipeline_job_config` | `IX_pipeline_job_config_enabled_phase` | 否 | `enabled, execution_phase, job_group, manual_run_order` | `` |
+| `pipeline_job_config` | `IX_pipeline_job_config_marketplace_domain` | 否 | `marketplace_id, data_domain, job_group` | `` |
+| `pipeline_job_config` | `UX_pipeline_job_config_job_key` | 是 | `job_key` | `` |
+| `report_email_recipient_config` | `IX_report_email_recipient_config_lookup` | 否 | `enabled, report_type, audience, recipient_type, sort_order` | `` |
+| `report_email_recipient_config` | `UX_report_email_recipient_config_active_route` | 是 | `report_type, audience, recipient_type, email` | `([enabled]=(1))` |
 
 ## 4. 字段结构
 
@@ -138,8 +158,8 @@ python scripts/export_database_schema_spec.py --output-prefix after_NNN_xxx --in
 - 数据来源：Amazon Ads Profiles API
 - 表用途：profile、国家、币种、账户类型、支付状态。
 - 当前索引：`IX_amazon_ads_profile_marketplace`(marketplace_id, country_code, account_type)；`UX_amazon_ads_profile_profile_id`(profile_id)
-- 当前行数：`5`
-- 行数说明：基于 2026-05-17 Inventory 首次 execute 与第二次幂等性验证；如需刷新 live schema snapshot，可重新运行 `scripts/export_database_schema_spec.py --include-row-counts`。
+- 当前行数：`0`
+- 行数说明：基于 `runtime/schema_exports/after_012_job_config` live schema 导出；如需刷新 row count，可重新运行 `scripts/export_database_schema_spec.py --include-row-counts`。
 
 | 字段 | 类型 | 可空 | 默认值 | 字段说明 |
 |---|---|---|---|---|
@@ -196,8 +216,6 @@ python scripts/export_database_schema_spec.py --output-prefix after_NNN_xxx --in
 | `source_row_hash` | `NVARCHAR(100)` | NOT NULL | `` | 原始行 hash，用于追溯，不作为业务 upsert 主键。 |
 | `business_key_hash` | `NVARCHAR(100)` | NOT NULL | `` | 业务幂等键 hash，用于 MERGE/upsert。 |
 | `raw_data` | `NVARCHAR(MAX)` | NOT NULL | `` | 保留原始行 JSON，便于重放和排查。 |
-| `source_row_index` | `INT` | NULL | `` | raw file 内 1-based 数据行号，用于行级追溯。 |
-| `business_key_hash` | `NVARCHAR(100)` | NULL | `` | 稳定业务键 hash，用于 MERGE/upsert 幂等。 |
 | `created_at` | `DATETIME2(7)` | NOT NULL | `(sysutcdatetime())` | 数据库记录创建时间 UTC。 |
 | `updated_at` | `DATETIME2(7)` | NOT NULL | `(sysutcdatetime())` | 数据库记录最后更新时间 UTC。 |
 
@@ -325,7 +343,7 @@ python scripts/export_database_schema_spec.py --output-prefix after_NNN_xxx --in
 - 数据来源：GET_COUPON_PERFORMANCE_REPORT.asins
 - 表用途：Coupon 关联 ASIN。
 - 当前索引：`IX_amazon_coupon_asin_key`(marketplace_id, coupon_id, asin)；`UX_amazon_coupon_asin_business_key_hash`(business_key_hash, unique filtered)
-- 当前行数：`0`
+- 当前行数：`4`
 
 | 字段 | 类型 | 可空 | 默认值 | 字段说明 |
 |---|---|---|---|---|
@@ -357,7 +375,7 @@ python scripts/export_database_schema_spec.py --output-prefix after_NNN_xxx --in
 - 数据来源：GET_COUPON_PERFORMANCE_REPORT
 - 表用途：Coupon 预算、领取、兑换、折扣、销售额。
 - 当前索引：`IX_amazon_coupon_performance_key`(marketplace_id, coupon_id, merchant_id)
-- 当前行数：`0`
+- 当前行数：`2`
 
 | 字段 | 类型 | 可空 | 默认值 | 字段说明 |
 |---|---|---|---|---|
@@ -399,7 +417,7 @@ python scripts/export_database_schema_spec.py --output-prefix after_NNN_xxx --in
 - 数据来源：GET_FBA_ESTIMATED_FBA_FEES_TXT_DATA
 - 表用途：SKU 尺寸、重量、预估 referral/FBA fulfillment fee。
 - 当前索引：`IX_amazon_fba_fee_preview_sku`(marketplace_id, seller_sku, fnsku, asin)；`IX_amazon_fba_fee_preview_source`(source_report_id, source_row_hash)；`UX_amazon_fba_fee_preview_business_key_hash`(business_key_hash)
-- 当前行数：`0`
+- 当前行数：`8`
 - 当前状态：`009_add_fba_fee_preview_business_key.sql` 已执行成功，字段与唯一过滤索引已存在；FBA Fee Preview 专用 ingestion 已完成 dry-run、首次 execute 与第二次 execute 幂等性验证。
 
 | 字段 | 类型 | 可空 | 默认值 | 字段说明 |
@@ -498,7 +516,7 @@ python scripts/export_database_schema_spec.py --output-prefix after_NNN_xxx --in
 - 数据来源：GET_FBA_MYI_UNSUPPRESSED_INVENTORY_DATA
 - 表用途：FBA 可售、不可售、预留、入库、研究中等库存数量。
 - 当前索引：`IX_amazon_inventory_daily_key`(marketplace_id, snapshot_date DESC, seller_sku, fnsku, asin)；`IX_amazon_inventory_daily_source`(source_report_id, source_row_hash)；`UX_amazon_inventory_daily_business_key_hash`(business_key_hash)
-- 当前行数：`0`
+- 当前行数：`5`
 
 | 字段 | 类型 | 可空 | 默认值 | 字段说明 |
 |---|---|---|---|---|
@@ -546,7 +564,7 @@ python scripts/export_database_schema_spec.py --output-prefix after_NNN_xxx --in
 - 数据来源：GET_LEDGER_DETAIL_VIEW_DATA
 - 表用途：FBA 仓库事件明细、reference、数量、原因。
 - 当前索引：`IX_amazon_inventory_ledger_detail_key`(marketplace_id, seller_sku, fnsku, asin, event_type, reference_id)
-- 当前行数：`0`
+- 当前行数：`207`
 
 | 字段 | 类型 | 可空 | 默认值 | 字段说明 |
 |---|---|---|---|---|
@@ -587,7 +605,7 @@ python scripts/export_database_schema_spec.py --output-prefix after_NNN_xxx --in
 - 数据来源：GET_LEDGER_SUMMARY_VIEW_DATA
 - 表用途：每日/地点维度仓库库存变动汇总。
 - 当前索引：`IX_amazon_inventory_ledger_summary_daily_key`(marketplace_id, seller_sku, fnsku, asin, ledger_date_raw)；`UX_amazon_inventory_ledger_summary_daily_business_key_hash`(business_key_hash, unique filtered)
-- 当前行数：`0`
+- 当前行数：`150`
 
 | 字段 | 类型 | 可空 | 默认值 | 字段说明 |
 |---|---|---|---|---|
@@ -815,7 +833,7 @@ python scripts/export_database_schema_spec.py --output-prefix after_NNN_xxx --in
 - 数据来源：GET_PROMOTION_PERFORMANCE_REPORT
 - 表用途：活动总体浏览、销量、销售额、状态与时间。
 - 当前索引：`IX_amazon_promotion_performance_key`(marketplace_id, promotion_id, status)；`UX_amazon_promotion_performance_business_key_hash`(business_key_hash, unique filtered)
-- 当前行数：`0`
+- 当前行数：`1`
 
 | 字段 | 类型 | 可空 | 默认值 | 字段说明 |
 |---|---|---|---|---|
@@ -853,7 +871,7 @@ python scripts/export_database_schema_spec.py --output-prefix after_NNN_xxx --in
 - 数据来源：GET_PROMOTION_PERFORMANCE_REPORT.productPerformance
 - 表用途：活动 ASIN 维度表现。
 - 当前索引：`IX_amazon_promotion_product_performance_key`(marketplace_id, promotion_id, asin)；`UX_amazon_promotion_product_performance_business_key_hash`(business_key_hash, unique filtered)
-- 当前行数：`0`
+- 当前行数：`3`
 
 | 字段 | 类型 | 可空 | 默认值 | 字段说明 |
 |---|---|---|---|---|
@@ -1151,7 +1169,7 @@ python scripts/export_database_schema_spec.py --output-prefix after_NNN_xxx --in
 - 数据来源：下载后/入库前 schema validation
 - 表用途：字段漂移、缺字段、新字段、requires_review 和通知状态。
 - 当前索引：`IX_amazon_schema_validation_event_report`(source_system, report_type, marketplace_id, created_at DESC)；`IX_amazon_schema_validation_event_review`(requires_review, notification_status, created_at DESC)
-- 当前行数：`10`
+- 当前行数：`44`
 
 | 字段 | 类型 | 可空 | 默认值 | 字段说明 |
 |---|---|---|---|---|
@@ -1183,7 +1201,7 @@ python scripts/export_database_schema_spec.py --output-prefix after_NNN_xxx --in
 - 数据来源：GET_V2_SETTLEMENT_REPORT_DATA_FLAT_FILE_V2
 - 表用途：实际入账财务明细、费用、退款、广告扣费、Coupon/Deal 费用、分类字段。
 - 当前索引：`IX_amazon_settlement_transaction_order_sku`(marketplace_id, order_id, seller_sku, amount_category, profit_bucket)；`IX_amazon_settlement_transaction_settlement`(marketplace_id, settlement_id, is_settlement_summary, transaction_type)；`IX_amazon_settlement_transaction_source`(source_report_id, source_row_hash)；`UX_amazon_settlement_transaction_business_key_hash`(business_key_hash, filtered unique)
-- 当前行数：`0`
+- 当前行数：`4911`
 - 行数说明：用户本地已完成 Settlement 首次 execute inserted=4911 和第二次 execute updated=4911；下次 schema export 可刷新 runtime snapshot 中的 row count。
 
 | 字段 | 类型 | 可空 | 默认值 | 字段说明 |
@@ -1244,14 +1262,14 @@ python scripts/export_database_schema_spec.py --output-prefix after_NNN_xxx --in
 | `marketplace_id` | `NVARCHAR(50)` | NOT NULL | `` | Amazon marketplace id，例如 ATVPDKIKX0DER。 |
 | `seller_sku` | `NVARCHAR(200)` | NOT NULL | `` | 卖家 SKU。 |
 | `asin` | `NVARCHAR(50)` | NULL | `` | Amazon ASIN。 |
-| `product_cost` | `DECIMAL(18,4)` | NOT NULL | `((0))` | 按源报告字段语义保存；后续可在功能文档中继续细化。 |
-| `first_mile_cost` | `DECIMAL(18,4)` | NOT NULL | `((0))` | 按源报告字段语义保存；后续可在功能文档中继续细化。 |
-| `packaging_cost` | `DECIMAL(18,4)` | NOT NULL | `((0))` | 按源报告字段语义保存；后续可在功能文档中继续细化。 |
-| `other_unit_cost` | `DECIMAL(18,4)` | NOT NULL | `((0))` | 按源报告字段语义保存；后续可在功能文档中继续细化。 |
+| `product_cost` | `DECIMAL(18,4)` | NOT NULL | `((0))` | 单件商品采购/货款成本；利润核算 v1.0 成本组成之一。 |
+| `first_mile_cost` | `DECIMAL(18,4)` | NOT NULL | `((0))` | 单件头程、海运、清关、入仓等分摊成本；利润核算 v1.0 成本组成之一。 |
+| `packaging_cost` | `DECIMAL(18,4)` | NOT NULL | `((0))` | 单件包装、吊牌、说明书等可归属包装成本；利润核算 v1.0 成本组成之一。 |
+| `other_unit_cost` | `DECIMAL(18,4)` | NOT NULL | `((0))` | 其他可稳定归属到单件 SKU 的成本；利润核算 v1.0 成本组成之一。 |
 | `currency` | `NVARCHAR(10)` | NOT NULL | `` | 币种。 |
-| `effective_from` | `DATE` | NOT NULL | `` | 按源报告字段语义保存；后续可在功能文档中继续细化。 |
-| `effective_to` | `DATE` | NULL | `` | 按源报告字段语义保存；后续可在功能文档中继续细化。 |
-| `remark` | `NVARCHAR(MAX)` | NULL | `` | 按源报告字段语义保存；后续可在功能文档中继续细化。 |
+| `effective_from` | `DATE` | NOT NULL | `` | 成本生效开始日期；第一版按 Settlement posted date 匹配成本区间。 |
+| `effective_to` | `DATE` | NULL | `` | 成本生效结束日期；NULL 表示持续有效。 |
+| `remark` | `NVARCHAR(MAX)` | NULL | `` | 成本来源、换算说明、批次或人工备注。 |
 | `created_at` | `DATETIME2(7)` | NOT NULL | `(sysutcdatetime())` | 数据库记录创建时间 UTC。 |
 | `updated_at` | `DATETIME2(7)` | NOT NULL | `(sysutcdatetime())` | 数据库记录最后更新时间 UTC。 |
 
@@ -1260,7 +1278,7 @@ python scripts/export_database_schema_spec.py --output-prefix after_NNN_xxx --in
 - 数据来源：所有采集/解析/入库任务
 - 表用途：任务运行状态、行数、耗时、错误信息。
 - 当前索引：`IX_amazon_sync_run_log_job_started`(job_name, started_at DESC)；`IX_amazon_sync_run_log_status_started`(status, started_at DESC)；`IX_amazon_sync_run_log_workflow_started`(workflow_name, started_at DESC)
-- 当前行数：`8`
+- 当前行数：`20`
 
 | 字段 | 类型 | 可空 | 默认值 | 字段说明 |
 |---|---|---|---|---|
@@ -1292,7 +1310,61 @@ python scripts/export_database_schema_spec.py --output-prefix after_NNN_xxx --in
 | `error_detail` | `NVARCHAR(MAX)` | NULL | `` | 按源报告字段语义保存；后续可在功能文档中继续细化。 |
 | `created_at` | `DATETIME2(7)` | NOT NULL | `(sysutcdatetime())` | 数据库记录创建时间 UTC。 |
 
+### 4.29 `pipeline_job_config`
+
+- 数据来源：手动 seed / 未来自动化任务配置
+- 表用途：记录数据下载、入库、加工、报表和邮件任务的默认参数、执行周期、回看窗口和执行阶段。
+- 当前索引：`UX_pipeline_job_config_job_key`(job_key, unique)；`IX_pipeline_job_config_enabled_phase`(enabled, execution_phase, job_group, manual_run_order)；`IX_pipeline_job_config_marketplace_domain`(marketplace_id, data_domain, job_group)
+- 当前行数：`13`
+- 当前说明：第一批 seed 包含 10 个核心 ingestion 任务，以及 Profit、Weekly Report、Email 三个 placeholder；placeholder 当前 `enabled=0`，待对应功能实现后再启用。
+
+| 字段 | 类型 | 可空 | 默认值 | 字段说明 |
+|---|---|---|---|---|
+| `id` | `BIGINT` | NOT NULL | `` | 数据库自增主键。 |
+| `job_key` | `NVARCHAR(160)` | NOT NULL | `` | 稳定唯一任务键，例如 `manual.ingest.inventory_snapshot.us`。 |
+| `job_group` | `NVARCHAR(40)` | NOT NULL | `` | 任务分组：`download` / `ingest` / `process` / `report` / `email`。 |
+| `job_name` | `NVARCHAR(240)` | NOT NULL | `` | 人类可读任务名称。 |
+| `source_system` | `NVARCHAR(50)` | NULL | `` | 数据来源系统，例如 `sp_api_reports`、`amazon_ads`、`internal`、`email`。 |
+| `marketplace_id` | `NVARCHAR(50)` | NULL | `` | Amazon marketplace id，例如 `ATVPDKIKX0DER`。 |
+| `profile_id` | `NVARCHAR(100)` | NULL | `` | Amazon Ads profile id；非 Ads 任务可为空。 |
+| `data_domain` | `NVARCHAR(80)` | NOT NULL | `` | 业务数据域，例如 `inventory_snapshot`、`settlement`、`profit_calculation`。 |
+| `report_type` | `NVARCHAR(180)` | NULL | `` | SP-API report type 或 Ads report group；内部加工任务可为空。 |
+| `target_table` | `NVARCHAR(300)` | NULL | `` | 主要目标表；多表任务使用分号分隔；内部报表任务可为空。 |
+| `script_path` | `NVARCHAR(500)` | NOT NULL | `` | 当前手动或未来自动化调用的脚本路径。 |
+| `default_args_json` | `NVARCHAR(MAX)` | NULL | `` | 默认 CLI 参数 JSON，受 `ISJSON` check constraint 约束。 |
+| `manual_run_order` | `INT` | NULL | `` | 手动 checklist 建议执行顺序。 |
+| `recommended_cadence_unit` | `NVARCHAR(20)` | NOT NULL | `` | 建议周期单位：`hour` / `day` / `week` / `month` / `on_demand`。 |
+| `recommended_cadence_value` | `INT` | NOT NULL | `((1))` | 建议周期值，例如 1 表示每 1 day/week。 |
+| `default_lookback_days` | `INT` | NULL | `` | 默认回看窗口天数。 |
+| `data_window_lag_days` | `INT` | NULL | `` | 数据延迟安全窗口天数。 |
+| `execution_phase` | `NVARCHAR(40)` | NOT NULL | `('manual_first')` | 执行阶段：`manual_first` / `scheduled_candidate` / `scheduled_active` / `deprecated`。 |
+| `enabled` | `BIT` | NOT NULL | `((1))` | 是否启用；未实现的利润、周报、邮件 placeholder 当前应为 0。 |
+| `notes` | `NVARCHAR(MAX)` | NULL | `` | 业务说明和限制。 |
+| `created_at` | `DATETIME2(7)` | NOT NULL | `(sysutcdatetime())` | 数据库记录创建时间 UTC。 |
+| `updated_at` | `DATETIME2(7)` | NOT NULL | `(sysutcdatetime())` | 数据库记录最后更新时间 UTC。 |
+
+### 4.30 `report_email_recipient_config`
+
+- 数据来源：手动 seed / 后续后台维护
+- 表用途：记录三类报表邮件的收件人路由；按 `report_type + audience + recipient_type` 解析 to/cc/bcc。
+- 当前索引：`UX_report_email_recipient_config_active_route`(report_type, audience, recipient_type, email, unique, enabled=1)；`IX_report_email_recipient_config_lookup`(enabled, report_type, audience, recipient_type, sort_order)
+- 当前说明：该表只保存收件人路由，不保存 SMTP host、username、password、邮件正文、附件或发送日志。SMTP 敏感配置仍走 `.env` / 环境变量；发送结果先保存在 delivery pack 的 `send_result.json`。
+- 初始 seed：`*/*/to` 全局路由包含 `feng@cuidena.cn`、`yufei@cuidena.cn`、`qian@cuidena.cn`。
+
+| 字段 | 类型 | 可空 | 默认值 | 字段说明 |
+|---|---|---|---|---|
+| `id` | `BIGINT` | NOT NULL | `` | 数据库自增主键。 |
+| `report_type` | `NVARCHAR(80)` | NOT NULL | `` | 报表类型，例如 `monthly_financial_close`、`weekly_business_review`、`weekly_ads_optimization`；`*` 表示全局默认。 |
+| `audience` | `NVARCHAR(80)` | NOT NULL | `` | 收件人场景，例如 `shareholders`、`accountant`、`operations`、`ads_operator`、`internal`；`*` 表示全局默认。 |
+| `recipient_type` | `NVARCHAR(10)` | NOT NULL | `` | 收件人类型，只允许 `to` / `cc` / `bcc`。 |
+| `email` | `NVARCHAR(320)` | NOT NULL | `` | 收件人邮箱地址。 |
+| `display_name` | `NVARCHAR(200)` | NULL | `` | 可选展示名称。 |
+| `enabled` | `BIT` | NOT NULL | `((1))` | 是否启用；禁用后不参与发送路由解析。 |
+| `sort_order` | `INT` | NOT NULL | `((100))` | 同一匹配范围内的排序值。 |
+| `notes` | `NVARCHAR(MAX)` | NULL | `` | 配置说明或变更备注。 |
+| `created_at` | `DATETIME2(7)` | NOT NULL | `(sysutcdatetime())` | 数据库记录创建时间 UTC。 |
+| `updated_at` | `DATETIME2(7)` | NOT NULL | `(sysutcdatetime())` | 数据库记录最后更新时间 UTC。 |
 
 ## 6. 当前已准备但尚未执行的 migration
 
-当前无已准备但未执行的 migration。后续新增结构变更从 `012_xxx.sql` 开始。
+当前无已准备但未执行的 migration。后续新增结构变更从 `014_xxx.sql` 开始。

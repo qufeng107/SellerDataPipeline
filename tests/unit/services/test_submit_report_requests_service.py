@@ -109,3 +109,28 @@ def test_submit_report_request_resolves_date_report_options(tmp_path: Path) -> N
     manifest = store.read_report_request("report-123")
     assert manifest["report_options"] == expected_options
     assert client.calls[0]["report_options"] == expected_options
+
+
+def test_submit_report_request_accepts_explicit_inclusive_dates(tmp_path: Path) -> None:
+    settings = Settings(
+        amazon_marketplace_id="ATVPDKIKX0DER",
+        local_sampling_root=str(tmp_path / "sampling"),
+    )
+    client = FakeSpApiClient()
+    store = LocalManifestStore(root_dir=settings.local_sampling_root)
+    service = SubmitReportRequestsService(
+        settings=settings,
+        sp_api_client=client,  # type: ignore[arg-type]
+        manifest_store=store,
+    )
+
+    service.run(
+        report_type="GET_SALES_AND_TRAFFIC_REPORT",
+        start_date=date(2026, 3, 1),
+        end_date=date(2026, 3, 31),
+    )
+
+    manifest = store.read_report_request("report-123")
+    assert manifest["data_start_time"] == "2026-03-01T00:00:00Z"
+    assert manifest["data_end_time"] == "2026-04-01T00:00:00Z"
+    assert client.calls[0]["data_end_time"].isoformat().startswith("2026-04-01")

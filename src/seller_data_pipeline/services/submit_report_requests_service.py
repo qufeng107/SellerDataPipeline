@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import UTC, date, datetime, time
+from datetime import UTC, date, datetime, time, timedelta
 from pathlib import Path
 
 from seller_data_pipeline.common.date_windows import recent_days_window
@@ -36,11 +36,18 @@ class SubmitReportRequestsService:
         report_type: str = LISTINGS_ALL_DATA,
         marketplace_ids: list[str] | None = None,
         days: int | None = None,
+        start_date: date | None = None,
+        end_date: date | None = None,
         report_options: dict[str, str] | None = None,
         today: date | None = None,
     ) -> Path:
         marketplace_ids = marketplace_ids or self._default_marketplace_ids()
-        data_start_time, data_end_time = self._build_date_window_datetimes(days=days, today=today)
+        data_start_time, data_end_time = self._build_date_window_datetimes(
+            days=days,
+            start_date=start_date,
+            end_date=end_date,
+            today=today,
+        )
         resolved_report_options = _resolve_report_options(
             report_options=report_options,
             data_start_time=data_start_time,
@@ -102,8 +109,21 @@ class SubmitReportRequestsService:
     def _build_date_window_datetimes(
         *,
         days: int | None,
+        start_date: date | None = None,
+        end_date: date | None = None,
         today: date | None,
     ) -> tuple[datetime | None, datetime | None]:
+        if days is not None and (start_date is not None or end_date is not None):
+            raise ValueError("Pass either days or start_date/end_date, not both")
+        if start_date is not None or end_date is not None:
+            if start_date is None or end_date is None:
+                raise ValueError("start_date and end_date must be provided together")
+            if end_date < start_date:
+                raise ValueError("end_date must be on or after start_date")
+            return (
+                datetime.combine(start_date, time.min, tzinfo=UTC),
+                datetime.combine(end_date + timedelta(days=1), time.min, tzinfo=UTC),
+            )
         if days is None:
             return None, None
         today = today or date.today()

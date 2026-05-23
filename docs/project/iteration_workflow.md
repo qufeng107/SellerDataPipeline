@@ -39,7 +39,7 @@ SP-API / Ads API 取样
 | 3 | 已执行 migration 文件和 progress 记录 | 数据库演进历史，已执行 migration 不可回改。 |
 | 4 | `docs/features/feature_*.md` | 功能设计、字段映射、实现状态和验收标准。 |
 | 5 | `docs/data_access/*.md` | 能从 Amazon / Ads / Seller Central 拿到的数据目录。 |
-| 6 | `requirements/` 历史文档 | 只作为迁移来源或旧背景参考，不再作为新设计的唯一事实。 |
+| 6 | `requirements_to_be_deprecated/` 历史文档 | 只作为迁移来源或旧背景参考，不再作为新设计的唯一事实。 |
 | 7 | 聊天记录 | 仅作补充背景；重要结论必须沉淀到 `docs/`。 |
 
 ## 3. 一次标准迭代的总流程
@@ -577,7 +577,7 @@ AZURE_SQL_CONNECT_RETRY_BACKOFF='1.8'
 
 文档类变更完成后检查：
 
-1. 是否更新了正确的 `docs/` 文件，而不是继续在旧 `requirements/` 里新增长期设计。
+1. 是否更新了正确的 `docs/` 文件，而不是继续在旧 `requirements_to_be_deprecated/` 里新增长期设计。
 2. README / docs index 是否需要新增链接。
 3. progress 是否记录了真实进度。
 4. 是否没有把 planned 内容写成 implemented。
@@ -676,24 +676,84 @@ Progress 文档只记录真实进展和近期计划，不写长篇设计。应�
 
 ## 17. 当前下一步建议
 
-截至 2026-05-17，文档和数据库治理规则已经进入最终体系；Ads、Listing、Inventory、Sales & Traffic、Settlement、Orders、FBA Reimbursements 等 normalized ingestion 链路均已完成真实写库和第二次 execute 幂等性验证。下一步建议按本 SOP 先做 FBA Fee Preview 的数据库 migration，再进入代码实现：
+截至 2026-05-18，核心 normalized ingestion 链路已经完成真实写库和第二次 execute 幂等性验证；`012_create_ingestion_job_config.sql` 和 `001_seed_ingestion_job_config_core_jobs.sql` 也已执行成功，`pipeline_job_config` 当前 13 行。下一步不应继续扩 ingestion，而应按本 SOP 进入利润核算功能设计：
 
 ```text
-读取 docs/features/feature_fba_fee_preview_ingestion.md
--> 确认 009_add_fba_fee_preview_business_key.sql 已准备
--> 用户本地 dry-run / execute 009
--> 运行 export_database_schema_spec.py 导出 after_009_fba_fee_preview_business_key live schema
--> 更新 database_current_schema_spec.md
--> 开发 scripts/ingest_fba_fee_preview_report.py 专用入口
--> dry-run 验证 prepared_rows=8 requires_review=False
--> execute + 第二次 execute 幂等性验证
--> 更新 feature_fba_fee_preview_ingestion.md 和 progress_next_steps.md 为 Implemented
+读取 docs/project/project_overview.md
+-> 读取 docs/project/progress_next_steps.md
+-> 读取 docs/operations/manual_execution_workflow.md
+-> 读取 docs/operations/ingestion_job_cadence_catalog.md
+-> 读取 docs/database/database_current_schema_spec.md
+-> 新建 docs/features/feature_profit_calculation.md
+-> 先冻结利润核算口径和成本输入方式
+-> 再决定是否需要新增 profit fact 表、view 或报表输出表
 ```
 
-在进入 FBA Fee Preview 代码开发前，AI 应再次确认：
+进入利润核算前，AI 应再次确认：
 
-1. 数据源字段来自 `docs/data_access/sp_api_reports_catalog.md` 和 `docs/features/feature_fba_fee_preview_ingestion.md`。
-2. 当前 `amazon_fba_fee_preview` 真实表尚未包含 `source_row_index`、`business_key_hash` 与唯一过滤索引；必须先执行 `009` 并导出 live schema。
-3. `001-008` 已执行成功，不得回改；后续结构变化从 `009_xxx.sql` 开始。
-4. 所有真实 SQL 入口必须使用 `get_connection()`，不得绕开连接 warm-up retry。
-5. 本轮是否允许改代码和新增测试。
+1. `001`-`012` 已执行成功，不得回改；后续结构变化从 `013_xxx.sql` 开始。
+2. 当前财务优先口径应以 Settlement 实扣为主，Orders / Sales & Traffic / Ads / Promotion-Coupon 用于维度补充和运营解释。
+3. SKU 采购成本、包装成本、头程/海运成本仍需要设计录入和生效日期机制。
+4. 第一版应 manual-first：先手动计算、人工复核，再考虑周报、邮件和 Azure Jobs 自动化。
+5. 如果利润核算需要新增表或字段，必须先写 feature 文档，再新增 migration，并从真实 Azure SQL 导出 live schema 更新 current spec。
+
+## 11. Manual-first Operations Workflow
+
+新增报表、利润核算、邮件发送或自动化 Jobs 前，先判断它是否已经可以手动执行。
+
+标准顺序：
+
+```text
+1. 写 feature 文档
+2. 写或更新手动执行 runbook
+3. 实现 CLI
+4. 手动 dry-run
+5. 手动 execute
+6. 手动复核输出
+7. 更新 progress 和 cadence catalog
+8. 再评估是否进入 automation
+```
+
+对应文档：
+
+```text
+docs/operations/manual_execution_workflow.md
+docs/operations/ingestion_job_cadence_catalog.md
+```
+
+## 12. Job Cadence Change Workflow
+
+如果需求涉及“多久下载一次数据”“多久入库一次”“未来自动化如何判断是否该运行”，按以下流程：
+
+```text
+1. 更新 docs/operations/ingestion_job_cadence_catalog.md
+2. 如需程序读取，更新 docs/features/feature_ingestion_job_config.md
+3. 如需数据库结构变化，新增 migration
+4. 如需修改配置数据，新增或更新 seed SQL
+5. 执行 migration/seed 后，导出 live schema
+6. 更新 docs/database/database_current_schema_spec.md
+7. 更新 docs/project/progress_next_steps.md
+```
+
+当前准备中的配置表：
+
+```text
+sql/migrations/012_create_ingestion_job_config.sql
+sql/seeds/001_seed_ingestion_job_config_core_jobs.sql
+```
+
+## 13. requirements_to_be_deprecated Cleanup Workflow
+
+旧 `requirements_to_be_deprecated/` 不能在仍有引用时直接删除。清理流程见：
+
+```text
+docs/project/requirements_deprecation_plan.md
+```
+
+删除前必须先确认：
+
+```powershell
+rg "requirements_to_be_deprecated|requirements/data_samples|requirements/"
+```
+
+没有仍需保留的引用。

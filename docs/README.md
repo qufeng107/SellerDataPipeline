@@ -1,7 +1,7 @@
 # SellerDataPipeline 文档总索引
 
-> 更新时间：2026-05-17  
-> 文档定位：本目录是 SellerDataPipeline 的正式文档入口。未来新需求、新设计、新数据库变更和开发进度都应优先维护在 `docs/` 下。`requirements/` 中历史文档只作为迁移来源或兼容参考。
+> 更新时间：2026-05-22  
+> 文档定位：本目录是 SellerDataPipeline 的正式文档入口。未来新需求、新设计、新数据库变更和开发进度都应优先维护在 `docs/` 下。`requirements_to_be_deprecated/` 中历史文档只作为迁移来源或兼容参考，暂不直接删除。
 
 ## 1. 文档体系目标
 
@@ -24,6 +24,17 @@ docs/
     development_rules.md          # 开发、文档、测试、数据库维护规则
     iteration_workflow.md          # 新需求 -> 设计 -> migration -> 开发 -> 验收 -> 文档同步 SOP
     progress_next_steps.md        # 当前真实进度和下一步计划
+    core_ingestion_completion_review.md
+    requirements_deprecation_plan.md
+
+  operations/
+    README.md
+    manual_execution_workflow.md
+    data_refresh_policy.md
+    ingestion_job_cadence_catalog.md
+    data_coverage_audit_workflow.md
+    historical_backfill_workflow.md
+    manual_refresh_plan_workflow.md
 
   data_access/
     README.md
@@ -38,7 +49,11 @@ docs/
     feature_azure_sql_foundation.md
     feature_ads_ingestion.md
     feature_listing_snapshot_ingestion.md
-    # feature_weekly_operations_report.md
+    feature_profit_calculation.md
+    feature_sku_cost_management.md
+    feature_monthly_financial_close_report.md
+    feature_weekly_business_review.md
+    feature_weekly_ads_optimization_report.md
 
   database/
     database_current_schema_spec.md
@@ -54,6 +69,9 @@ docs/
     ADR-004-database-spec-from-live-schema.md
     ADR-005-progressive-generalization.md
     ADR-006-azure-sql-connection-warmup.md
+    ADR-007-manual-first-before-automation.md
+    ADR-008-ingestion-job-config-table.md
+    ADR-009-settlement-led-profit-policy.md
 ```
 
 ## 3. 文档职责边界
@@ -62,6 +80,7 @@ docs/
 |---|---|---|
 | `project/` | 项目是什么、当前在哪一步、开发规则是什么 | 不写具体字段映射和长篇源数据结构 |
 | `data_access/` | Amazon / Ads / Seller Central 能拿到什么数据、如何获取、样例结构和源字段 | 不写利润计算、周报口径、业务功能实现 |
+| `operations/` | 手动执行流程、每类数据项建议周期、未来自动化 runbook | 不定义利润公式，不替代 feature 文档 |
 | `features/` | 某个具体功能如何设计、如何实现、如何验收 | 不替代当前真实数据库 spec |
 | `database/` | 当前数据库真实结构、migration 规则、真实 schema 导出工具 | 不写未执行的未来表结构为事实 |
 | `adr/` | 为什么做出某个长期架构决策 | 不写临时 TODO 或日常进度 |
@@ -75,7 +94,14 @@ docs/
 3. [`project/development_rules.md`](project/development_rules.md)
 4. [`project/iteration_workflow.md`](project/iteration_workflow.md)
 5. [`project/progress_next_steps.md`](project/progress_next_steps.md)
-6. [`data_access/amazon_data_access_catalog.md`](data_access/amazon_data_access_catalog.md)
+6. [`project/core_ingestion_completion_review.md`](project/core_ingestion_completion_review.md)
+7. [`operations/manual_execution_workflow.md`](operations/manual_execution_workflow.md)
+8. [`operations/data_refresh_policy.md`](operations/data_refresh_policy.md)
+9. [`operations/ingestion_job_cadence_catalog.md`](operations/ingestion_job_cadence_catalog.md)
+10. [`operations/data_coverage_audit_workflow.md`](operations/data_coverage_audit_workflow.md)
+11. [`operations/historical_backfill_workflow.md`](operations/historical_backfill_workflow.md)
+12. [`operations/manual_refresh_plan_workflow.md`](operations/manual_refresh_plan_workflow.md)
+9. [`data_access/amazon_data_access_catalog.md`](data_access/amazon_data_access_catalog.md)
 7. [`database/database_migration_policy.md`](database/database_migration_policy.md)
 8. [`database/database_schema_export_tool.md`](database/database_schema_export_tool.md)
 9. [`database/azure_sql_connection_runbook.md`](database/azure_sql_connection_runbook.md)
@@ -88,8 +114,14 @@ docs/
 16. 已实现功能：[`features/feature_settlement_ingestion.md`](features/feature_settlement_ingestion.md)，006 已执行，Settlement 专用 dry-run / repository / CLI / execute / 幂等性已完成
 17. 已实现功能：[`features/feature_orders_ingestion.md`](features/feature_orders_ingestion.md)，Orders 007 已执行，专用 ingestion、真实 execute 和幂等性验证均已完成
 18. 已实现功能：[`features/feature_fba_reimbursements_ingestion.md`](features/feature_fba_reimbursements_ingestion.md)，`008` 已执行，dry-run / execute / 幂等性验证已完成
-19. 当前功能：[`features/feature_fba_fee_preview_ingestion.md`](features/feature_fba_fee_preview_ingestion.md)，009 已执行，专用 dry-run 已完成，已完成 execute/幂等验证
-19. 相关 ADR，尤其 `ADR-005-progressive-generalization.md` 与 `ADR-006-azure-sql-connection-warmup.md`
+19. 已实现功能：[`features/feature_fba_fee_preview_ingestion.md`](features/feature_fba_fee_preview_ingestion.md)，009 已执行，专用 dry-run 已完成，已完成 execute/幂等验证
+20. 已实现功能：[`features/feature_ingestion_job_config.md`](features/feature_ingestion_job_config.md)，012 和 seed 已执行，当前 `pipeline_job_config` 13 行
+21. 已实现/规划功能：[`features/feature_profit_calculation.md`](features/feature_profit_calculation.md)，利润口径已冻结为 Settlement-led Financial Profit v1.0，当前已实现利润 preview
+22. 已实现功能：[`features/feature_sku_cost_management.md`](features/feature_sku_cost_management.md)，通过 xlsx 模板导出/导入维护 `amazon_sku_cost`
+23. 已冻结设计：[`features/feature_monthly_financial_close_report.md`](features/feature_monthly_financial_close_report.md)，基于 Settlement-led Financial Profit 生成月度 CEO/CFO 财务结算报表
+24. 已冻结设计：[`features/feature_weekly_business_review.md`](features/feature_weekly_business_review.md)，基于 Sales & Traffic / Orders / Ads / SKU Cost / Inventory 生成每周经营复盘
+25. 已冻结设计：[`features/feature_weekly_ads_optimization_report.md`](features/feature_weekly_ads_optimization_report.md)，基于 Sponsored Products Ads 数据生成每周广告优化动作清单
+25. 相关 ADR，尤其 `ADR-005-progressive-generalization.md`、`ADR-006-azure-sql-connection-warmup.md` 与 `ADR-009-settlement-led-profit-policy.md` 与 `ADR-010-overlapping-refresh-weekly-analysis.md`
 
 ## 5. 当前迁移与治理进展
 
@@ -111,7 +143,15 @@ docs/
 14. FBA Fee Preview 功能已完成 dry-run、execute 和第二次 execute 幂等性验证。
 15. Promotion/Coupon 功能已完成 `010`、dry-run、execute 和第二次 execute 幂等性验证。
 16. Inventory Ledger 功能已完成 `011`、专用 dry-run/schema guard/repository/CLI，已完成 execute/幂等验证。
-15. 后续再补充利润、周报、清仓决策等业务分析功能文档。
+17. 新增 operations runbooks：手动执行流程和数据周期目录。
+18. 新增并执行 job config：`feature_ingestion_job_config.md`，`012_create_ingestion_job_config.sql` 和 seed 已执行成功，`pipeline_job_config` 当前 13 行。
+19. 已冻结利润核算口径：`feature_profit_calculation.md` + `ADR-009-settlement-led-profit-policy.md` 与 `ADR-010-overlapping-refresh-weekly-analysis.md`。后续进入利润 preview、周报、清仓决策等业务分析功能实现。
+20. 已实现 SKU 成本模板导出/导入功能：`feature_sku_cost_management.md`，用于手动维护 `amazon_sku_cost`。
+21. 已实现标准定期刷新总控脚本：`scripts/run_manual_refresh_plan.py`，将日常更新固化为 `core_rolling` / `weekly_full` plan 与 submit/collect/ingest/audit phase。
+21. 已冻结数据刷新策略：`data_refresh_policy.md` + `ADR-010-overlapping-refresh-weekly-analysis.md`，采用重叠窗口刷新、upsert 覆盖和周度最小分析产物。
+22. 已冻结月度财务结算报表设计：`features/feature_monthly_financial_close_report.md`。
+23. 已冻结每周经营周报设计：`features/feature_weekly_business_review.md`。
+24. 已冻结每周广告优化报表设计：`features/feature_weekly_ads_optimization_report.md`。
 
 ## 6. 维护硬规则
 

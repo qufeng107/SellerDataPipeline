@@ -26,11 +26,11 @@ analyze_ads_downloaded_reports = _load_script_module(
 
 def test_build_ads_sample_output_path_sanitizes_report_type() -> None:
     path = analyze_ads_downloaded_reports.build_ads_sample_output_path(
-        Path("requirements/data_samples"),
+        Path("docs/data_access/sample_notes"),
         "sp:Campaigns",
     )
 
-    assert path == Path("requirements/data_samples/ADS_sp_Campaigns.md")
+    assert path == Path("docs/data_access/sample_notes/ADS_sp_Campaigns.md")
 
 
 def test_find_latest_ads_raw_file_returns_newest(tmp_path: Path) -> None:

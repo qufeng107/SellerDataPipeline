@@ -4,6 +4,8 @@ import argparse
 import json
 from pathlib import Path
 
+from analyze_ads_downloaded_reports import find_latest_ads_raw_file
+
 from seller_data_pipeline.common.logging import configure_logging
 from seller_data_pipeline.config.settings import get_settings
 from seller_data_pipeline.sampling.ads_report_sampling_plan import get_ads_sampling_plan
@@ -14,9 +16,6 @@ from seller_data_pipeline.sampling.schema_drift import (
     validate_report_schema,
     write_schema_validation_json,
 )
-
-from analyze_ads_downloaded_reports import find_latest_ads_raw_file
-
 
 DEFAULT_OUTPUT_DIR = "runtime/sampling/schema_validation"
 

@@ -17,7 +17,8 @@ class ExpectedReportSchema:
     """Expected raw report field shape used before parser/repository upsert.
 
     This is intentionally based on the downloaded raw file shape, not the SQL table shape.
-    SQL table changes must still be recorded in requirements/database_spec.md and migrations.
+    SQL table changes must still be recorded in docs/database/database_current_schema_spec.md
+    and migrations.
     """
 
     source_system: str

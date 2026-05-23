@@ -116,8 +116,9 @@ class AdsRepo:
     """Azure SQL repository for Amazon Ads normalized tables.
 
     The repository is intentionally driven by the same AdsTargetTableSpec used by local ingestion
-    previews. This keeps database writes aligned with requirements/database_spec.md and avoids
+    previews. This keeps database writes aligned with the current schema spec and avoids
     allowing arbitrary table names from CLI input.
+    See docs/database/database_current_schema_spec.md.
     """
 
     def __init__(self, connection: Any) -> None:

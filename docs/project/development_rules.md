@@ -265,3 +265,40 @@ python scripts/check_database_status.py
 如需数据库变更，先说明与 current schema spec 的差异，再新增 migration。
 完成后按 iteration_workflow.md 验收，并更新 progress_next_steps.md。
 ```
+
+## 10. Manual-first 与任务周期规则
+
+当前阶段采用 manual-first 策略。任何自动化 Jobs 开发前，必须先保证对应能力能手动执行：
+
+```text
+手动下载 raw data
+-> 手动入库
+-> 手动加工报表
+-> 人工复核
+-> 手动或半自动发送邮件
+```
+
+新增或调整数据下载/入库周期时，必须同步更新：
+
+```text
+docs/operations/ingestion_job_cadence_catalog.md
+docs/features/feature_ingestion_job_config.md
+```
+
+如果该周期需要程序读取，必须写入或更新：
+
+```text
+pipeline_job_config
+```
+
+`pipeline_job_config` 记录计划和配置；`amazon_sync_run_log` 记录实际运行结果。两者不可混用。
+
+## 11. 历史 requirements 目录规则
+
+`requirements_to_be_deprecated/` 当前只作为历史迁移来源。新需求、新设计、新数据库 spec、新进度记录必须写入 `docs/`。
+
+删除旧目录前必须按以下计划执行：
+
+```text
+docs/project/requirements_deprecation_plan.md
+```

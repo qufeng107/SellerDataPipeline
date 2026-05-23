@@ -17,8 +17,7 @@ from seller_data_pipeline.sampling.schema_drift import (
     write_schema_validation_json,
 )
 
-
-DEFAULT_OUTPUT_DIR = "requirements/data_samples"
+DEFAULT_OUTPUT_DIR = "docs/data_access/sample_notes"
 
 
 def main() -> None:
@@ -155,10 +154,7 @@ def build_ads_sample_output_path(output_dir: Path, report_type_id: str) -> Path:
 
 
 def _safe_report_type(report_type_id: str) -> str:
-    return "".join(
-        char if char.isalnum() or char in {"_", "-"} else "_"
-        for char in report_type_id
-    )
+    return "".join(char if char.isalnum() or char in {"_", "-"} else "_" for char in report_type_id)
 
 
 if __name__ == "__main__":
