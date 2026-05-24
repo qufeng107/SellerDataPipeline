@@ -42,7 +42,7 @@ def main() -> None:
     parser.add_argument(
         "--week-start",
         required=True,
-        help="Natural week Monday in YYYY-MM-DD format, for example 2026-04-06.",
+        help="7-day report period start in YYYY-MM-DD format. Scheduled reports use Saturday starts.",
     )
     parser.add_argument(
         "--output-root",

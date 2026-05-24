@@ -45,7 +45,7 @@ Weekly Ads Optimization Report：广告动作口径，回答下周广告怎么�
 | 数据刷新依赖 | 依赖 `core_rolling` 每 1-2 天刷新 Ads 最近 14 天；历史分析依赖 `backfill_ads_reports.py`。 |
 | 数据库变更 | v1 不新增数据库表，不新增 migration。 |
 | 代码实现 | 已完成 v1：`scripts/generate_weekly_ads_optimization_report.py`、`weekly_ads_optimization_service.py`、`weekly_ads_optimization_repo.py`、unit tests。 |
-| 输出形式 | v1 默认输出 `weekly_ads_optimization.json` + `weekly_ads_optimization.xlsx`；不默认输出 Markdown 或多个 CSV。 |
+| 输出形式 | v1 默认输出 `weekly_ads_optimization_{week_start}_{week_end}.json` + `weekly_ads_optimization_{week_start}_{week_end}.xlsx`；不默认输出 Markdown 或多个 CSV。 |
 | 验收样本 | 第一轮使用 `2026-05-11..2026-05-17`，该周 Ads campaign/targeting/search term/advertised product 已成功入库；必要时再用后续完整自然周复核。 |
 
 ### 2.1 与前两份报表一致的输出原则
@@ -60,7 +60,7 @@ XLSX = 人可读、可筛选、可人工复核和执行的多 sheet 文件。
 WAOR v1 采用同一原则：
 
 ```text
-默认只输出：weekly_ads_optimization.json + weekly_ads_optimization.xlsx。
+默认只输出：weekly_ads_optimization_{week_start}_{week_end}.json + weekly_ads_optimization_{week_start}_{week_end}.xlsx。
 不默认输出：weekly_ads_optimization.md 或多个 ads_*.csv。
 ```
 
@@ -292,8 +292,8 @@ runtime/analysis_reports/weekly_ads_optimization/3917953989967300/2026-05-11_202
 
 | 文件 | 用途 |
 |---|---|
-| `weekly_ads_optimization.json` | 完整结构化结果；后续 PDF、Email、BI、自动预警的 source of truth。 |
-| `weekly_ads_optimization.xlsx` | 人工复核和运营执行文件；所有明细通过不同 sheet 承载。 |
+| `weekly_ads_optimization_{week_start}_{week_end}.json` | 完整结构化结果；后续 PDF、Email、BI、自动预警的 source of truth。 |
+| `weekly_ads_optimization_{week_start}_{week_end}.xlsx` | 人工复核和运营执行文件；所有明细通过不同 sheet 承载。 |
 
 v1 不默认输出 Markdown 或多个 CSV：
 
@@ -332,7 +332,7 @@ python scripts/generate_weekly_ads_optimization_report.py `
 
 | 参数 | 默认值 | 说明 |
 |---|---|---|
-| `--week-start` | 必填 | 自然周周一，格式 `YYYY-MM-DD`。 |
+| `--week-start` | 必填 | 7天报表周期起始日，格式 `YYYY-MM-DD`；自动化周报默认使用周六起始，统计周六到周五。 |
 | `--week-end` | 自动 `week_start + 6 days` | v1 可内部计算，不必开放。 |
 | `--target-acos` | `0.30` | 目标 ACOS；用于动作规则。 |
 | `--watch-acos` | `0.40` | 观察 ACOS；超过进入 watch / reduce。 |
@@ -352,7 +352,7 @@ python scripts/generate_weekly_ads_optimization_report.py `
 v1 不写数据库、不调用外部写接口，因此 `--dry-run` 定义为：
 
 ```text
-只读数据库、不执行任何外部副作用，但仍生成 weekly_ads_optimization.json 和 weekly_ads_optimization.xlsx，方便人工复核。
+只读数据库、不执行任何外部副作用，但仍生成 weekly_ads_optimization_{week_start}_{week_end}.json 和 weekly_ads_optimization_{week_start}_{week_end}.xlsx，方便人工复核。
 ```
 
 如未来需要只打印摘要不写文件，可另加 `--no-write-files`，不复用 `--dry-run`。
@@ -665,7 +665,7 @@ increase_bid_candidate 不等于立即提价。
 
 ## 10. JSON 结构设计
 
-`weekly_ads_optimization.json` 是后续 PDF / Email / Dashboard 的结构化 source of truth。建议结构：
+`weekly_ads_optimization_{week_start}_{week_end}.json` 是后续 PDF / Email / Dashboard 的结构化 source of truth。建议结构：
 
 ```json
 {
@@ -1127,7 +1127,7 @@ write_xlsx(path, result)
 ```text
 数据库查询
   -> WeeklyAdsOptimizationResult 内存对象
-  -> 同时输出 weekly_ads_optimization.json 和 weekly_ads_optimization.xlsx
+  -> 同时输出 weekly_ads_optimization_{week_start}_{week_end}.json 和 weekly_ads_optimization_{week_start}_{week_end}.xlsx
 ```
 
 这样可以保证 JSON 和 XLSX 数字一致，后续 PDF / Email 也可直接复用同一个结果对象。
@@ -1170,7 +1170,7 @@ Weekly Business Review 对该周生成 status=ok，说明 5 月后 Ads context �
 WAOR 验收：
 
 ```text
-能生成 weekly_ads_optimization.json 和 weekly_ads_optimization.xlsx；
+能生成 weekly_ads_optimization_{week_start}_{week_end}.json 和 weekly_ads_optimization_{week_start}_{week_end}.xlsx；
 overall spend 与 campaign 表汇总一致；
 search_term_action_candidates 有合理排序；
 不会把四张 Ads 表重复相加；
@@ -1190,8 +1190,8 @@ python scripts/generate_weekly_ads_optimization_report.py --marketplace-id ATVPD
 应输出：
 
 ```text
-runtime/analysis_reports/weekly_ads_optimization/3917953989967300/2026-05-11_2026-05-17/weekly_ads_optimization.json
-runtime/analysis_reports/weekly_ads_optimization/3917953989967300/2026-05-11_2026-05-17/weekly_ads_optimization.xlsx
+runtime/analysis_reports/weekly_ads_optimization/3917953989967300/2026-05-11_2026-05-17/weekly_ads_optimization_2026-05-11_2026-05-17.json
+runtime/analysis_reports/weekly_ads_optimization/3917953989967300/2026-05-11_2026-05-17/weekly_ads_optimization_2026-05-11_2026-05-17.xlsx
 ```
 
 ---
@@ -1242,7 +1242,7 @@ tests/unit/db/test_weekly_ads_optimization_repo.py
 实现结果：
 
 ```text
-默认输出 weekly_ads_optimization.json + weekly_ads_optimization.xlsx；
+默认输出 weekly_ads_optimization_{week_start}_{week_end}.json + weekly_ads_optimization_{week_start}_{week_end}.xlsx；
 XLSX 使用 11 个 sheet 承载总览、daily trend、campaign、targeting、search term、动作清单、对账和 metadata；
 不新增数据库表，不新增 migration，不调用 Ads 写接口；
 单元测试 fixture 使用 2026-05-11 起自然周；
@@ -1274,3 +1274,16 @@ Settlement = financial advertising-fee context only.
 ```
 
 v1 默认输出 JSON + 单个 XLSX 多 sheet，不默认输出 Markdown 或多个 CSV。实现时不新增数据库表，不新增 migration，不调用任何 Ads 写接口。
+
+---
+
+## Presentation language requirement
+
+Default presentation artifacts must be bilingual:
+
+```text
+1. JSON keeps stable machine-readable English field names.
+2. XLSX includes `00_Readme_说明` and bilingual fixed headers/labels.
+3. Report delivery emails are Chinese-first with English reference text.
+4. Amazon-native raw values such as campaign names, search terms, keywords, SKU/ASIN and raw IDs stay unchanged.
+```

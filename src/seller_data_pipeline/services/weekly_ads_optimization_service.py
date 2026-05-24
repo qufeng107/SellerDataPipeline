@@ -12,6 +12,13 @@ from typing import Any, Protocol
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 
+from seller_data_pipeline.services.report_bilingual import (
+    add_action_translation_columns,
+    add_bilingual_readme_sheet,
+    bilingual_metric_label,
+    xlsx_header_label,
+)
+
 MONEY_QUANT = Decimal("0.01")
 RATIO_QUANT = Decimal("0.0001")
 ZERO = Decimal("0")
@@ -805,8 +812,10 @@ class WeeklyAdsOptimizationService:
             / f"{result.week_start.isoformat()}_{result.week_end.isoformat()}"
         )
         output_dir.mkdir(parents=True, exist_ok=True)
-        json_path = output_dir / "weekly_ads_optimization.json"
-        xlsx_path = output_dir / "weekly_ads_optimization.xlsx"
+        period_key = f"{result.week_start.isoformat()}_{result.week_end.isoformat()}"
+        filename_base = f"weekly_ads_optimization_{period_key}"
+        json_path = output_dir / f"{filename_base}.json"
+        xlsx_path = output_dir / f"{filename_base}.xlsx"
         result_with_files = result.with_output_files(
             {"json": str(json_path), "xlsx": str(xlsx_path)}
         )
@@ -826,6 +835,18 @@ def build_weekly_ads_optimization_workbook(result: WeeklyAdsOptimizationResult) 
     workbook = Workbook()
     default = workbook.active
     workbook.remove(default)
+    add_bilingual_readme_sheet(
+        workbook,
+        title_en="Weekly Ads Optimization Report",
+        title_zh="每周广告优化报表",
+        period=f"{result.week_start.isoformat()}_{result.week_end.isoformat()}",
+        status=result.status,
+        scope_en=(
+            "Ads API campaign daily is the ads optimization source of truth; "
+            "Settlement advertising fees are finance context only."
+        ),
+        scope_zh="Ads API campaign daily 是广告优化主口径；Settlement 广告费仅作为财务参考。",
+    )
     _write_rows_sheet(workbook, "01_Executive_Summary", _summary_rows(result))
     _write_rows_sheet(
         workbook, "02_Daily_Trend", [row.to_dict() for row in result.daily_trend]
@@ -843,12 +864,18 @@ def build_weekly_ads_optimization_workbook(result: WeeklyAdsOptimizationResult) 
     _write_rows_sheet(
         workbook,
         "05_Search_Terms",
-        [row.to_search_term_dict() for row in result.search_term_performance],
+        [
+            add_action_translation_columns(row.to_search_term_dict())
+            for row in result.search_term_performance
+        ],
     )
     _write_rows_sheet(
         workbook,
         "06_Search_Term_Actions",
-        [row.to_search_term_action_dict() for row in result.search_term_action_candidates],
+        [
+            add_action_translation_columns(row.to_search_term_action_dict())
+            for row in result.search_term_action_candidates
+        ],
     )
     _write_rows_sheet(
         workbook,
@@ -856,7 +883,9 @@ def build_weekly_ads_optimization_workbook(result: WeeklyAdsOptimizationResult) 
         [row.to_advertised_product_dict() for row in result.advertised_product_performance],
     )
     _write_rows_sheet(
-        workbook, "08_Action_Items", [row.to_dict() for row in result.action_items]
+        workbook,
+        "08_Action_Items",
+        [add_action_translation_columns(row.to_dict()) for row in result.action_items],
     )
     _write_rows_sheet(
         workbook,
@@ -908,7 +937,7 @@ def _metric_row(
 ) -> dict[str, Any]:
     return {
         "metric_group": metric_group,
-        "metric_name": metric_name,
+        "metric_name": bilingual_metric_label(metric_name),
         "value": _xlsx_value(value),
         "unit": unit,
         "notes": notes,
@@ -926,8 +955,8 @@ def _metadata_rows(result: WeeklyAdsOptimizationResult) -> list[dict[str, Any]]:
 def _write_rows_sheet(workbook: Workbook, title: str, rows: Sequence[Mapping[str, Any]]) -> None:
     sheet = workbook.create_sheet(title)
     if not rows:
-        sheet.append(["message"])
-        sheet.append(["No rows"])
+        sheet.append([xlsx_header_label("message")])
+        sheet.append(["No rows / 无数据"])
         _format_sheet(sheet)
         return
     headers = list(rows[0].keys())
@@ -935,7 +964,7 @@ def _write_rows_sheet(workbook: Workbook, title: str, rows: Sequence[Mapping[str
         for key in row.keys():
             if key not in headers:
                 headers.append(key)
-    sheet.append(headers)
+    sheet.append([xlsx_header_label(header) for header in headers])
     for row in rows:
         sheet.append([_xlsx_value(row.get(header)) for header in headers])
     _format_sheet(sheet)
@@ -1908,8 +1937,8 @@ def _date_set(start_date: date, end_date: date) -> set[date]:
 
 
 def _validate_week_start(week_start: date) -> None:
-    if week_start.weekday() != 0:
-        raise ValueError("week_start must be a Monday")
+    if week_start.weekday() not in {0, 5}:
+        raise ValueError("week_start must be a Monday or Saturday")
 
 
 def parse_week_start(value: str) -> date:

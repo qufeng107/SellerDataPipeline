@@ -1,12 +1,12 @@
 # Feature: Report Delivery / Email Pack
 
-> 文档状态：Implemented v1.2  
+> 文档状态：Implemented v1.1  
 > 负责人：AI + Feng  
 > 更新时间：2026-05-23  
-> 功能状态：v1 draft-pack implemented; v1.1 SMTP sending implemented; v1.2 DB recipient routing implemented  
+> 功能状态：v1 draft-pack implemented; v1.1 SMTP sending implemented  
 > 相关功能：`docs/features/feature_monthly_financial_close_report.md`, `docs/features/feature_weekly_business_review.md`, `docs/features/feature_weekly_ads_optimization_report.md`  
 > 相关 operations：`docs/operations/manual_refresh_plan_workflow.md`, `docs/operations/data_refresh_policy.md`  
-> 相关原则：手动优先、先 dry-run 再 execute、数据库结构变更先设计后 migration、SMTP 密码不入库、不把敏感配置提交到代码库
+> 相关原则：手动优先、先 dry-run 再 execute、不新增数据库表、不把敏感配置提交到代码库
 
 ---
 
@@ -22,7 +22,7 @@ Weekly Business Review -> CEO / 运营负责人周经营复盘邮件
 Weekly Ads Optimization Report -> 广告操作者 / 运营负责人广告动作邮件
 ```
 
-v1 已实现安全的“生成邮件草稿包”。v1.1 已实现 SMTP 真实发送：使用 Python 标准库 SMTP 客户端发送已经生成并人工复核过的 delivery pack；收件人按 report_type + audience 路由配置，不把 SMTP 密码提交到代码库。v1.2 已新增最小收件人路由配置表，把 report_type + audience -> to/cc/bcc 的收件人路由存入 Azure SQL；`send_report_email.py` 默认从数据库读取收件人，runtime JSON 仅作为 fallback / 本地测试配置。SMTP 密码仍然只走环境变量，不进入数据库。
+v1 已实现安全的“生成邮件草稿包”。v1.1 已实现 SMTP 真实发送：使用 Python 标准库 SMTP 客户端发送已经生成并人工复核过的 delivery pack；收件人按 report_type + audience 路由配置，不把 SMTP 密码提交到代码库。当前小团队阶段不新增收件人数据库表，默认使用 runtime 本地 JSON 配置，后续如需要多人管理/审计再升级为数据库表。
 
 ---
 
@@ -34,8 +34,8 @@ v1 已实现安全的“生成邮件草稿包”。v1.1 已实现 SMTP 真实发
 4. **XLSX 作为主要附件**：给股东、会计、运营人员人工查看；JSON 默认不对外发送。
 5. **默认不发送**：第一阶段只生成 `email_subject.txt`、`email_body.html`、`email_body.txt`、`delivery_manifest.json`。
 6. **真实发送必须显式 `--execute`**：避免误发。
-7. **数据库最小化**：v1.2 仅新增一张收件人路由表，不存 SMTP 密码，不存发送正文。
-8. **敏感配置不入库**：SMTP 密码走环境变量；收件人路由入库，runtime JSON 仅作为 fallback / 本地测试配置。
+7. **不新增数据库表 / migration**：delivery 结果先存 runtime 文件，不落库。
+8. **敏感配置不入库**：SMTP 密码走环境变量；收件人列表走 `runtime/config/report_delivery_recipients.json` 或 CLI 参数。
 9. **状态保护**：`needs_review` 报表默认不允许发送给股东/会计，除非显式 override。
 10. **后续可接 Azure Jobs**：但当前仍以手动/半自动流程为主。
 
@@ -78,14 +78,6 @@ v1 已实现安全的“生成邮件草稿包”。v1.1 已实现 SMTP 真实发
 2. 使用 Python 标准库 `smtplib` + `email.message.EmailMessage` + `ssl`，不引入第三方邮件依赖。
 3. 从 delivery pack 读取 `email_subject.txt`、`email_body.html`、`email_body.txt`、`delivery_manifest.json` 和 `attachments/`。
 4. 从本地 routing config 按 `report_type + audience` 解析收件人；支持 CLI `--to/--cc/--bcc` 临时覆盖。
-
-### 3.4 v1.2 包含（已实现）
-
-1. 新增 Azure SQL 表 `dbo.report_email_recipient_config`，保存报表邮件收件人路由。
-2. `send_report_email.py` 默认 `--recipient-source db`，按 `report_type + audience` 从数据库解析 to/cc/bcc。
-3. 支持 `--recipient-source json` 使用 runtime 本地 JSON 配置，支持 `--recipient-source auto` 先查 DB、再 fallback 到 JSON。
-4. 支持 CLI `--to/--cc/--bcc` 临时覆盖，覆盖优先级高于 DB。
-5. 迁移 `013_create_report_email_recipient_config.sql` 和 seed `003_seed_report_email_recipient_config_initial.sql` 已在 Azure SQL 执行成功，live schema 已导出。
 5. 发送前 dry-run 校验 SMTP 配置、收件人、附件、send guard 和重复发送状态。
 6. 真实发送后输出 `send_result.json`，记录发送状态、收件人数、附件数量、SMTP host、message id、错误信息等。
 7. 默认阻止重复发送；如同一个 delivery pack 已经 `sent`，除非显式 `--force-resend`。
@@ -107,7 +99,7 @@ v1 已实现安全的“生成邮件草稿包”。v1.1 已实现 SMTP 真实发
 最小输入：
 
 ```powershell
-python scripts/generate_report_delivery_pack.py --report-json runtime/analysis_reports/weekly_business_review/ATVPDKIKX0DER/2026-05-11_2026-05-17/weekly_business_review.json --dry-run
+python scripts/generate_report_delivery_pack.py --report-json runtime/analysis_reports/weekly_business_review/ATVPDKIKX0DER/2026-05-11_2026-05-17/weekly_business_review_{period_key}.json --dry-run
 ```
 
 可选输入：
@@ -166,14 +158,14 @@ email_body.html
 email_body.txt
 delivery_manifest.json
 attachments/
-  weekly_ads_optimization.xlsx
+  weekly_ads_optimization_{period_key}.xlsx
 ```
 
 如果使用 `--include-json-attachment`，则额外复制：
 
 ```text
 attachments/
-  weekly_ads_optimization.json
+  weekly_ads_optimization_{period_key}.json
 ```
 
 但默认不建议把 JSON 发给股东或会计，因为 JSON 是机器接口文件，不适合作为业务附件。
@@ -476,7 +468,7 @@ report_type + audience -> to/cc/bcc
 
 ### 8.5 当前默认收件人配置
 
-当前所有三类报表的默认路由先统一发送给：
+当前小团队阶段，所有三类报表的默认路由先统一发送给：
 
 ```text
 feng@cuidena.cn
@@ -484,21 +476,21 @@ yufei@cuidena.cn
 qian@cuidena.cn
 ```
 
-v1.1 已支持 runtime 本地配置：
+本次实现会提供一个本地 runtime 配置文件：
 
 ```text
 runtime/config/report_delivery_recipients.json
 ```
 
-v1.2 计划新增 Azure SQL 表，将收件人路由从 runtime JSON 迁移到数据库：
+该文件位于 `.gitignore` 覆盖的 `runtime/` 下，用于本地执行和后续服务器部署配置，不作为正式源代码提交。后续如果需要不同报表发给不同人，只需要改这个 JSON；如果需要临时测试，也可以用 `send_report_email.py --to test@example.com` 覆盖。
 
-```text
-dbo.report_email_recipient_config
-```
+当前不建议新增数据库表存收件人，原因：
 
-数据库只保存收件人路由，不保存 SMTP 主机、用户名、密码、邮件正文或附件内容。SMTP 密码仍必须走 `.env` / 环境变量；真实发送结果继续先保存到 delivery pack 的 `send_result.json`，本期不新增发送日志表。
-
-CLI 临时测试仍保留 `send_report_email.py --to test@example.com` 覆盖能力，优先级高于数据库路由。
+1. 收件人数量很少，配置变更频率低；
+2. 真实发送仍是手动/半自动，不需要后台管理界面；
+3. 避免新增 migration、权限管理和数据脱敏成本；
+4. SMTP 密码仍必须走环境变量，不适合进数据库；
+5. 后续若需要多人后台管理、发送审计和 UI 配置，再升级为 `report_delivery_recipient_route` 表。
 
 ---
 
@@ -519,8 +511,8 @@ CLI 临时测试仍保留 `send_report_email.py --to test@example.com` 覆盖能
     "marketplace_id": "ATVPDKIKX0DER",
     "profile_id": "3917953989967300",
     "period_key": "2026-05-11_2026-05-17",
-    "source_json_path": "runtime/analysis_reports/.../weekly_ads_optimization.json",
-    "source_xlsx_path": "runtime/analysis_reports/.../weekly_ads_optimization.xlsx"
+    "source_json_path": "runtime/analysis_reports/.../weekly_ads_optimization_{period_key}.json",
+    "source_xlsx_path": "runtime/analysis_reports/.../weekly_ads_optimization_{period_key}.xlsx"
   },
   "email": {
     "template": "weekly_ads_optimization",
@@ -532,8 +524,8 @@ CLI 临时测试仍保留 `send_report_email.py --to test@example.com` 覆盖能
   "attachments": [
     {
       "kind": "xlsx",
-      "source_path": "runtime/analysis_reports/.../weekly_ads_optimization.xlsx",
-      "pack_path": "attachments/weekly_ads_optimization.xlsx",
+      "source_path": "runtime/analysis_reports/.../weekly_ads_optimization_{period_key}.xlsx",
+      "pack_path": "attachments/weekly_ads_optimization_{period_key}.xlsx",
       "required": true
     }
   ],
@@ -587,12 +579,6 @@ Dry-run 校验：
 python scripts/send_report_email.py --delivery-pack runtime/report_delivery/weekly_ads_optimization/ATVPDKIKX0DER_3917953989967300/2026-05-11_2026-05-17 --audience ads_operator --dry-run
 ```
 
-默认从 Azure SQL `report_email_recipient_config` 读取收件人；如需本地 JSON fallback，可显式使用：
-
-```powershell
-python scripts/send_report_email.py --delivery-pack runtime/report_delivery/... --audience ads_operator --recipient-source auto --dry-run
-```
-
 真实发送：
 
 ```powershell
@@ -604,15 +590,14 @@ python scripts/send_report_email.py --delivery-pack runtime/report_delivery/week
 SMTP 配置走 `.env` / 环境变量，不进入 git。
 
 ```text
-# Tencent Exmail / 企业微信企业邮箱当前客户端设置示例
-REPORT_EMAIL_SMTP_HOST=smtp.exmail.qq.com
-REPORT_EMAIL_SMTP_PORT=465
-REPORT_EMAIL_SMTP_SECURITY=ssl   # starttls | ssl | none
-REPORT_EMAIL_SMTP_USERNAME=feng@cuidena.cn
-REPORT_EMAIL_SMTP_PASSWORD=<client-specific-password>
-REPORT_EMAIL_FROM=feng@cuidena.cn
-REPORT_EMAIL_FROM_NAME=CuideNA Reports
-REPORT_EMAIL_REPLY_TO=feng@cuidena.cn
+REPORT_EMAIL_SMTP_HOST=smtp.example.com
+REPORT_EMAIL_SMTP_PORT=587
+REPORT_EMAIL_SMTP_SECURITY=starttls   # starttls | ssl | none
+REPORT_EMAIL_SMTP_USERNAME=reports@example.com
+REPORT_EMAIL_SMTP_PASSWORD=<app-password-or-smtp-password>
+REPORT_EMAIL_FROM=reports@example.com
+REPORT_EMAIL_FROM_NAME=SellerDataPipeline Reports
+REPORT_EMAIL_REPLY_TO=operator@example.com
 REPORT_EMAIL_SMTP_TIMEOUT_SECONDS=30
 REPORT_EMAIL_SMTP_MAX_RETRIES=2
 ```
@@ -757,19 +742,19 @@ SMTP 认证失败：fail fast，不重试太多。
 Monthly：
 
 ```powershell
-python scripts/generate_report_delivery_pack.py --report-json runtime/analysis_reports/monthly_financial_close/ATVPDKIKX0DER/2026-04/monthly_financial_close.json --audience shareholders --dry-run
+python scripts/generate_report_delivery_pack.py --report-json runtime/analysis_reports/monthly_financial_close/ATVPDKIKX0DER/2026-04/monthly_financial_close_{YYYY-MM}.json --audience shareholders --dry-run
 ```
 
 WBR：
 
 ```powershell
-python scripts/generate_report_delivery_pack.py --report-json runtime/analysis_reports/weekly_business_review/ATVPDKIKX0DER/2026-05-11_2026-05-17/weekly_business_review.json --audience operations --dry-run
+python scripts/generate_report_delivery_pack.py --report-json runtime/analysis_reports/weekly_business_review/ATVPDKIKX0DER/2026-05-11_2026-05-17/weekly_business_review_{period_key}.json --audience operations --dry-run
 ```
 
 WAOR：
 
 ```powershell
-python scripts/generate_report_delivery_pack.py --report-json runtime/analysis_reports/weekly_ads_optimization/3917953989967300/2026-05-11_2026-05-17/weekly_ads_optimization.json --audience ads_operator --dry-run
+python scripts/generate_report_delivery_pack.py --report-json runtime/analysis_reports/weekly_ads_optimization/3917953989967300/2026-05-11_2026-05-17/weekly_ads_optimization_{period_key}.json --audience ads_operator --dry-run
 ```
 
 ### 11.2 发送前人工检查
@@ -983,174 +968,42 @@ Report Delivery 应作为统一功能开发，而不是为三份报表分别开�
 
 ---
 
-## 17. v1.2 数据库收件人路由设计（Planned）
+## 17. v1.3 Bilingual delivery requirement
 
-### 17.1 业务原因
+After the first successful SMTP test email, report delivery is upgraded to bilingual output.
 
-v1.1 的 runtime JSON 收件人配置适合本地测试，但后续手动/半自动发送会逐渐进入固定流程。为了让收件人路由更可控、可查询、可由 SQL seed 初始化，v1.2 新增一张最小数据库表保存：
-
-```text
-report_type + audience + recipient_type -> email
-```
-
-该表解决“每类报表发给哪些邮箱”的配置问题，不承担 SMTP 密钥管理、发送日志审计或邮件内容存档职责。
-
-### 17.2 非范围
-
-v1.2 不做：
+Scope:
 
 ```text
-SMTP 密码入库
-邮件正文入库
-附件入库
-发送日志表
-后台管理 UI
-复杂权限系统
-自动定时发送
+1. Email subject keeps both Chinese and English report names.
+2. Email HTML/text body is Chinese-first, with English reference text preserved.
+3. Key metric labels are rendered as Chinese / English.
+4. Action recommendations are rendered with Chinese explanations plus English source text.
+5. XLSX workbooks add `00_Readme_说明` and bilingual fixed headers/labels.
 ```
 
-### 17.3 目标表
+Important boundary:
 
 ```text
-dbo.report_email_recipient_config
+Amazon-native source data is not translated:
+- campaign names
+- ad group names
+- search terms
+- keywords
+- SKU / ASIN
+- raw IDs
 ```
 
-字段设计：
-
-| 字段 | 类型 | 必填 | 说明 |
-|---|---:|---:|---|
-| `id` | BIGINT IDENTITY PK | 是 | 自增主键 |
-| `report_type` | NVARCHAR(80) | 是 | 报表类型，支持 `monthly_financial_close` / `weekly_business_review` / `weekly_ads_optimization` / `*` |
-| `audience` | NVARCHAR(80) | 是 | 受众，支持 `shareholders` / `accountant` / `operations` / `ads_operator` / `internal` / `*` |
-| `recipient_type` | NVARCHAR(10) | 是 | `to` / `cc` / `bcc` |
-| `email` | NVARCHAR(320) | 是 | 收件人邮箱 |
-| `display_name` | NVARCHAR(200) | 否 | 显示名，发送时可选使用 |
-| `enabled` | BIT | 是 | 是否启用 |
-| `sort_order` | INT | 是 | 收件人排序 |
-| `notes` | NVARCHAR(MAX) | 否 | 备注 |
-| `created_at` | DATETIME2 | 是 | 创建时间，UTC |
-| `updated_at` | DATETIME2 | 是 | 更新时间，UTC |
-
-约束与索引：
+Reason:
 
 ```text
-CK_report_email_recipient_config_recipient_type: recipient_type IN ('to', 'cc', 'bcc')
-CK_report_email_recipient_config_report_type_nonempty
-CK_report_email_recipient_config_audience_nonempty
-CK_report_email_recipient_config_email_nonempty
-CK_report_email_recipient_config_sort_order: sort_order >= 0
-UX_report_email_recipient_config_active_route: unique filtered index on active route
-IX_report_email_recipient_config_lookup: enabled/report_type/audience/recipient_type/sort_order lookup
+These values must stay identical to Amazon Ads Console / Seller Central so operators can copy,
+search and reconcile them without accidental mistranslation.
 ```
 
-### 17.4 路由匹配规则
-
-发送时读取 delivery pack 的：
+Implementation note:
 
 ```text
-report_type
-audience
+JSON remains the machine-readable source of truth and keeps stable English field names.
+Bilingual rendering is applied at the email/XLSX presentation layer.
 ```
-
-数据库查询匹配：
-
-```sql
-WHERE enabled = 1
-  AND report_type IN ('*', @report_type)
-  AND audience IN ('*', @audience)
-```
-
-v1.2 简化规则：合并所有匹配行，按 `recipient_type + email` 去重，再按 `sort_order, email` 排序。这样可以先支持全局默认 `*/*`，也支持后续追加更具体路由。
-
-优先级：
-
-```text
-1. CLI --to/--cc/--bcc 临时覆盖
-2. 数据库 report_email_recipient_config
-3. runtime/config/report_delivery_recipients.json fallback（仅本地或故障兜底）
-4. 无收件人则阻止发送
-```
-
-### 17.5 初始 seed
-
-初始 seed 使用全局 `*/*` 路由：
-
-```text
-* + * + to -> feng@cuidena.cn
-* + * + to -> yufei@cuidena.cn
-* + * + to -> qian@cuidena.cn
-```
-
-这样三类报表、所有 audience 默认发给上述三人。后续如需拆分，只需在数据库中新增更具体的 `report_type + audience` 路由，并按需要禁用 `*/*` 行。
-
-### 17.6 Migration 需求
-
-已执行 migration：
-
-```text
-sql/migrations/013_create_report_email_recipient_config.sql
-```
-
-已执行 seed：
-
-```text
-sql/seeds/003_seed_report_email_recipient_config_initial.sql
-```
-
-执行顺序：
-
-```powershell
-python scripts/run_sql_migration.py --file sql/migrations/013_create_report_email_recipient_config.sql --dry-run --show-batches
-python scripts/run_sql_migration.py --file sql/migrations/013_create_report_email_recipient_config.sql
-python scripts/run_sql_migration.py --file sql/seeds/003_seed_report_email_recipient_config_initial.sql --dry-run --show-batches
-python scripts/run_sql_migration.py --file sql/seeds/003_seed_report_email_recipient_config_initial.sql
-```
-
-执行成功后，已根据 live schema 更新：
-
-```text
-docs/database/database_current_schema_spec.md
-```
-
-### 17.7 代码改造计划
-
-v1.2 代码改造路径（已实现）：
-
-```text
-src/seller_data_pipeline/db/repositories/report_email_recipient_repo.py
-src/seller_data_pipeline/services/report_email_sender.py
-scripts/send_report_email.py
-tests/unit/db/test_report_email_recipient_repo.py
-tests/unit/services/test_report_email_sender.py
-```
-
-`send_report_email.py --dry-run` 应显示：
-
-```text
-recipient_source=db
-to=feng@cuidena.cn, yufei@cuidena.cn, qian@cuidena.cn
-```
-
-若数据库不可用或没有匹配收件人，默认应失败并提示；只有使用 `--recipient-source auto` 或 `--recipient-source json` 时才读取 runtime JSON。
-
-### 17.8 验收标准
-
-1. migration dry-run batch 数正常。
-2. migration execute 成功。
-3. seed execute 后数据库存在 3 条 enabled `*/*/to` 收件人。
-4. live schema export 确认表、字段、约束、索引存在。
-5. `send_report_email.py --dry-run` 能从 DB 解析三名收件人。
-6. CLI `--to` 覆盖优先级仍高于 DB。
-7. `PYTHONPATH=src pytest tests/unit -q` 通过。
-8. `python -m compileall -q scripts src tests` 通过。
-9. `docs/database/database_current_schema_spec.md` 只在 migration 执行后更新。
-
-
-### 2026-05-23 v1.2 implementation evidence
-
-- `013_create_report_email_recipient_config.sql` 已执行成功，3/3 batches。
-- `003_seed_report_email_recipient_config_initial.sql` 已执行成功，2/2 batches。
-- live schema 已导出到 `runtime/schema_exports/azure_sql_schema_20260523_213026.md/json`。
-- `docs/database/database_current_schema_spec.md` 已更新为 v1.14，记录 `report_email_recipient_config`。
-- `send_report_email.py` 支持 `--recipient-source db/json/auto`，默认使用 DB。
-- SMTP 示例按腾讯企业邮客户端设置更新为 `smtp.exmail.qq.com:465 SSL`。

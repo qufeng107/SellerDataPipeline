@@ -12,6 +12,12 @@ from typing import Any, Protocol
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 
+from seller_data_pipeline.services.report_bilingual import (
+    add_bilingual_readme_sheet,
+    bilingual_metric_label,
+    xlsx_header_label,
+)
+
 from seller_data_pipeline.services.calculate_profit_service import (
     PRODUCT_SALES_CATEGORIES,
     SettlementProfitLine,
@@ -671,8 +677,9 @@ class MonthlyFinancialCloseService:
     ) -> MonthlyFinancialCloseResult:
         output_dir = Path(output_root) / result.marketplace_id / result.month
         output_dir.mkdir(parents=True, exist_ok=True)
-        json_path = output_dir / "monthly_financial_close.json"
-        xlsx_path = output_dir / "monthly_financial_close.xlsx"
+        filename_base = f"monthly_financial_close_{result.month}"
+        json_path = output_dir / f"{filename_base}.json"
+        xlsx_path = output_dir / f"{filename_base}.xlsx"
         output_files = {"json": str(json_path), "xlsx": str(xlsx_path)}
         result_with_paths = result.with_output_files(output_files)
         json_path.write_text(
@@ -708,6 +715,15 @@ def month_to_date_range(month: str) -> tuple[date, date]:
 def build_monthly_financial_close_workbook(result: MonthlyFinancialCloseResult) -> Workbook:
     workbook = Workbook()
     workbook.remove(workbook.active)
+    add_bilingual_readme_sheet(
+        workbook,
+        title_en="Monthly Financial Close Report",
+        title_zh="月度财务结算报表",
+        period=result.month,
+        status=result.status,
+        scope_en="Settlement is the financial source of truth; operational data is context only.",
+        scope_zh="Settlement 是财务主口径；运营数据只用于解释和交叉校验。",
+    )
     _write_rows_sheet(workbook, "01_Summary", _summary_rows(result))
     _write_rows_sheet(
         workbook,
@@ -825,7 +841,12 @@ def _summary_rows(result: MonthlyFinancialCloseResult) -> list[dict[str, Any]]:
 
 
 def _metric_row(metric: str, value: Any, currency: str | None, notes: str) -> dict[str, Any]:
-    return {"metric": metric, "value": _xlsx_value(value), "currency": currency, "notes": notes}
+    return {
+        "metric": bilingual_metric_label(metric),
+        "value": _xlsx_value(value),
+        "currency": currency,
+        "notes": notes,
+    }
 
 
 def _metadata_rows(result: MonthlyFinancialCloseResult) -> list[dict[str, Any]]:
@@ -859,8 +880,8 @@ def _write_rows_sheet(
         headers = list(rows[0].keys())
     else:
         headers = ["message"]
-        rows = [{"message": "No rows"}]
-    sheet.append(headers)
+        rows = [{"message": "No rows / 无数据"}]
+    sheet.append([xlsx_header_label(header) for header in headers])
     for row in rows:
         sheet.append([_xlsx_value(row.get(header)) for header in headers])
     _format_sheet(sheet)

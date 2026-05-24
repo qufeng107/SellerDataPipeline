@@ -12,6 +12,12 @@ from typing import Any, Protocol
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 
+from seller_data_pipeline.services.report_bilingual import (
+    add_bilingual_readme_sheet,
+    bilingual_metric_label,
+    xlsx_header_label,
+)
+
 MONEY_QUANT = Decimal("0.01")
 RATIO_QUANT = Decimal("0.0001")
 ZERO = Decimal("0")
@@ -898,8 +904,10 @@ class WeeklyBusinessReviewService:
             / f"{result.week_start.isoformat()}_{result.week_end.isoformat()}"
         )
         output_dir.mkdir(parents=True, exist_ok=True)
-        json_path = output_dir / "weekly_business_review.json"
-        xlsx_path = output_dir / "weekly_business_review.xlsx"
+        period_key = f"{result.week_start.isoformat()}_{result.week_end.isoformat()}"
+        filename_base = f"weekly_business_review_{period_key}"
+        json_path = output_dir / f"{filename_base}.json"
+        xlsx_path = output_dir / f"{filename_base}.xlsx"
         result_with_files = result.with_output_files(
             {"json": str(json_path), "xlsx": str(xlsx_path)}
         )
@@ -919,6 +927,18 @@ def build_weekly_business_review_workbook(result: WeeklyBusinessReviewResult) ->
     workbook = Workbook()
     default = workbook.active
     workbook.remove(default)
+    add_bilingual_readme_sheet(
+        workbook,
+        title_en="Weekly Business Review",
+        title_zh="每周经营复盘",
+        period=f"{result.week_start.isoformat()}_{result.week_end.isoformat()}",
+        status=result.status,
+        scope_en=(
+            "Sales & Traffic and Orders drive weekly business metrics; "
+            "Settlement is finance context only."
+        ),
+        scope_zh="Sales & Traffic 和 Orders 用于周度经营指标；Settlement 仅作为财务参考。",
+    )
     _write_rows_sheet(workbook, "01_Executive_Summary", _summary_rows(result))
     _write_rows_sheet(
         workbook, "02_Daily_Trend", [row.to_dict() for row in result.daily_trend]
@@ -1029,11 +1049,11 @@ def _summary_rows(result: WeeklyBusinessReviewResult) -> list[dict[str, Any]]:
 
 def _sales_traffic_rows(result: WeeklyBusinessReviewResult) -> list[dict[str, Any]]:
     rows = [
-        {"metric": key, "value": value, "period": "current_week"}
+        {"metric": bilingual_metric_label(key), "value": value, "period": "current_week"}
         for key, value in result.sales_traffic_summary.to_dict().items()
     ]
     rows.extend(
-        {"metric": key, "value": value, "period": "previous_week"}
+        {"metric": bilingual_metric_label(key), "value": value, "period": "previous_week"}
         for key, value in result.previous_sales_traffic_summary.to_dict().items()
     )
     return rows
@@ -1041,11 +1061,11 @@ def _sales_traffic_rows(result: WeeklyBusinessReviewResult) -> list[dict[str, An
 
 def _ads_overview_rows(result: WeeklyBusinessReviewResult) -> list[dict[str, Any]]:
     rows = [
-        {"section": "summary", "metric": key, "value": value}
+        {"section": "summary", "metric": bilingual_metric_label(key), "value": value}
         for key, value in result.ads_summary.to_dict().items()
     ]
     rows.extend(
-        {"section": "previous_summary", "metric": key, "value": value}
+        {"section": "previous_summary", "metric": bilingual_metric_label(key), "value": value}
         for key, value in result.previous_ads_summary.to_dict().items()
     )
     rows.append({"section": "", "metric": "", "value": ""})
@@ -1065,7 +1085,12 @@ def _metadata_rows(result: WeeklyBusinessReviewResult) -> list[dict[str, Any]]:
 
 
 def _metric_row(metric: str, value: Any, currency: str | None, notes: str) -> dict[str, Any]:
-    return {"metric": metric, "value": _xlsx_value(value), "currency": currency, "notes": notes}
+    return {
+        "metric": bilingual_metric_label(metric),
+        "value": _xlsx_value(value),
+        "currency": currency,
+        "notes": notes,
+    }
 
 
 def _flatten_sku_row(row: SkuPerformanceRow) -> dict[str, Any]:
@@ -1079,8 +1104,8 @@ def _flatten_sku_row(row: SkuPerformanceRow) -> dict[str, Any]:
 def _write_rows_sheet(workbook: Workbook, title: str, rows: Sequence[Mapping[str, Any]]) -> None:
     sheet = workbook.create_sheet(title)
     if not rows:
-        sheet.append(["message"])
-        sheet.append(["No rows"])
+        sheet.append([xlsx_header_label("message")])
+        sheet.append(["No rows / 无数据"])
         _format_sheet(sheet)
         return
     headers = list(rows[0].keys())
@@ -1088,7 +1113,7 @@ def _write_rows_sheet(workbook: Workbook, title: str, rows: Sequence[Mapping[str
         for key in row.keys():
             if key not in headers:
                 headers.append(key)
-    sheet.append(headers)
+    sheet.append([xlsx_header_label(header) for header in headers])
     for row in rows:
         sheet.append([_xlsx_value(row.get(header)) for header in headers])
     _format_sheet(sheet)
@@ -2166,8 +2191,8 @@ def _date_set(start_date: date, end_date: date) -> set[date]:
 
 
 def _validate_week_start(week_start: date) -> None:
-    if week_start.weekday() != 0:
-        raise ValueError("week_start must be a Monday")
+    if week_start.weekday() not in {0, 5}:
+        raise ValueError("week_start must be a Monday or Saturday")
 
 
 def parse_week_start(value: str) -> date:

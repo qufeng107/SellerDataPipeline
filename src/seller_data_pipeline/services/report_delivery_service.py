@@ -128,6 +128,8 @@ class ReportDeliveryPackService:
         target_dir.mkdir(parents=True, exist_ok=True)
         attachments_dir = target_dir / "attachments"
         if copy_attachments:
+            if attachments_dir.exists():
+                shutil.rmtree(attachments_dir)
             attachments_dir.mkdir(parents=True, exist_ok=True)
         attachments: list[AttachmentSpec] = []
         attachments.append(

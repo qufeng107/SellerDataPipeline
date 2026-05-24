@@ -28,9 +28,9 @@ def test_monthly_template_renders_core_metrics() -> None:
 
     draft = get_template("monthly_financial_close").render(report, audience="shareholders")
 
-    assert "[Monthly Close]" in draft.subject
+    assert "[月结 Monthly Close]" in draft.subject
     assert "Profit USD 777.29" in draft.subject
-    assert "Settlement net amount" in draft.body_text
+    assert "Settlement净额 / Settlement net amount" in draft.body_text
     assert "USD 1,853.15" in draft.body_html
 
 
@@ -65,9 +65,9 @@ def test_weekly_business_template_renders_core_metrics() -> None:
 
     draft = get_template("weekly_business_review").render(report, audience="operations")
 
-    assert "[Weekly Business Review]" in draft.subject
+    assert "[周经营 WBR]" in draft.subject
     assert "Sales USD 602.38" in draft.subject
-    assert "Contribution after ads" in draft.body_text
+    assert "扣广告后贡献利润 / Contribution after ads" in draft.body_text
     assert "17.43%" in draft.body_html
 
 
@@ -102,7 +102,7 @@ def test_weekly_ads_template_renders_action_counts() -> None:
 
     draft = get_template("weekly_ads_optimization").render(report, audience="ads_operator")
 
-    assert "[Ads Optimization]" in draft.subject
+    assert "[广告优化 Ads Optimization]" in draft.subject
     assert "ACOS 38.05%" in draft.subject
-    assert "Action candidate" in draft.body_text
-    assert "Do not auto-apply" in draft.body_html
+    assert "动作候选" in draft.body_text
+    assert "不要自动执行" in draft.body_html

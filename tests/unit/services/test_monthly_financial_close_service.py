@@ -191,12 +191,13 @@ def test_write_report_files_creates_json_and_xlsx(tmp_path: Path) -> None:
     written = MonthlyFinancialCloseService().write_report_files(result=result, output_root=tmp_path)
 
     assert set(written.output_files) == {"json", "xlsx"}
-    json_path = tmp_path / "ATVPDKIKX0DER/2026-03/monthly_financial_close.json"
-    xlsx_path = tmp_path / "ATVPDKIKX0DER/2026-03/monthly_financial_close.xlsx"
+    json_path = tmp_path / "ATVPDKIKX0DER/2026-03/monthly_financial_close_2026-03.json"
+    xlsx_path = tmp_path / "ATVPDKIKX0DER/2026-03/monthly_financial_close_2026-03.xlsx"
     assert json_path.exists()
     assert xlsx_path.exists()
     workbook = load_workbook(xlsx_path, read_only=True)
     assert workbook.sheetnames == [
+        "00_Readme_说明",
         "01_Summary",
         "02_Settlement_Buckets",
         "03_Amount_Categories",
@@ -228,7 +229,7 @@ def test_run_uses_repo_and_writes_report(tmp_path: Path) -> None:
         "promotion",
         "reimbursement",
     ]
-    assert result.output_files["xlsx"].endswith("monthly_financial_close.xlsx")
+    assert result.output_files["xlsx"].endswith("monthly_financial_close_2026-03.xlsx")
 
 
 def _settlement_row(

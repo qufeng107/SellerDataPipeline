@@ -1,7 +1,7 @@
 # SellerDataPipeline 当前真实数据库 Schema Spec
 
-> 文档版本：v1.14  
-> 更新日期：2026-05-23  
+> 文档版本：v1.15  
+> 更新日期：2026-05-24  
 > 文档定位：**当前真实实现记录**。本文件只记录已经在 Azure SQL `amazon_ops` 执行成功的表、字段、索引与数据来源；不写未来设计。设计变更请先更新对应的 `docs/features/feature_*.md` 或 `docs/data_access/*.md`；如涉及库结构变化，先对比本文件，再新增 migration；migration 执行成功后优先运行 `scripts/export_database_schema_spec.py` 导出 live schema snapshot，再更新本文件。
 
 ## 1. 当前数据库状态
@@ -10,23 +10,23 @@
 |---|---|
 | Azure SQL database | `amazon_ops` |
 | Server | `amazon-ops-sql` |
-| 已执行 migration | `001_create_core_tables.sql` 29/29 batches；`002_create_indexes.sql` 54/54 batches；`003_add_listing_snapshot_business_key_hash.sql` 3/3 batches；`004_add_inventory_daily_business_key_hash.sql` 3/3 batches；`005_add_sales_traffic_business_key_hashes.sql` 5/5 batches；`006_add_settlement_transaction_business_key.sql` 4/4 batches；`007_add_order_item_business_key.sql` 4/4 batches；`008_add_fba_reimbursement_business_key.sql` 4/4 batches；`009_add_fba_fee_preview_business_key.sql` 4/4 batches；`010_add_promotion_coupon_business_keys.sql` 8/8 batches；`011_add_inventory_ledger_business_keys.sql` 4/4 batches；`012_create_ingestion_job_config.sql` 4/4 batches；`001_seed_ingestion_job_config_core_jobs.sql` 1/1 batch；`013_create_report_email_recipient_config.sql` 3/3 batches；`003_seed_report_email_recipient_config_initial.sql` 2/2 batches |
-| 用户表数量 | 30 |
+| 已执行 migration | `001_create_core_tables.sql` 29/29 batches；`002_create_indexes.sql` 54/54 batches；`003_add_listing_snapshot_business_key_hash.sql` 3/3 batches；`004_add_inventory_daily_business_key_hash.sql` 3/3 batches；`005_add_sales_traffic_business_key_hashes.sql` 5/5 batches；`006_add_settlement_transaction_business_key.sql` 4/4 batches；`007_add_order_item_business_key.sql` 4/4 batches；`008_add_fba_reimbursement_business_key.sql` 4/4 batches；`009_add_fba_fee_preview_business_key.sql` 4/4 batches；`010_add_promotion_coupon_business_keys.sql` 8/8 batches；`011_add_inventory_ledger_business_keys.sql` 4/4 batches；`012_create_ingestion_job_config.sql` 4/4 batches；`001_seed_ingestion_job_config_core_jobs.sql` 1/1 batch；`013_create_report_email_recipient_config.sql` 3/3 batches；`003_seed_report_email_recipient_config_initial.sql` 2/2 batches；`014_create_pipeline_artifact_store.sql` 5/5 batches |
+| 用户表数量 | 31 |
 | 已真实入库验证 | Amazon Ads 4 张 SP 日表，首次 inserted=200、重复执行 inserted=0/updated=200；Listing 快照表首次 inserted=6、重复执行 inserted=0/updated=6；Inventory 快照表首次 inserted=5、重复执行 inserted=0/updated=5；Sales & Traffic 首次 inserted=7、重复执行 inserted=0/updated=7；Settlement 首次 inserted=4911、重复执行 inserted=0/updated=4911；Orders 首次 inserted=112、重复执行 inserted=0/updated=112；FBA Reimbursements 首次 inserted=19、重复执行 inserted=0/updated=19；FBA Fee Preview 首次 inserted=8、重复执行 inserted=0/updated=8；Promotion/Coupon 首次 inserted=10、重复执行 inserted=0/updated=10；Inventory Ledger 首次 inserted=357、重复执行 inserted=0/updated=357 |
 | 当前限制 | `amazon_sync_run_log` 尚无 rows_inserted / rows_updated 字段；normalized 表当前 `source_raw_file_id` 仍可能为 NULL；`pipeline_job_config` 已创建并 seed 13 条任务配置，其中利润、周报、邮件任务仍是 disabled placeholder，待功能实现后再启用；`report_email_recipient_config` 已创建并 seed 3 条全局收件人路由 |
 
 ## 1.1 最新执行记录
 
-`013_create_report_email_recipient_config.sql` 已在 Azure SQL `amazon_ops` 执行成功，执行结果为 3/3 batches。随后 `sql/seeds/003_seed_report_email_recipient_config_initial.sql` 已执行成功，执行结果为 2/2 batches。
+`014_create_pipeline_artifact_store.sql` 已在 Azure SQL `amazon_ops` 执行成功，执行结果为 5/5 batches。随后已运行 `scripts/export_database_schema_spec.py` 导出 live schema snapshot。
 
 最新 live schema 已导出到：
 
 ```text
-runtime/schema_exports/azure_sql_schema_20260523_213026.json
-runtime/schema_exports/azure_sql_schema_20260523_213026.md
+runtime/schema_exports/azure_sql_schema_20260524_003605.json
+runtime/schema_exports/azure_sql_schema_20260524_003605.md
 ```
 
-导出结果显示当前用户表数量为 30，`report_email_recipient_config` 已存在，初始 seed 使用 `*/*/to` 全局路由配置 3 个收件人。
+导出结果显示当前用户表数量为 31，`pipeline_artifact_store` 已存在。该表用于 free-first 自动化 profile 下的跨 job 文件持久化，不承载 normalized 业务事实，不保存 secrets。
 
 ## 1.2 Schema 更新辅助工具
 
@@ -71,6 +71,7 @@ python scripts/export_database_schema_spec.py --output-prefix after_NNN_xxx --in
 | `amazon_sku_cost` | 成本配置 | 手工维护/会计成本输入 | SKU 采购、头程、包装等单位成本。 |
 | `amazon_sync_run_log` | 审计控制 | 所有采集/解析/入库任务 | 任务运行状态、行数、耗时、错误信息。 |
 | `pipeline_job_config` | 任务配置 | 手动 seed / 未来自动化配置 | 数据下载、入库、加工、报表和邮件任务的周期、脚本路径、默认参数和执行阶段。 |
+| `pipeline_artifact_store` | 自动化 artifact store | 本地/容器化 pipeline 文件产物 | free-first 自动化下存放压缩后的 manifest、raw report、报表 JSON/XLSX、delivery pack 等跨 job 文件；不保存 secrets，不作为业务事实源。 |
 | `report_email_recipient_config` | 邮件收件人路由配置 | 手动 seed / 后续后台维护 | 报表类型 + audience -> to/cc/bcc 收件人路由；不保存 SMTP 密码。 |
 
 ## 3. 索引清单
@@ -148,6 +149,10 @@ python scripts/export_database_schema_spec.py --output-prefix after_NNN_xxx --in
 | `pipeline_job_config` | `IX_pipeline_job_config_enabled_phase` | 否 | `enabled, execution_phase, job_group, manual_run_order` | `` |
 | `pipeline_job_config` | `IX_pipeline_job_config_marketplace_domain` | 否 | `marketplace_id, data_domain, job_group` | `` |
 | `pipeline_job_config` | `UX_pipeline_job_config_job_key` | 是 | `job_key` | `` |
+| `pipeline_artifact_store` | `IX_pipeline_artifact_store_expiry_active` | 否 | `expires_at` | `([is_deleted]=(0) AND [expires_at] IS NOT NULL)` |
+| `pipeline_artifact_store` | `IX_pipeline_artifact_store_scope_path_created` | 否 | `artifact_scope, relative_path, created_at DESC` | `` |
+| `pipeline_artifact_store` | `IX_pipeline_artifact_store_scope_type_created` | 否 | `artifact_scope, artifact_type, created_at DESC` | `` |
+| `pipeline_artifact_store` | `UX_pipeline_artifact_store_scope_path_hash_active` | 是 | `artifact_scope, relative_path, content_sha256` | `([is_deleted]=(0))` |
 | `report_email_recipient_config` | `IX_report_email_recipient_config_lookup` | 否 | `enabled, report_type, audience, recipient_type, sort_order` | `` |
 | `report_email_recipient_config` | `UX_report_email_recipient_config_active_route` | 是 | `report_type, audience, recipient_type, email` | `([enabled]=(1))` |
 
@@ -1365,6 +1370,35 @@ python scripts/export_database_schema_spec.py --output-prefix after_NNN_xxx --in
 | `created_at` | `DATETIME2(7)` | NOT NULL | `(sysutcdatetime())` | 数据库记录创建时间 UTC。 |
 | `updated_at` | `DATETIME2(7)` | NOT NULL | `(sysutcdatetime())` | 数据库记录最后更新时间 UTC。 |
 
+### 4.31 `pipeline_artifact_store`
+
+- 数据来源：自动化 wrapper / artifact save-restore 服务
+- 表用途：在 free-first 自动化 profile 下，替代 Azure Files 作为跨 Azure Container Apps Jobs execution 的小型文件持久化层。
+- 当前索引：`UX_pipeline_artifact_store_scope_path_hash_active`(artifact_scope, relative_path, content_sha256, unique, is_deleted=0)；`IX_pipeline_artifact_store_scope_type_created`(artifact_scope, artifact_type, created_at DESC)；`IX_pipeline_artifact_store_scope_path_created`(artifact_scope, relative_path, created_at DESC)；`IX_pipeline_artifact_store_expiry_active`(expires_at, is_deleted=0 and expires_at is not null)
+- 当前说明：该表只保存 pipeline 文件产物的 gzip 压缩字节和 metadata，用于 job 间交接、审计和人工排查；不保存 SMTP 密码、SP-API refresh token、Ads token、数据库密码或 `.env`。
+- 当前保留策略：由 artifact service 写入 `expires_at`，后续通过 `scripts/manage_pipeline_artifacts.py prune --execute` 软删除或清理。
+- 当前行数：`0`（migration 014 执行后尚未完成 artifact smoke test）。
+
+| 字段 | 类型 | 可空 | 默认值 | 字段说明 |
+|---|---|---|---|---|
+| `id` | `BIGINT` | NOT NULL | `` | 数据库自增主键。 |
+| `artifact_type` | `NVARCHAR(80)` | NOT NULL | `` | artifact 类型，例如 `report_request_manifest`、`raw_report`、`analysis_report`、`delivery_pack`、`send_result`。 |
+| `artifact_scope` | `NVARCHAR(200)` | NOT NULL | `` | artifact 所属业务范围，例如 `weekly:ATVPDKIKX0DER:3917953989967300:2026-05-16_2026-05-22`。 |
+| `relative_path` | `NVARCHAR(600)` | NOT NULL | `` | artifact 在项目内的相对路径，用于 restore 到本地/容器文件系统。 |
+| `content_type` | `NVARCHAR(120)` | NULL | `` | MIME type 或文件类型提示，例如 `application/json`、`application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`。 |
+| `content_encoding` | `NVARCHAR(40)` | NOT NULL | `('gzip')` | 内容压缩编码；当前只允许 `gzip`。 |
+| `content_sha256` | `CHAR(64)` | NOT NULL | `` | 原始内容 SHA-256，用于去重、完整性校验和审计。 |
+| `content_size_bytes` | `BIGINT` | NOT NULL | `` | 原始文件大小 bytes。 |
+| `compressed_size_bytes` | `BIGINT` | NOT NULL | `` | gzip 后大小 bytes，用于监控 SQL storage 使用。 |
+| `content_bytes` | `VARBINARY(MAX)` | NOT NULL | `` | gzip 压缩后的文件二进制内容。 |
+| `metadata_json` | `NVARCHAR(MAX)` | NULL | `` | 可选 metadata，受 `ISJSON` check constraint 约束。 |
+| `created_at` | `DATETIME2(7)` | NOT NULL | `(sysutcdatetime())` | 数据库记录创建时间 UTC。 |
+| `updated_at` | `DATETIME2(7)` | NOT NULL | `(sysutcdatetime())` | 数据库记录最后更新时间 UTC。 |
+| `expires_at` | `DATETIME2(7)` | NULL | `` | artifact 过期时间；用于后续 prune。 |
+| `archived_at` | `DATETIME2(7)` | NULL | `` | 归档/软删除时间。 |
+| `is_deleted` | `BIT` | NOT NULL | `((0))` | 软删除标记；`1` 表示不再参与 active restore/list。 |
+
+
 ## 6. 当前已准备但尚未执行的 migration
 
-当前无已准备但未执行的 migration。后续新增结构变更从 `014_xxx.sql` 开始。
+当前无已准备但未执行的 migration。后续新增结构变更从 `015_xxx.sql` 开始。
