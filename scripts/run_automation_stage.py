@@ -62,6 +62,16 @@ def main() -> None:
     )
     parser.add_argument("--force-resend", action="store_true", help="Pass --force-resend to sender.")
     parser.add_argument(
+        "--email-to",
+        action="append",
+        default=None,
+        help=(
+            "Temporary report email recipient override for report_delivery. "
+            "Repeatable; comma-separated values are also accepted. Example: "
+            "--email-to feng@cuidena.cn"
+        ),
+    )
+    parser.add_argument(
         "--skip-artifact-store",
         action="store_true",
         help="Run commands without DB artifact restore/save. Useful for local troubleshooting only.",
@@ -113,6 +123,7 @@ def main() -> None:
         month=args.month,
         send_email=args.send_email,
         force_resend=args.force_resend,
+        email_to=_split_email_values(args.email_to),
     )
 
     started_at = datetime.now(tz=UTC)
@@ -177,6 +188,18 @@ def main() -> None:
     finally:
         if connection_ctx is not None:
             connection_ctx.__exit__(None, None, None)
+
+
+def _split_email_values(values: list[str] | None) -> tuple[str, ...]:
+    if not values:
+        return ()
+    emails: list[str] = []
+    for value in values:
+        for item in value.split(","):
+            email = item.strip()
+            if email:
+                emails.append(email)
+    return tuple(dict.fromkeys(emails))
 
 
 if __name__ == "__main__":

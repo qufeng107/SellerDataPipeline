@@ -5,6 +5,25 @@
 
 ---
 
+
+## 0. 当前落地清单
+
+Azure Container Apps Jobs 尚未开通。开通和配置步骤见：
+
+```text
+docs/operations/azure_container_apps_jobs_setup_checklist.md
+```
+
+当前代码已支持：
+
+```text
+run_automation_stage.py --email-to feng@cuidena.cn
+```
+
+该参数只在 `report_delivery` 阶段透传到 `send_report_email.py --to ...`，用于云端 smoke test 时临时只发给自己；稳定后去掉该参数，恢复数据库收件人路由。
+
+---
+
 ## 1. 总原则
 
 自动化只调度已经人工验证过的 CLI，不改变数据口径。

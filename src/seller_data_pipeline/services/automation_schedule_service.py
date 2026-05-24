@@ -75,6 +75,7 @@ class AutomationScheduleService:
         month: str | None = None,
         send_email: bool = False,
         force_resend: bool = False,
+        email_to: tuple[str, ...] = (),
     ) -> tuple[AutomationCommand, ...]:
         if workflow == "weekly":
             window = weekly_automation_window(reference_date, week_start=week_start)
@@ -85,6 +86,7 @@ class AutomationScheduleService:
                 profile_id=profile_id,
                 send_email=send_email,
                 force_resend=force_resend,
+                email_to=email_to,
             )
         if workflow == "monthly":
             window = monthly_automation_window(reference_date, month=month)
@@ -95,6 +97,7 @@ class AutomationScheduleService:
                 profile_id=profile_id,
                 send_email=send_email,
                 force_resend=force_resend,
+                email_to=email_to,
             )
         raise ValueError(f"Unsupported workflow: {workflow}")
 
@@ -198,6 +201,7 @@ def _weekly_commands(
     profile_id: str | None,
     send_email: bool,
     force_resend: bool,
+    email_to: tuple[str, ...] = (),
 ) -> tuple[AutomationCommand, ...]:
     if phase == "submit":
         commands = [
@@ -234,13 +238,25 @@ def _weekly_commands(
                 _weekly_business_json_path(marketplace_id, window),
                 "operations",
             ),
-            _send_pack(_weekly_business_pack_path(marketplace_id, profile_id, window), "operations", send_email, force_resend),
+            _send_pack(
+                _weekly_business_pack_path(marketplace_id, profile_id, window),
+                "operations",
+                send_email,
+                force_resend,
+                email_to=email_to,
+            ),
             _report_weekly_ads(marketplace_id, profile_id, week_start),
             _delivery_pack(
                 _weekly_ads_json_path(profile_id, window),
                 "ads_operator",
             ),
-            _send_pack(_weekly_ads_pack_path(marketplace_id, profile_id, window), "ads_operator", send_email, force_resend),
+            _send_pack(
+                _weekly_ads_pack_path(marketplace_id, profile_id, window),
+                "ads_operator",
+                send_email,
+                force_resend,
+                email_to=email_to,
+            ),
         )
     raise ValueError(f"Unsupported phase: {phase}")
 
@@ -253,6 +269,7 @@ def _monthly_commands(
     profile_id: str | None,
     send_email: bool,
     force_resend: bool,
+    email_to: tuple[str, ...] = (),
 ) -> tuple[AutomationCommand, ...]:
     if phase == "submit":
         commands = [
@@ -289,7 +306,13 @@ def _monthly_commands(
         return (
             _report_monthly_close(marketplace_id, profile_id, window.month),
             _delivery_pack(_monthly_close_json_path(marketplace_id, window), "shareholders"),
-            _send_pack(_monthly_close_pack_path(marketplace_id, profile_id, window), "shareholders", send_email, force_resend),
+            _send_pack(
+                _monthly_close_pack_path(marketplace_id, profile_id, window),
+                "shareholders",
+                send_email,
+                force_resend,
+                email_to=email_to,
+            ),
         )
     raise ValueError(f"Unsupported phase: {phase}")
 
@@ -439,7 +462,14 @@ def _delivery_pack(report_json: str, audience: str) -> AutomationCommand:
     )
 
 
-def _send_pack(pack_dir: str, audience: str, send_email: bool, force_resend: bool) -> AutomationCommand:
+def _send_pack(
+    pack_dir: str,
+    audience: str,
+    send_email: bool,
+    force_resend: bool,
+    *,
+    email_to: tuple[str, ...] = (),
+) -> AutomationCommand:
     argv = [
         "scripts/send_report_email.py",
         "--delivery-pack",
@@ -450,6 +480,8 @@ def _send_pack(pack_dir: str, audience: str, send_email: bool, force_resend: boo
     ]
     if force_resend:
         argv.append("--force-resend")
+    for email in email_to:
+        argv.extend(["--to", email])
     return _command(f"{'Send' if send_email else 'Validate'} report email for {audience}", tuple(argv), writes=send_email)
 
 

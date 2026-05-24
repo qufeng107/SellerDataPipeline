@@ -138,6 +138,26 @@ Promotion/Coupon sampling
 
 ---
 
+
+### 2.2 Email recipient override for cloud smoke tests
+
+`run_automation_stage.py` supports a report-delivery-only recipient override:
+
+```powershell
+python scripts/run_automation_stage.py --workflow weekly --phase report_delivery --marketplace-id ATVPDKIKX0DER --profile-id 3917953989967300 --execute --send-email --email-to feng@cuidena.cn
+```
+
+Rules:
+
+```text
+1. `--email-to` is repeatable and also accepts comma-separated values.
+2. It is passed through to `send_report_email.py --to ...`.
+3. It is intended for Azure manual job smoke tests.
+4. Once cloud jobs are stable, remove it so DB recipient routing controls recipients.
+```
+
+---
+
 ## 3. 为什么仍选择 Azure Container Apps Jobs
 
 当前项目是 Python CLI + ODBC + Amazon asynchronous report + 本地 runtime/report files 的批处理管道。第一版自动化更适合使用 Azure Container Apps Jobs，而不是把所有逻辑改造成 GitHub Actions schedule 或 Azure Functions。

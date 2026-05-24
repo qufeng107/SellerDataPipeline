@@ -1,0 +1,54 @@
+name: Build GHCR image
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "Dockerfile"
+      - "requirements.txt"
+      - "src/**"
+      - "scripts/**"
+      - "sql/**"
+      - ".github/workflows/build-ghcr-image.yml"
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build-ghcr:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set image name
+        id: image
+        shell: bash
+        run: |
+          IMAGE="ghcr.io/${GITHUB_REPOSITORY_OWNER}/seller-data-pipeline"
+          IMAGE="$(echo "$IMAGE" | tr '[:upper:]' '[:lower:]')"
+          echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
+          echo "sha_tag=$IMAGE:${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+          echo "latest_tag=$IMAGE:latest" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Build image
+        run: |
+          docker build \
+            -t "${{ steps.image.outputs.sha_tag }}" \
+            -t "${{ steps.image.outputs.latest_tag }}" \
+            .
+
+      - name: Push image
+        run: |
+          docker push "${{ steps.image.outputs.sha_tag }}"
+          docker push "${{ steps.image.outputs.latest_tag }}"
+
+      - name: Print image reference
+        run: |
+          echo "Pushed: ${{ steps.image.outputs.sha_tag }}"
+          echo "Latest: ${{ steps.image.outputs.latest_tag }}"

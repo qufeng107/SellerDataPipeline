@@ -13,6 +13,7 @@
 | `historical_backfill_workflow.md` | 按明确日期范围分段提交 SP-API / Ads 历史补数请求，替代人工倒推 `--days`。 |
 | `manual_refresh_plan_workflow.md` | 标准“简单几个指令定期下载所有数据入库”流程，定义 `core_rolling` / `weekly_full` plan 和 submit/collect/ingest/audit phase。 |
 | `azure_container_apps_jobs_workflow.md` | Azure Container Apps Jobs 自动化 runbook；按数据下载、数据入库、报表与发送三阶段迁移手动流程。 |
+| `azure_container_apps_jobs_setup_checklist.md` | Azure Container Apps Jobs 开通、GHCR 镜像、环境变量/secrets、manual job 命令和 schedule 的落地清单。 |
 
 ## 当前原则
 

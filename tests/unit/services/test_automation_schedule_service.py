@@ -69,3 +69,40 @@ def test_weekly_report_delivery_commands_use_date_stamped_report_json_paths() ->
         "weekly_ads_optimization_2026-05-16_2026-05-22.json"
         in printable
     )
+
+
+def test_weekly_report_delivery_commands_pass_email_to_override() -> None:
+    commands = AutomationScheduleService().build_commands(
+        workflow="weekly",
+        phase="report_delivery",
+        marketplace_id="ATVPDKIKX0DER",
+        profile_id="3917953989967300",
+        reference_date=date(2026, 5, 25),
+        send_email=True,
+        force_resend=True,
+        email_to=("feng@cuidena.cn",),
+    )
+
+    send_commands = [command for command in commands if command.argv[0] == "scripts/send_report_email.py"]
+    assert len(send_commands) == 2
+    for command in send_commands:
+        assert "--execute" in command.argv
+        assert "--force-resend" in command.argv
+        assert "--to" in command.argv
+        assert "feng@cuidena.cn" in command.argv
+
+
+def test_monthly_report_delivery_commands_pass_email_to_override() -> None:
+    commands = AutomationScheduleService().build_commands(
+        workflow="monthly",
+        phase="report_delivery",
+        marketplace_id="ATVPDKIKX0DER",
+        profile_id="3917953989967300",
+        reference_date=date(2026, 5, 3),
+        send_email=True,
+        email_to=("feng@cuidena.cn", "ops@example.com"),
+    )
+
+    printable = "\n".join(command.printable() for command in commands)
+    assert "--to feng@cuidena.cn" in printable
+    assert "--to ops@example.com" in printable

@@ -1,7 +1,7 @@
 # SellerDataPipeline 当前进展与下一步计划
 
 > 更新时间：2026-05-24  
-> 当前版本：v1.72 Automation artifact store + local wrapper implemented  
+> 当前版本：v1.73 Automation email override + Azure Jobs setup checklist  
 > 文档定位：记录项目真实进展、已完成里程碑、当前非阻塞问题和下一步开发顺序。本文不承载详细字段设计；功能细节见 `docs/features/`。
 
 ## 1. 当前一句话状态
@@ -20,7 +20,9 @@
 -> SMTP 邮件发送已实现并通过真实邮件验收
 -> 中英文双语 Report Delivery 已实现
 -> Azure Container Apps Jobs 自动化设计已修订为 free-first profile（GHCR + Azure SQL artifact store，v1 不用 Azure Files/ACR）
--> pipeline_artifact_store migration + artifact save/restore service + run_automation_stage.py 本地 wrapper 已实现，待执行 migration 014 后验证
+-> pipeline_artifact_store migration + artifact save/restore service + run_automation_stage.py 本地 wrapper 已实现并完成本地 weekly smoke test
+-> report_delivery 支持 --email-to 云端 smoke test 覆盖收件人
+-> Dockerfile 已支持 Microsoft ODBC Driver 18，已新增 GHCR image build workflow 和 Azure Container Apps Jobs setup checklist
 ```
 
 ## 2. 已完成真实入库闭环
@@ -268,3 +270,23 @@ Report generators now write date-stamped JSON/XLSX filenames so downloaded email
 - `weekly_ads_optimization_{week_start}_{week_end}.json` / `.xlsx`
 
 The report directory structure is unchanged. Report Delivery uses `output_files.xlsx` from the JSON, so email attachments inherit the date-stamped workbook filename. Automation schedule helpers were updated to point to the new date-stamped JSON paths.
+
+
+## 15. Azure Jobs 下一步
+
+下一步进入云端 manual job smoke test：
+
+```text
+1. 手动触发 GitHub Actions: Build GHCR image。
+2. 在 Azure Portal 创建 Container Apps Environment。
+3. 开启 Azure SQL Allow Azure services firewall rule。
+4. 创建 weekly submit / collect_ingest / report_delivery manual jobs。
+5. report_delivery 第一轮使用 --email-to feng@cuidena.cn，只发给自己。
+6. 成功后再启用 schedule，并恢复 DB recipient routing。
+```
+
+详细清单见：
+
+```text
+docs/operations/azure_container_apps_jobs_setup_checklist.md
+```
