@@ -1,7 +1,7 @@
 # SellerDataPipeline 当前进展与下一步计划
 
 > 更新时间：2026-05-24  
-> 当前版本：v1.73 Automation email override + Azure Jobs setup checklist  
+> 当前版本：v1.72 Automation artifact store + local wrapper implemented  
 > 文档定位：记录项目真实进展、已完成里程碑、当前非阻塞问题和下一步开发顺序。本文不承载详细字段设计；功能细节见 `docs/features/`。
 
 ## 1. 当前一句话状态
@@ -20,9 +20,7 @@
 -> SMTP 邮件发送已实现并通过真实邮件验收
 -> 中英文双语 Report Delivery 已实现
 -> Azure Container Apps Jobs 自动化设计已修订为 free-first profile（GHCR + Azure SQL artifact store，v1 不用 Azure Files/ACR）
--> pipeline_artifact_store migration + artifact save/restore service + run_automation_stage.py 本地 wrapper 已实现并完成本地 weekly smoke test
--> report_delivery 支持 --email-to 云端 smoke test 覆盖收件人
--> Dockerfile 已支持 Microsoft ODBC Driver 18，已新增 GHCR image build workflow 和 Azure Container Apps Jobs setup checklist
+-> pipeline_artifact_store migration + artifact save/restore service + run_automation_stage.py 本地 wrapper 已实现，待执行 migration 014 后验证
 ```
 
 ## 2. 已完成真实入库闭环
@@ -271,22 +269,19 @@ Report generators now write date-stamped JSON/XLSX filenames so downloaded email
 
 The report directory structure is unchanged. Report Delivery uses `output_files.xlsx` from the JSON, so email attachments inherit the date-stamped workbook filename. Automation schedule helpers were updated to point to the new date-stamped JSON paths.
 
+## 14. GHCR branch strategy update
 
-## 15. Azure Jobs 下一步
-
-下一步进入云端 manual job smoke test：
-
-```text
-1. 手动触发 GitHub Actions: Build GHCR image。
-2. 在 Azure Portal 创建 Container Apps Environment。
-3. 开启 Azure SQL Allow Azure services firewall rule。
-4. 创建 weekly submit / collect_ingest / report_delivery manual jobs。
-5. report_delivery 第一轮使用 --email-to feng@cuidena.cn，只发给自己。
-6. 成功后再启用 schedule，并恢复 DB recipient routing。
-```
-
-详细清单见：
+已将 GHCR 镜像构建策略冻结为：
 
 ```text
-docs/operations/azure_container_apps_jobs_setup_checklist.md
+dev  -> ghcr.io/<owner>/seller-data-pipeline:dev
+main -> ghcr.io/<owner>/seller-data-pipeline:latest and :main
+sha  -> ghcr.io/<owner>/seller-data-pipeline:<git-sha>
 ```
+
+下一步：
+
+1. push 到 dev，确认 `:dev` 镜像构建成功。
+2. 用 `:dev` 创建/验证第一个 manual Azure Container Apps Job。
+3. 合并到 main 后，由 `:latest` 作为正式 job 镜像。
+4. 等 manual jobs 全部跑通后，再新增 main-only deploy workflow 自动更新 Azure jobs。

@@ -37,6 +37,49 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Normalize image name
+        id: image
+        shell: bash
+        run: |
+          IMAGE="$(echo "${IMAGE_NAME}" | tr '[:upper:]' '[:lower:]')"
+          SHORT_SHA="${GITHUB_SHA::12}"
+          echo "image=${IMAGE}" >> "$GITHUB_OUTPUT"
+          echo "short_sha=${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+
+      - name: Compute image tags
+        id: tags
+        shell: bash
+        run: |
+          IMAGE="${{ steps.image.outputs.image }}"
+          SHORT_SHA="${{ steps.image.outputs.short_sha }}"
+
+          if [[ "${GITHUB_REF_NAME}" == "main" ]]; then
+            {
+              echo "tags<<EOF"
+              echo "${IMAGE}:latest"
+              echo "${IMAGE}:main"
+              echo "${IMAGE}:main-${SHORT_SHA}"
+              echo "${IMAGE}:${GITHUB_SHA}"
+              echo "EOF"
+            } >> "$GITHUB_OUTPUT"
+          elif [[ "${GITHUB_REF_NAME}" == "dev" ]]; then
+            {
+              echo "tags<<EOF"
+              echo "${IMAGE}:dev"
+              echo "${IMAGE}:dev-${SHORT_SHA}"
+              echo "${IMAGE}:${GITHUB_SHA}"
+              echo "EOF"
+            } >> "$GITHUB_OUTPUT"
+          else
+            SAFE_REF="$(echo "${GITHUB_REF_NAME}" | tr '/_' '--' | tr -cd '[:alnum:]-')"
+            {
+              echo "tags<<EOF"
+              echo "${IMAGE}:${SAFE_REF}-${SHORT_SHA}"
+              echo "${IMAGE}:${GITHUB_SHA}"
+              echo "EOF"
+            } >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -53,9 +96,7 @@ jobs:
           context: .
           file: ./Dockerfile
           push: true
-          tags: |
-            ${{ env.IMAGE_NAME }}:latest
-            ${{ env.IMAGE_NAME }}:${{ github.sha }}
+          tags: ${{ steps.tags.outputs.tags }}
           labels: |
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
             org.opencontainers.image.revision=${{ github.sha }}
@@ -64,6 +105,7 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Print image references
+        shell: bash
         run: |
-          echo "Pushed image: $IMAGE_NAME:latest"
-          echo "Pushed image: $IMAGE_NAME:${GITHUB_SHA}"
+          echo "Pushed image tags:"
+          printf '%s\n' "${{ steps.tags.outputs.tags }}"
