@@ -41,7 +41,9 @@ def main() -> None:
         )
     )
     parser.add_argument("--workflow", choices=["weekly", "monthly"], required=True)
-    parser.add_argument("--phase", choices=["submit", "collect_ingest", "report_delivery"], required=True)
+    parser.add_argument(
+        "--phase", choices=["submit", "collect_ingest", "report_delivery"], required=True
+    )
     parser.add_argument("--marketplace-id", default=None, help="Defaults to AMAZON_MARKETPLACE_ID.")
     parser.add_argument("--profile-id", default=None, help="Defaults to AMAZON_ADS_PROFILE_ID.")
     parser.add_argument(
@@ -54,13 +56,17 @@ def main() -> None:
         default=None,
         help="Weekly report period start Saturday, YYYY-MM-DD. Default: auto.",
     )
-    parser.add_argument("--month", default=None, help="Monthly report month YYYY-MM. Default: previous month.")
+    parser.add_argument(
+        "--month", default=None, help="Monthly report month YYYY-MM. Default: previous month."
+    )
     parser.add_argument(
         "--send-email",
         action="store_true",
         help="For report_delivery, actually send email. Without this, send step is dry-run.",
     )
-    parser.add_argument("--force-resend", action="store_true", help="Pass --force-resend to sender.")
+    parser.add_argument(
+        "--force-resend", action="store_true", help="Pass --force-resend to sender."
+    )
     parser.add_argument(
         "--email-to",
         action="append",
@@ -78,8 +84,12 @@ def main() -> None:
     )
     parser.add_argument("--expires-days", type=int, default=90, help="Artifact retention days.")
     parser.add_argument("--max-file-mb", type=int, default=20, help="Max artifact file size MB.")
-    parser.add_argument("--execute", action="store_true", help="Actually run commands and save artifacts.")
-    parser.add_argument("--continue-on-error", action="store_true", help="Run remaining commands after failures.")
+    parser.add_argument(
+        "--execute", action="store_true", help="Actually run commands and save artifacts."
+    )
+    parser.add_argument(
+        "--continue-on-error", action="store_true", help="Run remaining commands after failures."
+    )
     args = parser.parse_args()
 
     settings = get_settings()
@@ -88,7 +98,11 @@ def main() -> None:
     if not marketplace_id:
         raise SystemExit("Missing --marketplace-id or AMAZON_MARKETPLACE_ID.")
     profile_id = args.profile_id or settings.amazon_ads_profile_id
-    reference_date = date.fromisoformat(args.reference_date) if args.reference_date else datetime.now(tz=UTC).date()
+    reference_date = (
+        date.fromisoformat(args.reference_date)
+        if args.reference_date
+        else datetime.now(tz=UTC).date()
+    )
     week_start = date.fromisoformat(args.week_start) if args.week_start else None
 
     if args.workflow == "weekly":
@@ -110,7 +124,9 @@ def main() -> None:
             profile_id=profile_id,
             window=monthly_window,
         )
-        print(f"monthly_window=month={monthly_window.month} range={monthly_window.start}..{monthly_window.end}")
+        print(
+            f"monthly_window=month={monthly_window.month} range={monthly_window.start}..{monthly_window.end}"
+        )
 
     service = AutomationScheduleService()
     commands = service.build_commands(

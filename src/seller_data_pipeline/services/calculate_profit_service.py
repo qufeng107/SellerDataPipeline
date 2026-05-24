@@ -6,7 +6,7 @@ from collections import defaultdict
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date, datetime
-from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -176,9 +176,7 @@ class OperationalSummary:
             ads_sales_7d=_to_decimal(ads.get("ads_sales_7d")),
             ads_clicks=_optional_int(ads.get("ads_clicks")) or 0,
             ads_impressions=_optional_int(ads.get("ads_impressions")) or 0,
-            sales_traffic_units_ordered=(
-                _optional_int(sales_traffic.get("units_ordered")) or 0
-            ),
+            sales_traffic_units_ordered=(_optional_int(sales_traffic.get("units_ordered")) or 0),
             sales_traffic_ordered_sales_amount=_to_decimal(
                 sales_traffic.get("ordered_product_sales_amount")
             ),
@@ -238,9 +236,7 @@ class ProfitReportResult:
             "settlement_row_count": self.settlement_row_count,
             "settlement_net_amount": _decimal_to_string(self.settlement_net_amount),
             "internal_cogs": _decimal_to_string(self.internal_cogs),
-            "estimated_operating_profit": _decimal_to_string(
-                self.estimated_operating_profit
-            ),
+            "estimated_operating_profit": _decimal_to_string(self.estimated_operating_profit),
             "product_sales_units": self.product_sales_units,
             "product_sales_amount": _decimal_to_string(self.product_sales_amount),
             "bucket_totals": _decimal_dict_to_string(self.bucket_totals),
@@ -284,8 +280,7 @@ class ProfitDataRepo(Protocol):
         marketplace_id: str,
         start_date: date,
         end_date: date,
-    ) -> list[dict[str, Any]]:
-        ...
+    ) -> list[dict[str, Any]]: ...
 
     def fetch_sku_cost_rows(
         self,
@@ -293,8 +288,7 @@ class ProfitDataRepo(Protocol):
         marketplace_id: str,
         start_date: date,
         end_date: date,
-    ) -> list[dict[str, Any]]:
-        ...
+    ) -> list[dict[str, Any]]: ...
 
     def fetch_orders_period_summary(
         self,
@@ -302,8 +296,7 @@ class ProfitDataRepo(Protocol):
         marketplace_id: str,
         start_date: date,
         end_date: date,
-    ) -> dict[str, Any]:
-        ...
+    ) -> dict[str, Any]: ...
 
     def fetch_ads_period_summary(
         self,
@@ -311,8 +304,7 @@ class ProfitDataRepo(Protocol):
         marketplace_id: str,
         start_date: date,
         end_date: date,
-    ) -> dict[str, Any]:
-        ...
+    ) -> dict[str, Any]: ...
 
     def fetch_sales_traffic_period_summary(
         self,
@@ -320,8 +312,7 @@ class ProfitDataRepo(Protocol):
         marketplace_id: str,
         start_date: date,
         end_date: date,
-    ) -> dict[str, Any]:
-        ...
+    ) -> dict[str, Any]: ...
 
 
 class CalculateProfitService:
@@ -507,8 +498,10 @@ class CalculateProfitService:
         result: ProfitReportResult,
         output_root: str | Path,
     ) -> ProfitReportResult:
-        output_dir = Path(output_root) / result.marketplace_id / (
-            f"{result.start_date.isoformat()}_{result.end_date.isoformat()}"
+        output_dir = (
+            Path(output_root)
+            / result.marketplace_id
+            / (f"{result.start_date.isoformat()}_{result.end_date.isoformat()}")
         )
         output_dir.mkdir(parents=True, exist_ok=True)
         json_path = output_dir / "profit_preview.json"
@@ -695,15 +688,13 @@ def _render_markdown(result: ProfitReportResult) -> str:
         ]
     )
     for row in result.sku_rows:
+        net_amount = _format_money(row.settlement_net_amount, result.currency)
+        cost_currency = row.cost_currency or result.currency
+        internal_cogs = _format_money(row.internal_cogs, cost_currency)
+        profit = _format_money(row.estimated_profit_after_cogs, result.currency)
         lines.append(
-            "| `{sku}` | {units} | {net} | {cogs} | {profit} | `{status}` |".format(
-                sku=row.seller_sku,
-                units=row.units,
-                net=_format_money(row.settlement_net_amount, result.currency),
-                cogs=_format_money(row.internal_cogs, row.cost_currency or result.currency),
-                profit=_format_money(row.estimated_profit_after_cogs, result.currency),
-                status=row.status,
-            )
+            f"| `{row.seller_sku}` | {row.units} | {net_amount} | "
+            f"{internal_cogs} | {profit} | `{row.status}` |"
         )
     op = result.operational_summary
     ordered_sales = _format_money(op.ordered_item_sales_amount, op.order_currency)

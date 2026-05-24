@@ -53,8 +53,10 @@ def main() -> None:
     if not marketplace_id:
         raise SystemExit("Missing --marketplace-id or AMAZON_MARKETPLACE_ID.")
 
-    output_path = Path(args.output_path) if args.output_path else build_default_output_path(
-        marketplace_id=marketplace_id
+    output_path = (
+        Path(args.output_path)
+        if args.output_path
+        else build_default_output_path(marketplace_id=marketplace_id)
     )
     service = SkuCostWorkbookService()
     with get_connection(settings=settings) as connection:

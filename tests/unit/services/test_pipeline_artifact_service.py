@@ -12,8 +12,13 @@ from seller_data_pipeline.services.pipeline_artifact_service import (
 
 
 def test_infer_artifact_type_for_core_paths() -> None:
-    assert infer_artifact_type("runtime/sampling/report_requests/1.json") == "sp_report_request_manifest"
-    assert infer_artifact_type("reports/raw/amazon_ads/profile/spCampaigns/a.json") == "ads_raw_report"
+    assert (
+        infer_artifact_type("runtime/sampling/report_requests/1.json")
+        == "sp_report_request_manifest"
+    )
+    assert (
+        infer_artifact_type("reports/raw/amazon_ads/profile/spCampaigns/a.json") == "ads_raw_report"
+    )
     assert infer_artifact_type("runtime/analysis_reports/x/report.json") == "analysis_report_json"
     assert infer_artifact_type("runtime/report_delivery/x/send_result.json") == "email_send_result"
 

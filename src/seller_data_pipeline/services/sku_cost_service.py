@@ -411,13 +411,11 @@ def _write_readme_sheet(sheet: Any, *, marketplace_id: str, generated_at_utc: da
         ),
         (
             "Required for import",
-            "marketplace_id, seller_sku, new_product_cost, new_currency, "
-            "new_effective_from.",
+            "marketplace_id, seller_sku, new_product_cost, new_currency, new_effective_from.",
         ),
         (
             "Optional cost components",
-            "Blank new_first_mile_cost/new_packaging_cost/new_other_unit_cost "
-            "are imported as 0.",
+            "Blank new_first_mile_cost/new_packaging_cost/new_other_unit_cost are imported as 0.",
         ),
         (
             "Safety",

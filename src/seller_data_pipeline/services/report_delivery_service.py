@@ -121,7 +121,9 @@ class ReportDeliveryPackService:
         send_guard = _build_send_guard(
             status=status,
             audience=audience,
-            allow_partial=_default_allow_partial(audience) if allow_partial is None else allow_partial,
+            allow_partial=_default_allow_partial(audience)
+            if allow_partial is None
+            else allow_partial,
             allow_needs_review=allow_needs_review,
         )
         target_dir = Path(output_dir) if output_dir else _default_output_dir(report, output_root)
@@ -211,7 +213,9 @@ def _resolve_report_type(report: dict[str, Any], template: str) -> str:
         report_type = template
     if report_type not in SUPPORTED_REPORT_TYPES:
         supported = ", ".join(sorted(SUPPORTED_REPORT_TYPES))
-        raise ReportDeliveryError(f"Unsupported report_type: {report_type}. Supported: {supported}.")
+        raise ReportDeliveryError(
+            f"Unsupported report_type: {report_type}. Supported: {supported}."
+        )
     return report_type
 
 
@@ -295,8 +299,13 @@ def _build_send_guard(
     if normalized_status == "needs_review" and not allow_needs_review:
         messages.append("Report status is needs_review; resolve issues or pass override later.")
     if normalized_status == "partial" and not allow_partial:
-        messages.append(f"Audience {audience} is not allowed to receive partial reports by default.")
-    if audience in {"shareholders", "accountant"} and normalized_status in {"partial", "needs_review"}:
+        messages.append(
+            f"Audience {audience} is not allowed to receive partial reports by default."
+        )
+    if audience in {"shareholders", "accountant"} and normalized_status in {
+        "partial",
+        "needs_review",
+    }:
         if normalized_status == "partial" and allow_partial:
             messages.append(
                 f"Audience {audience} is sensitive; partial reports should be reviewed manually."

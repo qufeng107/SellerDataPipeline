@@ -18,10 +18,14 @@ def main() -> None:
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    save_parser = subparsers.add_parser("save", help="Save local files/directories to artifact store.")
+    save_parser = subparsers.add_parser(
+        "save", help="Save local files/directories to artifact store."
+    )
     save_parser.add_argument("--scope", required=True, help="Artifact scope key.")
     save_parser.add_argument("--root", default=".", help="Project root for relative paths.")
-    save_parser.add_argument("--path", action="append", required=True, help="File or directory to save.")
+    save_parser.add_argument(
+        "--path", action="append", required=True, help="File or directory to save."
+    )
     save_parser.add_argument(
         "--modified-since",
         default=None,

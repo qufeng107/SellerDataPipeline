@@ -11,7 +11,10 @@ from seller_data_pipeline.services.report_delivery_service import (
     DEFAULT_DELIVERY_ROOT,
     ReportDeliveryPackService,
 )
-from seller_data_pipeline.services.report_delivery_templates import AUDIENCES, SUPPORTED_REPORT_TYPES
+from seller_data_pipeline.services.report_delivery_templates import (
+    AUDIENCES,
+    SUPPORTED_REPORT_TYPES,
+)
 
 
 def main() -> None:
@@ -103,14 +106,8 @@ def main() -> None:
         )
 
     print(
-        "Report Delivery Pack status={status} dry_run={dry_run} report_type={report_type} "
-        "audience={audience} send_allowed={send_allowed}".format(
-            status=result.status,
-            dry_run=result.dry_run,
-            report_type=result.report_type,
-            audience=result.audience,
-            send_allowed=result.send_guard.send_allowed,
-        )
+        f"Report Delivery Pack status={result.status} dry_run={result.dry_run} report_type={result.report_type} "
+        f"audience={result.audience} send_allowed={result.send_guard.send_allowed}"
     )
     print(f"output_dir={result.output_dir}")
     print(f"manifest={result.manifest_path}")
@@ -119,13 +116,7 @@ def main() -> None:
     print(f"body_text={result.body_text_path}")
     print(f"attachments={len(result.attachments)}")
     for attachment in result.attachments:
-        print(
-            "- {kind}: source={source} pack={pack}".format(
-                kind=attachment.kind,
-                source=attachment.source_path,
-                pack=attachment.pack_path,
-            )
-        )
+        print(f"- {attachment.kind}: source={attachment.source_path} pack={attachment.pack_path}")
     if result.send_guard.messages:
         print("send_guard_messages:")
         for message in result.send_guard.messages:

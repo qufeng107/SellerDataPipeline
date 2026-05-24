@@ -26,16 +26,14 @@ def main() -> None:
     parser.add_argument(
         "--delivery-pack",
         help=(
-            "Path to a generated report delivery pack directory containing "
-            "delivery_manifest.json."
+            "Path to a generated report delivery pack directory containing delivery_manifest.json."
         ),
     )
     parser.add_argument(
         "--audience",
         default=None,
         help=(
-            "Optional audience override. Defaults to the audience stored in "
-            "delivery_manifest.json."
+            "Optional audience override. Defaults to the audience stored in delivery_manifest.json."
         ),
     )
     parser.add_argument(
@@ -140,15 +138,8 @@ def main() -> None:
             encoding="utf-8",
         )
     print(
-        "Report Email Send status={status} dry_run={dry_run} report_type={report_type} "
-        "audience={audience} recipients={recipients} attachments={attachments}".format(
-            status=result.status,
-            dry_run=result.dry_run,
-            report_type=result.report_type,
-            audience=result.audience,
-            recipients=len(result.recipients.all_recipients),
-            attachments=len(result.attachments),
-        )
+        f"Report Email Send status={result.status} dry_run={result.dry_run} report_type={result.report_type} "
+        f"audience={result.audience} recipients={len(result.recipients.all_recipients)} attachments={len(result.attachments)}"
     )
     print(f"recipient_source={result.recipient_source}")
     print(f"delivery_pack={result.delivery_pack_dir}")

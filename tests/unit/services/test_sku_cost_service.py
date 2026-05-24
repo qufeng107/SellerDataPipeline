@@ -40,11 +40,7 @@ class FakeSkuCostRepo:
         return [row for row in self.candidates if row.marketplace_id == marketplace_id]
 
     def fetch_latest_sku_costs(self, *, marketplace_id: str) -> dict[str, SkuCostRecord]:
-        return {
-            sku: row
-            for sku, row in self.costs.items()
-            if row.marketplace_id == marketplace_id
-        }
+        return {sku: row for sku, row in self.costs.items() if row.marketplace_id == marketplace_id}
 
     def sku_cost_exists(
         self,
@@ -148,8 +144,7 @@ def test_export_template_replaces_existing_file_and_writes_reference_columns(
     sheet = workbook[SKU_COST_INPUT_SHEET]
     headers = [cell.value for cell in sheet[1]]
     row = {
-        header: sheet.cell(row=2, column=index + 1).value
-        for index, header in enumerate(headers)
+        header: sheet.cell(row=2, column=index + 1).value for index, header in enumerate(headers)
     }
     assert row["seller_sku"] == "SKU-A"
     assert row["current_product_cost"] == 2.1

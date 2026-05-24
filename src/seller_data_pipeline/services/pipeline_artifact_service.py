@@ -112,7 +112,9 @@ class PipelineArtifactService:
                 skipped.append(str(file_path))
                 continue
             if modified_since:
-                threshold = modified_since if modified_since.tzinfo else modified_since.replace(tzinfo=UTC)
+                threshold = (
+                    modified_since if modified_since.tzinfo else modified_since.replace(tzinfo=UTC)
+                )
                 if datetime.fromtimestamp(stat.st_mtime, tz=UTC) < threshold:
                     skipped.append(_relative_path(file_path, root_path))
                     continue

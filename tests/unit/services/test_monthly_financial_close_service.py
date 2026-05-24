@@ -38,9 +38,7 @@ def test_calculate_monthly_financial_close_core_metrics() -> None:
             ),
             _settlement_row(5, None, Decimal("5.00"), "reimbursement", "reimbursement", None),
         ],
-        sku_cost_rows=[
-            _cost_row("SKU-1", Decimal("20.00"), Decimal("5.00"), date(2026, 1, 1))
-        ],
+        sku_cost_rows=[_cost_row("SKU-1", Decimal("20.00"), Decimal("5.00"), date(2026, 1, 1))],
         orders_summary={"order_count": 1, "ordered_units": 2},
         ads_summary={"ads_cost": Decimal("10.00"), "ads_clicks": 9},
         sales_traffic_summary={
@@ -59,9 +57,7 @@ def test_calculate_monthly_financial_close_core_metrics() -> None:
     assert result.financial_summary.profit_margin == Decimal("0.1000")
     assert result.sku_profitability[0].unit_standard_cost == Decimal("25.00")
     assert result.sku_profitability[0].estimated_profit_after_cogs == Decimal("15.00")
-    assert result.executive_summary()["headline"].startswith(
-        "2026-03 estimated operating profit"
-    )
+    assert result.executive_summary()["headline"].startswith("2026-03 estimated operating profit")
 
 
 def test_missing_sku_cost_marks_needs_review() -> None:
@@ -108,21 +104,15 @@ def test_missing_ads_api_context_adds_warning_but_keeps_settlement_profit_ok() -
                 None,
             ),
         ],
-        sku_cost_rows=[
-            _cost_row("SKU-1", Decimal("20.00"), Decimal("5.00"), date(2026, 1, 1))
-        ],
+        sku_cost_rows=[_cost_row("SKU-1", Decimal("20.00"), Decimal("5.00"), date(2026, 1, 1))],
         ads_summary={"ads_cost": Decimal("0.00"), "ads_row_count": 0},
         sales_traffic_summary={"ordered_product_sales_amount": Decimal("100.00")},
     )
 
     assert result.status == "ok"
     assert result.financial_summary.estimated_operating_profit == Decimal("65.00")
-    assert any(
-        warning.warning_code == "ads_api_context_missing" for warning in result.warnings
-    )
-    assert "Reconciliation warnings:" in " ".join(
-        result.executive_summary()["key_points"]
-    )
+    assert any(warning.warning_code == "ads_api_context_missing" for warning in result.warnings)
+    assert "Reconciliation warnings:" in " ".join(result.executive_summary()["key_points"])
 
 
 def test_monthly_cost_matching_uses_effective_date_per_unit() -> None:
@@ -183,9 +173,7 @@ def test_write_report_files_creates_json_and_xlsx(tmp_path: Path) -> None:
         settlement_rows=[
             _settlement_row(1, "SKU-1", Decimal("10.00"), "product_sales", "revenue", 1)
         ],
-        sku_cost_rows=[
-            _cost_row("SKU-1", Decimal("2.00"), Decimal("1.00"), date(2026, 1, 1))
-        ],
+        sku_cost_rows=[_cost_row("SKU-1", Decimal("2.00"), Decimal("1.00"), date(2026, 1, 1))],
     )
 
     written = MonthlyFinancialCloseService().write_report_files(result=result, output_root=tmp_path)
@@ -295,9 +283,7 @@ class FakeMonthlyRepo:
         end_date: date,
     ) -> list[dict[str, object]]:
         self.calls.append("settlement")
-        return [
-            _settlement_row(1, "SKU-1", Decimal("20.00"), "product_sales", "revenue", 1)
-        ]
+        return [_settlement_row(1, "SKU-1", Decimal("20.00"), "product_sales", "revenue", 1)]
 
     def fetch_sku_cost_rows(
         self,

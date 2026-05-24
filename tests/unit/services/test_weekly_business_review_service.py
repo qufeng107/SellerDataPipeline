@@ -51,9 +51,7 @@ def test_calculate_weekly_business_review_core_metrics() -> None:
             _order_row("SKU-1", date(2026, 4, 6), 4, Decimal("100.00")),
             _order_row("SKU-1", date(2026, 4, 7), 2, Decimal("50.00")),
         ],
-        previous_order_item_rows=[
-            _order_row("SKU-1", date(2026, 3, 30), 4, Decimal("100.00"))
-        ],
+        previous_order_item_rows=[_order_row("SKU-1", date(2026, 3, 30), 4, Decimal("100.00"))],
         sku_cost_rows=[_cost_row("SKU-1", Decimal("10.00"), Decimal("2.00"))],
         ads_campaign_rows=[
             _ads_campaign_row(date(2026, 4, 6), Decimal("30.00"), Decimal("100.00"), 2),
@@ -133,8 +131,14 @@ def test_write_report_files_creates_json_and_xlsx(tmp_path: Path) -> None:
     written = WeeklyBusinessReviewService().write_report_files(result=result, output_root=tmp_path)
 
     assert set(written.output_files) == {"json", "xlsx"}
-    json_path = tmp_path / "ATVPDKIKX0DER/2026-04-06_2026-04-12/weekly_business_review_2026-04-06_2026-04-12.json"
-    xlsx_path = tmp_path / "ATVPDKIKX0DER/2026-04-06_2026-04-12/weekly_business_review_2026-04-06_2026-04-12.xlsx"
+    json_path = (
+        tmp_path
+        / "ATVPDKIKX0DER/2026-04-06_2026-04-12/weekly_business_review_2026-04-06_2026-04-12.json"
+    )
+    xlsx_path = (
+        tmp_path
+        / "ATVPDKIKX0DER/2026-04-06_2026-04-12/weekly_business_review_2026-04-06_2026-04-12.xlsx"
+    )
     assert json_path.exists()
     assert xlsx_path.exists()
     workbook = load_workbook(xlsx_path, read_only=True)

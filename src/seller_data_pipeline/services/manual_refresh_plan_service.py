@@ -153,7 +153,9 @@ def _build_core_rolling_commands(
             _ingest("Sales & Traffic", "scripts/ingest_sales_traffic_report.py", marketplace_id),
             _ingest("Orders", "scripts/ingest_orders_report.py", marketplace_id),
             _ingest_ads(profile_id=profile_id, marketplace_id=marketplace_id),
-            _ingest("Promotion/Coupon", "scripts/ingest_promotion_coupon_reports.py", marketplace_id),
+            _ingest(
+                "Promotion/Coupon", "scripts/ingest_promotion_coupon_reports.py", marketplace_id
+            ),
             _ingest("Inventory snapshot", "scripts/ingest_inventory_snapshot.py", marketplace_id),
         )
     if phase == "audit":

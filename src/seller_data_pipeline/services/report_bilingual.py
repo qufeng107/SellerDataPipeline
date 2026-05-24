@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import Any, Mapping
+from collections.abc import Mapping
+from typing import Any
 
 from openpyxl.styles import Alignment, Font, PatternFill
 
@@ -182,8 +183,12 @@ ACTION_ZH: dict[str, str] = {
 PRIORITY_ZH = {"high": "高", "medium": "中", "low": "低", "info": "信息"}
 
 REASON_ZH: dict[str, str] = {
-    "Search term converts efficiently and differs from parent keyword.": "搜索词转化效率高，且不同于父关键词，可考虑收词。",
-    "Search term spent above threshold with no sales/orders.": "搜索词花费超过阈值但没有销售/订单。",
+    "Search term converts efficiently and differs from parent keyword.": (
+        "搜索词转化效率高，且不同于父关键词，可考虑收词。"
+    ),
+    "Search term spent above threshold with no sales/orders.": (
+        "搜索词花费超过阈值但没有销售/订单。"
+    ),
     "Search term has clicks but no purchases.": "搜索词有点击但没有购买，需要复核相关性。",
     "Search term has sales but ACOS is high.": "搜索词有销售但ACOS偏高。",
     "CPC is high versus account average.": "CPC相对账户平均水平偏高。",
@@ -194,14 +199,20 @@ REASON_ZH: dict[str, str] = {
 }
 
 SUGGESTED_ACTION_ZH: dict[str, str] = {
-    "Consider adding as exact keyword in the relevant ad group.": "考虑添加为相关广告组的精准关键词。",
+    "Consider adding as exact keyword in the relevant ad group.": (
+        "考虑添加为相关广告组的精准关键词。"
+    ),
     "Review and consider adding as negative exact/phrase.": "复核后考虑添加为精准/词组否定关键词。",
-    "Review current bid and consider lowering bid or budget.": "复核当前竞价，并考虑降低竞价或预算。",
+    "Review current bid and consider lowering bid or budget.": (
+        "复核当前竞价，并考虑降低竞价或预算。"
+    ),
     "Review query relevance before adding as negative.": "添加否词前先复核搜索词相关性。",
     "Review bid pressure and CPC competitiveness.": "复核竞价压力和CPC竞争水平。",
     "Review target bid and consider controlled decrease.": "复核目标竞价，并考虑小幅可控下调。",
     "Review target bid and consider controlled increase.": "复核目标竞价，并考虑小幅可控上调。",
-    "Review whether to pause target or add negative targeting.": "复核是否暂停该目标或添加否定投放。",
+    "Review whether to pause target or add negative targeting.": (
+        "复核是否暂停该目标或添加否定投放。"
+    ),
 }
 
 MANUAL_REVIEW_NOTE_ZH = (

@@ -203,7 +203,9 @@ class WeeklyBusinessReviewEmailTemplate:
                 "Please review the attached XLSX workbook, especially Daily Trend, SKU "
                 "Performance, Inventory Risk and Alerts/Actions."
             ),
-            action_note_zh="请查看附件 XLSX，重点复核 Daily Trend、SKU Performance、库存风险和行动项。",
+            action_note_zh=(
+                "请查看附件 XLSX，重点复核 Daily Trend、SKU Performance、库存风险和行动项。"
+            ),
         )
 
 
@@ -244,9 +246,7 @@ class WeeklyAdsOptimizationEmailTemplate:
         top_actions_zh = _format_top_action_points_zh(actions)
         negative_count = sum(1 for item in search_actions if _is_negative_action(item))
         harvest_count = sum(
-            1
-            for item in search_actions
-            if _action_kind(item) == "harvest_to_exact_candidate"
+            1 for item in search_actions if _action_kind(item) == "harvest_to_exact_candidate"
         )
         intro = (
             f"Weekly Ads Optimization report for {period_key} ({marketplace_id}, profile "
@@ -274,8 +274,7 @@ class WeeklyAdsOptimizationEmailTemplate:
             intro_zh=intro_zh,
             headline=headline,
             headline_zh=(
-                f"{period_key} 广告花费为 {spend}，ACOS 为 {acos}，"
-                f"动作候选 {len(actions)} 个。"
+                f"{period_key} 广告花费为 {spend}，ACOS 为 {acos}，动作候选 {len(actions)} 个。"
             ),
             metric_rows=rows,
             key_points=key_points + top_actions,

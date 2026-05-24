@@ -46,10 +46,7 @@ def main() -> None:
     parser.add_argument(
         "--output-root",
         default=DEFAULT_OUTPUT_ROOT,
-        help=(
-            "Output root. Defaults to "
-            "runtime/analysis_reports/monthly_financial_close."
-        ),
+        help=("Output root. Defaults to runtime/analysis_reports/monthly_financial_close."),
     )
     parser.add_argument(
         "--dry-run",
@@ -119,35 +116,20 @@ def main() -> None:
     reconciliation_needs_review = [
         check for check in result.reconciliation_checks if check.status == "needs_review"
     ]
-    non_info_warnings = [
-        warning for warning in result.warnings if warning.severity != "info"
-    ]
+    non_info_warnings = [warning for warning in result.warnings if warning.severity != "info"]
     print(
-        "reconciliation_warnings={warnings} reconciliation_needs_review={needs_review} "
-        "non_info_warnings={non_info}".format(
-            warnings=len(reconciliation_warnings),
-            needs_review=len(reconciliation_needs_review),
-            non_info=len(non_info_warnings),
-        )
+        f"reconciliation_warnings={len(reconciliation_warnings)} reconciliation_needs_review={len(reconciliation_needs_review)} "
+        f"non_info_warnings={len(non_info_warnings)}"
     )
     for name, path in result.output_files.items():
         print(f"{name}={path}")
-    non_ok_checks = [
-        check for check in result.reconciliation_checks if check.status != "ok"
-    ]
+    non_ok_checks = [check for check in result.reconciliation_checks if check.status != "ok"]
     if non_ok_checks:
         print("reconciliation_non_ok_checks:")
         for check in non_ok_checks:
             print(
-                "- [{severity}] {name}: expected={expected} actual={actual} "
-                "diff={diff} message={message}".format(
-                    severity=check.severity,
-                    name=check.check_name,
-                    expected=check.expected,
-                    actual=check.actual,
-                    diff=check.diff,
-                    message=check.message,
-                )
+                f"- [{check.severity}] {check.check_name}: expected={check.expected} actual={check.actual} "
+                f"diff={check.diff} message={check.message}"
             )
     if result.warnings:
         print("warnings:")

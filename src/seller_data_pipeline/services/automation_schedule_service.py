@@ -169,7 +169,9 @@ def weekly_automation_window(
     )
 
 
-def monthly_automation_window(reference_date: date, *, month: str | None = None) -> MonthlyAutomationWindow:
+def monthly_automation_window(
+    reference_date: date, *, month: str | None = None
+) -> MonthlyAutomationWindow:
     if month is not None:
         year, month_number = _parse_month(month)
     else:
@@ -178,17 +180,23 @@ def monthly_automation_window(reference_date: date, *, month: str | None = None)
         year = last_previous_month.year
         month_number = last_previous_month.month
     start = date(year, month_number, 1)
-    next_month = date(year + (1 if month_number == 12 else 0), 1 if month_number == 12 else month_number + 1, 1)
+    next_month = date(
+        year + (1 if month_number == 12 else 0), 1 if month_number == 12 else month_number + 1, 1
+    )
     end = next_month - timedelta(days=1)
     return MonthlyAutomationWindow(month=f"{year:04d}-{month_number:02d}", start=start, end=end)
 
 
-def weekly_artifact_scope(*, marketplace_id: str, profile_id: str | None, window: WeeklyAutomationWindow) -> str:
+def weekly_artifact_scope(
+    *, marketplace_id: str, profile_id: str | None, window: WeeklyAutomationWindow
+) -> str:
     profile = profile_id or "no_profile"
     return f"weekly:{marketplace_id}:{profile}:{window.period_key}"
 
 
-def monthly_artifact_scope(*, marketplace_id: str, profile_id: str | None, window: MonthlyAutomationWindow) -> str:
+def monthly_artifact_scope(
+    *, marketplace_id: str, profile_id: str | None, window: MonthlyAutomationWindow
+) -> str:
     profile = profile_id or "no_profile"
     return f"monthly:{marketplace_id}:{profile}:{window.month}"
 
@@ -205,16 +213,30 @@ def _weekly_commands(
 ) -> tuple[AutomationCommand, ...]:
     if phase == "submit":
         commands = [
-            _backfill_sp(rt.SALES_AND_TRAFFIC, marketplace_id, window.request_start, window.request_end, 10),
-            _backfill_sp(rt.ALL_ORDERS_BY_ORDER_DATE, marketplace_id, window.request_start, window.request_end, 10),
+            _backfill_sp(
+                rt.SALES_AND_TRAFFIC, marketplace_id, window.request_start, window.request_end, 10
+            ),
+            _backfill_sp(
+                rt.ALL_ORDERS_BY_ORDER_DATE,
+                marketplace_id,
+                window.request_start,
+                window.request_end,
+                10,
+            ),
             _submit_sp(rt.INVENTORY, marketplace_id),
             _backfill_ads(profile_id, window.request_start, window.request_end, 10),
         ]
         return tuple(command for command in commands if command is not None)
     if phase == "collect_ingest":
         return (
-            _command("Collect ready SP-API reports", ("scripts/collect_ready_reports.py", "--limit", "50")),
-            _command("Collect ready Amazon Ads reports", ("scripts/collect_ads_reports.py", "--limit", "50")),
+            _command(
+                "Collect ready SP-API reports",
+                ("scripts/collect_ready_reports.py", "--limit", "50"),
+            ),
+            _command(
+                "Collect ready Amazon Ads reports",
+                ("scripts/collect_ads_reports.py", "--limit", "50"),
+            ),
             _ingest("Sales & Traffic", "scripts/ingest_sales_traffic_report.py", marketplace_id),
             _ingest("Orders", "scripts/ingest_orders_report.py", marketplace_id),
             _ingest_ads(profile_id=profile_id, marketplace_id=marketplace_id),
@@ -277,20 +299,34 @@ def _monthly_commands(
             _backfill_sp(rt.ALL_ORDERS_BY_ORDER_DATE, marketplace_id, window.start, window.end, 14),
             _backfill_sp(rt.FBA_REIMBURSEMENTS, marketplace_id, window.start, window.end, 31),
             _backfill_ads(profile_id, window.start, window.end, 14),
-            _run_sampling_plan(marketplace_id, (rt.SETTLEMENT_V2,), extra=("--discovery-page-size", "100", "--discovery-max-pages", "10")),
+            _run_sampling_plan(
+                marketplace_id,
+                (rt.SETTLEMENT_V2,),
+                extra=("--discovery-page-size", "100", "--discovery-max-pages", "10"),
+            ),
             _run_sampling_plan(marketplace_id, (rt.PROMOTION_PERFORMANCE, rt.COUPON_PERFORMANCE)),
         ]
         return tuple(command for command in commands if command is not None)
     if phase == "collect_ingest":
         return (
-            _command("Collect ready SP-API reports", ("scripts/collect_ready_reports.py", "--limit", "100")),
-            _command("Collect ready Amazon Ads reports", ("scripts/collect_ads_reports.py", "--limit", "100")),
+            _command(
+                "Collect ready SP-API reports",
+                ("scripts/collect_ready_reports.py", "--limit", "100"),
+            ),
+            _command(
+                "Collect ready Amazon Ads reports",
+                ("scripts/collect_ads_reports.py", "--limit", "100"),
+            ),
             _ingest("Sales & Traffic", "scripts/ingest_sales_traffic_report.py", marketplace_id),
             _ingest("Orders", "scripts/ingest_orders_report.py", marketplace_id),
             _ingest_ads(profile_id=profile_id, marketplace_id=marketplace_id),
             _ingest("Settlement", "scripts/ingest_settlement_report.py", marketplace_id),
-            _ingest("FBA reimbursements", "scripts/ingest_fba_reimbursements_report.py", marketplace_id),
-            _ingest("Promotion/Coupon", "scripts/ingest_promotion_coupon_reports.py", marketplace_id),
+            _ingest(
+                "FBA reimbursements", "scripts/ingest_fba_reimbursements_report.py", marketplace_id
+            ),
+            _ingest(
+                "Promotion/Coupon", "scripts/ingest_promotion_coupon_reports.py", marketplace_id
+            ),
             _command(
                 "Audit normalized data coverage",
                 (
@@ -321,7 +357,9 @@ def _command(label: str, argv: tuple[str, ...], *, writes: bool = False) -> Auto
     return AutomationCommand(label=label, argv=argv, writes_external_or_database=writes)
 
 
-def _backfill_sp(report_type: str, marketplace_id: str, start: date, end: date, chunk_days: int) -> AutomationCommand:
+def _backfill_sp(
+    report_type: str, marketplace_id: str, start: date, end: date, chunk_days: int
+) -> AutomationCommand:
     return _command(
         f"Submit SP-API backfill {report_type} {start}..{end}",
         (
@@ -342,7 +380,9 @@ def _backfill_sp(report_type: str, marketplace_id: str, start: date, end: date, 
     )
 
 
-def _backfill_ads(profile_id: str | None, start: date, end: date, chunk_days: int) -> AutomationCommand | None:
+def _backfill_ads(
+    profile_id: str | None, start: date, end: date, chunk_days: int
+) -> AutomationCommand | None:
     if not profile_id:
         return None
     return _command(
@@ -388,7 +428,9 @@ def _run_sampling_plan(
         argv.extend(["--only-report-type", report_type])
     argv.append("--force")
     argv.extend(extra)
-    return _command("Submit/discover SP-API sampling plan: " + ", ".join(report_types), tuple(argv), writes=True)
+    return _command(
+        "Submit/discover SP-API sampling plan: " + ", ".join(report_types), tuple(argv), writes=True
+    )
 
 
 def _ingest(label: str, script_path: str, marketplace_id: str) -> AutomationCommand:
@@ -406,7 +448,9 @@ def _ingest_ads(*, profile_id: str | None, marketplace_id: str) -> AutomationCom
     return _command("Ingest Amazon Ads", tuple(argv), writes=True)
 
 
-def _report_weekly_business(marketplace_id: str, profile_id: str | None, week_start: str) -> AutomationCommand:
+def _report_weekly_business(
+    marketplace_id: str, profile_id: str | None, week_start: str
+) -> AutomationCommand:
     argv = [
         "scripts/generate_weekly_business_review.py",
         "--marketplace-id",
@@ -420,7 +464,9 @@ def _report_weekly_business(marketplace_id: str, profile_id: str | None, week_st
     return _command("Generate Weekly Business Review", tuple(argv))
 
 
-def _report_weekly_ads(marketplace_id: str, profile_id: str | None, week_start: str) -> AutomationCommand:
+def _report_weekly_ads(
+    marketplace_id: str, profile_id: str | None, week_start: str
+) -> AutomationCommand:
     argv = [
         "scripts/generate_weekly_ads_optimization_report.py",
         "--marketplace-id",
@@ -434,7 +480,9 @@ def _report_weekly_ads(marketplace_id: str, profile_id: str | None, week_start: 
     return _command("Generate Weekly Ads Optimization Report", tuple(argv))
 
 
-def _report_monthly_close(marketplace_id: str, profile_id: str | None, month: str) -> AutomationCommand:
+def _report_monthly_close(
+    marketplace_id: str, profile_id: str | None, month: str
+) -> AutomationCommand:
     argv = [
         "scripts/generate_monthly_financial_close_report.py",
         "--marketplace-id",
@@ -482,7 +530,11 @@ def _send_pack(
         argv.append("--force-resend")
     for email in email_to:
         argv.extend(["--to", email])
-    return _command(f"{'Send' if send_email else 'Validate'} report email for {audience}", tuple(argv), writes=send_email)
+    return _command(
+        f"{'Send' if send_email else 'Validate'} report email for {audience}",
+        tuple(argv),
+        writes=send_email,
+    )
 
 
 def _weekly_business_json_path(marketplace_id: str, window: WeeklyAutomationWindow) -> str:
@@ -493,9 +545,10 @@ def _weekly_business_json_path(marketplace_id: str, window: WeeklyAutomationWind
 
 
 def _weekly_ads_json_path(profile_id: str | None, window: WeeklyAutomationWindow) -> str:
+    profile = profile_id or "no_profile"
     return (
-        f"runtime/analysis_reports/weekly_ads_optimization/{profile_id or 'no_profile'}/{window.period_key}/"
-        f"weekly_ads_optimization_{window.period_key}.json"
+        f"runtime/analysis_reports/weekly_ads_optimization/{profile}/"
+        f"{window.period_key}/weekly_ads_optimization_{window.period_key}.json"
     )
 
 
@@ -506,16 +559,29 @@ def _monthly_close_json_path(marketplace_id: str, window: MonthlyAutomationWindo
     )
 
 
-def _weekly_business_pack_path(marketplace_id: str, profile_id: str | None, window: WeeklyAutomationWindow) -> str:
-    return f"runtime/report_delivery/weekly_business_review/{marketplace_id}_{profile_id or 'no_profile'}/{window.period_key}"
+def _delivery_scope(marketplace_id: str, profile_id: str | None) -> str:
+    return f"{marketplace_id}_{profile_id or 'no_profile'}"
 
 
-def _weekly_ads_pack_path(marketplace_id: str, profile_id: str | None, window: WeeklyAutomationWindow) -> str:
-    return f"runtime/report_delivery/weekly_ads_optimization/{marketplace_id}_{profile_id or 'no_profile'}/{window.period_key}"
+def _weekly_business_pack_path(
+    marketplace_id: str, profile_id: str | None, window: WeeklyAutomationWindow
+) -> str:
+    scope = _delivery_scope(marketplace_id, profile_id)
+    return f"runtime/report_delivery/weekly_business_review/{scope}/{window.period_key}"
 
 
-def _monthly_close_pack_path(marketplace_id: str, profile_id: str | None, window: MonthlyAutomationWindow) -> str:
-    return f"runtime/report_delivery/monthly_financial_close/{marketplace_id}_{profile_id or 'no_profile'}/{window.month}"
+def _weekly_ads_pack_path(
+    marketplace_id: str, profile_id: str | None, window: WeeklyAutomationWindow
+) -> str:
+    scope = _delivery_scope(marketplace_id, profile_id)
+    return f"runtime/report_delivery/weekly_ads_optimization/{scope}/{window.period_key}"
+
+
+def _monthly_close_pack_path(
+    marketplace_id: str, profile_id: str | None, window: MonthlyAutomationWindow
+) -> str:
+    scope = _delivery_scope(marketplace_id, profile_id)
+    return f"runtime/report_delivery/monthly_financial_close/{scope}/{window.month}"
 
 
 def _parse_month(value: str) -> tuple[int, int]:

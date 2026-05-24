@@ -283,8 +283,7 @@ class DataCoverageRepoProtocol(Protocol):
         marketplace_id: str,
         target_start_date: date,
         target_end_date: date,
-    ) -> list[dict[str, Any]]:
-        ...
+    ) -> list[dict[str, Any]]: ...
 
     def fetch_report_request_coverage_rows(
         self,
@@ -292,8 +291,7 @@ class DataCoverageRepoProtocol(Protocol):
         marketplace_id: str,
         target_start_date: date,
         target_end_date: date,
-    ) -> list[dict[str, Any]]:
-        ...
+    ) -> list[dict[str, Any]]: ...
 
 
 class DataCoverageAuditService:
@@ -469,9 +467,8 @@ def render_coverage_markdown(result: DataCoverageAuditResult) -> str:
         ]
     )
     for row in result.coverage_rows:
-        business_range = "{}..{}".format(
-            _format_date(row.min_business_date),
-            _format_date(row.max_business_date),
+        business_range = (
+            f"{_format_date(row.min_business_date)}..{_format_date(row.max_business_date)}"
         )
         refresh_cadence = "" if row.refresh_cadence_days is None else row.refresh_cadence_days
         refresh_lookback = "" if row.refresh_lookback_days is None else row.refresh_lookback_days
@@ -510,24 +507,15 @@ def render_coverage_markdown(result: DataCoverageAuditResult) -> str:
         ]
     )
     for row in result.report_request_rows:
-        request_range = "{}..{}".format(
-            _format_date(row.min_data_start_date),
-            _format_date(row.max_data_end_date),
+        request_range = (
+            f"{_format_date(row.min_data_start_date)}..{_format_date(row.max_data_end_date)}"
+        )
+        counts = (
+            f"{row.request_count} | {row.done_count} | {row.downloaded_count} | {row.parsed_count}"
         )
         lines.append(
-            (
-                "| {source} | `{report_type}` | {requests} | {done} | "
-                "{downloaded} | {parsed} | {range} | {target_overlap} |"
-            ).format(
-                source=row.source_system,
-                report_type=row.report_type,
-                requests=row.request_count,
-                done=row.done_count,
-                downloaded=row.downloaded_count,
-                parsed=row.parsed_count,
-                range=request_range,
-                target_overlap=row.target_overlap_request_count,
-            )
+            f"| {row.source_system} | `{row.report_type}` | {counts} | "
+            f"{request_range} | {row.target_overlap_request_count} |"
         )
     lines.extend(
         [

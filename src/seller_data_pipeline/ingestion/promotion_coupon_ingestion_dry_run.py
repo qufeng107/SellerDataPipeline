@@ -461,8 +461,7 @@ def _write_previews_or_review(
                 requires_review=True,
                 skipped=True,
                 skip_reason=(
-                    "duplicate_business_key_requires_review:"
-                    f"{table_name}:{duplicate_issue}"
+                    f"duplicate_business_key_requires_review:{table_name}:{duplicate_issue}"
                 ),
                 parsed_row_count=sum(len(items) for items in table_rows.values()),
                 prepared_row_count=0,

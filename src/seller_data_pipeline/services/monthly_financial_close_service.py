@@ -5,23 +5,22 @@ from collections import defaultdict
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta
-from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any, Protocol
 
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 
-from seller_data_pipeline.services.report_bilingual import (
-    add_bilingual_readme_sheet,
-    bilingual_metric_label,
-    xlsx_header_label,
-)
-
 from seller_data_pipeline.services.calculate_profit_service import (
     PRODUCT_SALES_CATEGORIES,
     SettlementProfitLine,
     SkuCostRecord,
+)
+from seller_data_pipeline.services.report_bilingual import (
+    add_bilingual_readme_sheet,
+    bilingual_metric_label,
+    xlsx_header_label,
 )
 
 MONEY_QUANT = Decimal("0.01")
@@ -199,9 +198,7 @@ class MonthlyFinancialSummary:
             "product_sales_amount": _decimal_to_string(self.product_sales_amount),
             "product_sales_units": self.product_sales_units,
             "internal_cogs": _decimal_to_string(self.internal_cogs),
-            "estimated_operating_profit": _decimal_to_string(
-                self.estimated_operating_profit
-            ),
+            "estimated_operating_profit": _decimal_to_string(self.estimated_operating_profit),
             "profit_margin": _optional_ratio_to_string(self.profit_margin),
             "advertising_cost": _decimal_to_string(self.advertising_cost),
             "fba_fee": _decimal_to_string(self.fba_fee),
@@ -254,9 +251,7 @@ class MonthlyFinancialCloseResult:
             "settlement_bucket_breakdown": [
                 row.to_dict() for row in self.settlement_bucket_breakdown
             ],
-            "amount_category_breakdown": [
-                row.to_dict() for row in self.amount_category_breakdown
-            ],
+            "amount_category_breakdown": [row.to_dict() for row in self.amount_category_breakdown],
             "sku_profitability": [row.to_dict() for row in self.sku_profitability],
             "operational_context": [metric.to_dict() for metric in self.operational_context],
             "reconciliation_checks": [check.to_dict() for check in self.reconciliation_checks],
@@ -299,8 +294,7 @@ class MonthlyFinancialCloseResult:
         profit = self.financial_summary.estimated_operating_profit
         margin = self.financial_summary.profit_margin
         headline = (
-            f"{self.month} estimated operating profit was "
-            f"{_format_money(profit, self.currency)}."
+            f"{self.month} estimated operating profit was {_format_money(profit, self.currency)}."
         )
         key_points = [
             (
@@ -321,9 +315,7 @@ class MonthlyFinancialCloseResult:
         reconciliation_needs_review_count = sum(
             1 for check in self.reconciliation_checks if check.status == "needs_review"
         )
-        non_info_warning_count = sum(
-            1 for warning in self.warnings if warning.severity != "info"
-        )
+        non_info_warning_count = sum(1 for warning in self.warnings if warning.severity != "info")
         if reconciliation_warning_count or reconciliation_needs_review_count:
             key_points.append(
                 "Reconciliation warnings: "
@@ -342,8 +334,7 @@ class MonthlyFinancialCloseDataRepo(Protocol):
         marketplace_id: str,
         start_date: date,
         end_date: date,
-    ) -> list[dict[str, Any]]:
-        ...
+    ) -> list[dict[str, Any]]: ...
 
     def fetch_sku_cost_rows(
         self,
@@ -351,8 +342,7 @@ class MonthlyFinancialCloseDataRepo(Protocol):
         marketplace_id: str,
         start_date: date,
         end_date: date,
-    ) -> list[dict[str, Any]]:
-        ...
+    ) -> list[dict[str, Any]]: ...
 
     def fetch_orders_period_summary(
         self,
@@ -360,8 +350,7 @@ class MonthlyFinancialCloseDataRepo(Protocol):
         marketplace_id: str,
         start_date: date,
         end_date: date,
-    ) -> dict[str, Any]:
-        ...
+    ) -> dict[str, Any]: ...
 
     def fetch_ads_period_summary(
         self,
@@ -370,8 +359,7 @@ class MonthlyFinancialCloseDataRepo(Protocol):
         profile_id: str | None,
         start_date: date,
         end_date: date,
-    ) -> dict[str, Any]:
-        ...
+    ) -> dict[str, Any]: ...
 
     def fetch_sales_traffic_period_summary(
         self,
@@ -379,8 +367,7 @@ class MonthlyFinancialCloseDataRepo(Protocol):
         marketplace_id: str,
         start_date: date,
         end_date: date,
-    ) -> dict[str, Any]:
-        ...
+    ) -> dict[str, Any]: ...
 
     def fetch_coupon_period_summary(
         self,
@@ -388,8 +375,7 @@ class MonthlyFinancialCloseDataRepo(Protocol):
         marketplace_id: str,
         start_date: date,
         end_date: date,
-    ) -> dict[str, Any]:
-        ...
+    ) -> dict[str, Any]: ...
 
     def fetch_promotion_period_summary(
         self,
@@ -397,8 +383,7 @@ class MonthlyFinancialCloseDataRepo(Protocol):
         marketplace_id: str,
         start_date: date,
         end_date: date,
-    ) -> dict[str, Any]:
-        ...
+    ) -> dict[str, Any]: ...
 
     def fetch_fba_reimbursement_period_summary(
         self,
@@ -406,8 +391,7 @@ class MonthlyFinancialCloseDataRepo(Protocol):
         marketplace_id: str,
         start_date: date,
         end_date: date,
-    ) -> dict[str, Any]:
-        ...
+    ) -> dict[str, Any]: ...
 
 
 class MonthlyFinancialCloseService:
@@ -510,9 +494,7 @@ class MonthlyFinancialCloseService:
         cost_index = _build_cost_index(sku_costs)
 
         bucket_totals, bucket_counts = _sum_by_bucket(settlement_lines)
-        category_totals, category_counts, category_bucket_index = _sum_by_category(
-            settlement_lines
-        )
+        category_totals, category_counts, category_bucket_index = _sum_by_category(settlement_lines)
         settlement_net_amount = _money(sum((line.amount for line in settlement_lines), ZERO))
         currency = _first_non_empty(line.currency for line in settlement_lines)
         product_sales_amount = _money(
@@ -1109,14 +1091,12 @@ def _build_operational_context(
 ) -> list[OperationalMetric]:
     order_currency = _empty_to_none(orders_summary.get("currency")) or currency
     sales_currency = (
-        _empty_to_none(sales_traffic_summary.get("ordered_product_sales_currency"))
-        or currency
+        _empty_to_none(sales_traffic_summary.get("ordered_product_sales_currency")) or currency
     )
     coupon_currency = _empty_to_none(coupon_summary.get("coupon_currency")) or currency
     promotion_currency = _empty_to_none(promotion_summary.get("promotion_currency")) or currency
     reimbursement_currency = (
-        _empty_to_none(fba_reimbursement_summary.get("reimbursement_currency"))
-        or currency
+        _empty_to_none(fba_reimbursement_summary.get("reimbursement_currency")) or currency
     )
     metrics: list[OperationalMetric] = []
 
@@ -1642,9 +1622,7 @@ def _build_raw_metadata(
         or 0,
         "coupon_count": _optional_int(coupon_summary.get("coupon_count")) or 0,
         "promotion_count": _optional_int(promotion_summary.get("promotion_count")) or 0,
-        "reimbursement_count": _optional_int(
-            fba_reimbursement_summary.get("reimbursement_count")
-        )
+        "reimbursement_count": _optional_int(fba_reimbursement_summary.get("reimbursement_count"))
         or 0,
     }
 

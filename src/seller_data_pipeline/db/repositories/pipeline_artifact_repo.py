@@ -169,9 +169,13 @@ class PipelineArtifactRepo:
         params: list[Any] = [artifact_scope]
         normalized_prefixes = tuple(prefix.rstrip("/") for prefix in path_prefixes if prefix)
         if normalized_prefixes:
-            prefix_sql = " AND (" + " OR ".join(
-                "[relative_path] = ? OR [relative_path] LIKE ?" for _ in normalized_prefixes
-            ) + ")"
+            prefix_sql = (
+                " AND ("
+                + " OR ".join(
+                    "[relative_path] = ? OR [relative_path] LIKE ?" for _ in normalized_prefixes
+                )
+                + ")"
+            )
             for prefix in normalized_prefixes:
                 params.extend([prefix, f"{prefix}/%"])
 
@@ -266,7 +270,7 @@ class PipelineArtifactRepo:
                     [expires_at],
                     [is_deleted]
                 FROM dbo.[pipeline_artifact_store]
-                WHERE {' AND '.join(where)}
+                WHERE {" AND ".join(where)}
                 ORDER BY [created_at] DESC, [id] DESC;
                 """,
                 tuple(params),

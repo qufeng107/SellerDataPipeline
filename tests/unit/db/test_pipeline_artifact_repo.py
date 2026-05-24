@@ -66,10 +66,10 @@ def test_fetch_latest_artifacts_filters_prefixes() -> None:
 
 
 class _FakeConnection:
-    def __init__(self, cursor: "_FakeCursor") -> None:
+    def __init__(self, cursor: _FakeCursor) -> None:
         self._cursor = cursor
 
-    def cursor(self) -> "_FakeCursor":
+    def cursor(self) -> _FakeCursor:
         return self._cursor
 
 
