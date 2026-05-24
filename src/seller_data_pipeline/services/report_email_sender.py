@@ -4,13 +4,14 @@ import json
 import mimetypes
 import smtplib
 import ssl
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from email.message import EmailMessage
 from email.utils import formataddr, make_msgid
 from pathlib import Path
 from time import sleep
-from typing import Any, Callable
+from typing import Any
 
 from seller_data_pipeline.common.exceptions import SellerDataPipelineError
 from seller_data_pipeline.config.settings import Settings

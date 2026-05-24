@@ -5,12 +5,19 @@ from collections import defaultdict
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta
-from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any, Protocol
 
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
+
+from seller_data_pipeline.services.report_bilingual import (
+    add_action_translation_columns,
+    add_bilingual_readme_sheet,
+    bilingual_metric_label,
+    xlsx_header_label,
+)
 
 MONEY_QUANT = Decimal("0.01")
 RATIO_QUANT = Decimal("0.0001")
@@ -147,9 +154,7 @@ class OverallSummary:
             "ordered_product_sales": _decimal_to_string(self.ordered_product_sales),
             "units_ordered": self.units_ordered,
             "sessions": self.sessions,
-            "unit_session_percentage": _optional_ratio_to_string(
-                self.unit_session_percentage
-            ),
+            "unit_session_percentage": _optional_ratio_to_string(self.unit_session_percentage),
             "tacos": _optional_ratio_to_string(self.tacos),
             "ads_sales_share": _optional_ratio_to_string(self.ads_sales_share),
             "ads_spend_per_unit_ordered": _optional_decimal_to_string(
@@ -158,9 +163,7 @@ class OverallSummary:
             "settlement_advertising_fee_abs": _decimal_to_string(
                 self.settlement_advertising_fee_abs
             ),
-            "settlement_advertising_fee": _decimal_to_string(
-                self.settlement_advertising_fee
-            ),
+            "settlement_advertising_fee": _decimal_to_string(self.settlement_advertising_fee),
             "currency": self.currency,
         }
 
@@ -356,9 +359,7 @@ class AdsEntityPerformanceRow:
             "ads_roas": _optional_decimal_to_string(self.roas),
             "unit_standard_cost": _optional_decimal_to_string(self.unit_standard_cost),
             "estimated_ads_cogs": _optional_decimal_to_string(self.estimated_ads_cogs),
-            "ads_contribution_proxy": _optional_decimal_to_string(
-                self.ads_contribution_proxy
-            ),
+            "ads_contribution_proxy": _optional_decimal_to_string(self.ads_contribution_proxy),
             "cost_status": self.cost_status,
             "action_label": self.action_label,
             "action_reason": self.action_reason,
@@ -482,21 +483,16 @@ class WeeklyAdsOptimizationResult:
                 row.to_search_term_action_dict() for row in self.search_term_action_candidates
             ],
             "advertised_product_performance": [
-                row.to_advertised_product_dict()
-                for row in self.advertised_product_performance
+                row.to_advertised_product_dict() for row in self.advertised_product_performance
             ],
             "action_items": [row.to_dict() for row in self.action_items],
-            "reconciliation_checks": [
-                check.to_dict() for check in self.reconciliation_checks
-            ],
+            "reconciliation_checks": [check.to_dict() for check in self.reconciliation_checks],
             "warnings": [warning.to_dict() for warning in self.warnings],
             "raw_metadata": _json_safe_mapping(self.raw_metadata),
             "output_files": self.output_files,
         }
 
-    def with_output_files(
-        self, output_files: Mapping[str, str]
-    ) -> WeeklyAdsOptimizationResult:
+    def with_output_files(self, output_files: Mapping[str, str]) -> WeeklyAdsOptimizationResult:
         return WeeklyAdsOptimizationResult(
             marketplace_id=self.marketplace_id,
             profile_id=self.profile_id,
@@ -715,9 +711,7 @@ class WeeklyAdsOptimizationService:
             thresholds=thresholds,
             avg_cpc=avg_cpc,
         )
-        search_term_action_candidates = _search_term_action_candidates(
-            search_term_performance
-        )
+        search_term_action_candidates = _search_term_action_candidates(search_term_performance)
         cost_index = _build_cost_index(costs)
         advertised_product_performance = _build_advertised_product_performance(
             products,
@@ -805,15 +799,15 @@ class WeeklyAdsOptimizationService:
             / f"{result.week_start.isoformat()}_{result.week_end.isoformat()}"
         )
         output_dir.mkdir(parents=True, exist_ok=True)
-        json_path = output_dir / "weekly_ads_optimization.json"
-        xlsx_path = output_dir / "weekly_ads_optimization.xlsx"
+        period_key = f"{result.week_start.isoformat()}_{result.week_end.isoformat()}"
+        filename_base = f"weekly_ads_optimization_{period_key}"
+        json_path = output_dir / f"{filename_base}.json"
+        xlsx_path = output_dir / f"{filename_base}.xlsx"
         result_with_files = result.with_output_files(
             {"json": str(json_path), "xlsx": str(xlsx_path)}
         )
         json_path.write_text(
-            json.dumps(
-                result_with_files.to_dict(), ensure_ascii=False, indent=2, sort_keys=True
-            )
+            json.dumps(result_with_files.to_dict(), ensure_ascii=False, indent=2, sort_keys=True)
             + "\n",
             encoding="utf-8",
         )
@@ -826,10 +820,20 @@ def build_weekly_ads_optimization_workbook(result: WeeklyAdsOptimizationResult) 
     workbook = Workbook()
     default = workbook.active
     workbook.remove(default)
-    _write_rows_sheet(workbook, "01_Executive_Summary", _summary_rows(result))
-    _write_rows_sheet(
-        workbook, "02_Daily_Trend", [row.to_dict() for row in result.daily_trend]
+    add_bilingual_readme_sheet(
+        workbook,
+        title_en="Weekly Ads Optimization Report",
+        title_zh="每周广告优化报表",
+        period=f"{result.week_start.isoformat()}_{result.week_end.isoformat()}",
+        status=result.status,
+        scope_en=(
+            "Ads API campaign daily is the ads optimization source of truth; "
+            "Settlement advertising fees are finance context only."
+        ),
+        scope_zh="Ads API campaign daily 是广告优化主口径；Settlement 广告费仅作为财务参考。",
     )
+    _write_rows_sheet(workbook, "01_Executive_Summary", _summary_rows(result))
+    _write_rows_sheet(workbook, "02_Daily_Trend", [row.to_dict() for row in result.daily_trend])
     _write_rows_sheet(
         workbook,
         "03_Campaigns",
@@ -843,12 +847,18 @@ def build_weekly_ads_optimization_workbook(result: WeeklyAdsOptimizationResult) 
     _write_rows_sheet(
         workbook,
         "05_Search_Terms",
-        [row.to_search_term_dict() for row in result.search_term_performance],
+        [
+            add_action_translation_columns(row.to_search_term_dict())
+            for row in result.search_term_performance
+        ],
     )
     _write_rows_sheet(
         workbook,
         "06_Search_Term_Actions",
-        [row.to_search_term_action_dict() for row in result.search_term_action_candidates],
+        [
+            add_action_translation_columns(row.to_search_term_action_dict())
+            for row in result.search_term_action_candidates
+        ],
     )
     _write_rows_sheet(
         workbook,
@@ -856,7 +866,9 @@ def build_weekly_ads_optimization_workbook(result: WeeklyAdsOptimizationResult) 
         [row.to_advertised_product_dict() for row in result.advertised_product_performance],
     )
     _write_rows_sheet(
-        workbook, "08_Action_Items", [row.to_dict() for row in result.action_items]
+        workbook,
+        "08_Action_Items",
+        [add_action_translation_columns(row.to_dict()) for row in result.action_items],
     )
     _write_rows_sheet(
         workbook,
@@ -880,19 +892,47 @@ def _summary_rows(result: WeeklyAdsOptimizationResult) -> list[dict[str, Any]]:
     )
     rows = [
         _metric_row("status", "report_status", result.status, "status", WAOR_SCOPE_NOTE),
-        _metric_row("overall", "ads_spend", overall.ads_spend, result.currency, "Campaign table cost."),
-        _metric_row("overall", "ads_sales_7d", overall.ads_sales_7d, result.currency, "7-day attributed sales."),
+        _metric_row(
+            "overall", "ads_spend", overall.ads_spend, result.currency, "Campaign table cost."
+        ),
+        _metric_row(
+            "overall",
+            "ads_sales_7d",
+            overall.ads_sales_7d,
+            result.currency,
+            "7-day attributed sales.",
+        ),
         _metric_row("overall", "ads_purchases_7d", overall.ads_purchases_7d, "count", ""),
         _metric_row("overall", "acos", overall.acos, "ratio", "ads_spend / ads_sales_7d"),
         _metric_row("overall", "roas", overall.roas, "ratio", "ads_sales_7d / ads_spend"),
-        _metric_row("sales_context", "ordered_product_sales", overall.ordered_product_sales, result.currency, "Sales & Traffic report-date sales."),
-        _metric_row("sales_context", "tacos", overall.tacos, "ratio", "ads_spend / ordered_product_sales"),
-        _metric_row("financial_context", "settlement_advertising_fee_abs", overall.settlement_advertising_fee_abs, result.currency, "Settlement posted-date context only."),
+        _metric_row(
+            "sales_context",
+            "ordered_product_sales",
+            overall.ordered_product_sales,
+            result.currency,
+            "Sales & Traffic report-date sales.",
+        ),
+        _metric_row(
+            "sales_context", "tacos", overall.tacos, "ratio", "ads_spend / ordered_product_sales"
+        ),
+        _metric_row(
+            "financial_context",
+            "settlement_advertising_fee_abs",
+            overall.settlement_advertising_fee_abs,
+            result.currency,
+            "Settlement posted-date context only.",
+        ),
         _metric_row("actions", "campaign_count", overall.campaign_count, "count", ""),
         _metric_row("actions", "action_item_count", len(result.action_items), "count", ""),
         _metric_row("actions", "negative_candidate_count", negative_count, "count", ""),
         _metric_row("actions", "harvest_candidate_count", harvest_count, "count", ""),
-        _metric_row("status", "warning_count", len([w for w in result.warnings if w.severity != "info"]), "count", ""),
+        _metric_row(
+            "status",
+            "warning_count",
+            len([w for w in result.warnings if w.severity != "info"]),
+            "count",
+            "",
+        ),
     ]
     for key, value in result.thresholds.to_dict().items():
         rows.append(_metric_row("thresholds", key, value, None, "CLI/default threshold."))
@@ -908,7 +948,7 @@ def _metric_row(
 ) -> dict[str, Any]:
     return {
         "metric_group": metric_group,
-        "metric_name": metric_name,
+        "metric_name": bilingual_metric_label(metric_name),
         "value": _xlsx_value(value),
         "unit": unit,
         "notes": notes,
@@ -926,8 +966,8 @@ def _metadata_rows(result: WeeklyAdsOptimizationResult) -> list[dict[str, Any]]:
 def _write_rows_sheet(workbook: Workbook, title: str, rows: Sequence[Mapping[str, Any]]) -> None:
     sheet = workbook.create_sheet(title)
     if not rows:
-        sheet.append(["message"])
-        sheet.append(["No rows"])
+        sheet.append([xlsx_header_label("message")])
+        sheet.append(["No rows / 无数据"])
         _format_sheet(sheet)
         return
     headers = list(rows[0].keys())
@@ -935,7 +975,7 @@ def _write_rows_sheet(workbook: Workbook, title: str, rows: Sequence[Mapping[str
         for key in row.keys():
             if key not in headers:
                 headers.append(key)
-    sheet.append(headers)
+    sheet.append([xlsx_header_label(header) for header in headers])
     for row in rows:
         sheet.append([_xlsx_value(row.get(header)) for header in headers])
     _format_sheet(sheet)
@@ -1087,9 +1127,7 @@ def _build_targeting_performance(
     output: list[AdsEntityPerformanceRow] = []
     for key, bucket in buckets.items():
         metrics = _metrics_from_bucket(bucket)
-        action = _targeting_action(
-            metrics=metrics, thresholds=thresholds, avg_cpc=avg_cpc
-        )
+        action = _targeting_action(metrics=metrics, thresholds=thresholds, avg_cpc=avg_cpc)
         keyword_text = _empty_to_none(key[5]) or _empty_to_none(key[7])
         output.append(
             AdsEntityPerformanceRow(
@@ -1315,7 +1353,12 @@ def _build_reconciliation_checks(
     checks: list[ReconciliationCheck] = []
     table_specs = [
         ("ads_campaign_coverage", "amazon_ads_sp_campaign_daily", campaign_rows, "critical"),
-        ("ads_search_term_coverage", "amazon_ads_sp_search_term_daily", search_term_rows, "critical"),
+        (
+            "ads_search_term_coverage",
+            "amazon_ads_sp_search_term_daily",
+            search_term_rows,
+            "critical",
+        ),
         ("ads_targeting_coverage", "amazon_ads_sp_targeting_daily", targeting_rows, "warning"),
         (
             "ads_advertised_product_coverage",
@@ -1405,7 +1448,10 @@ def _build_reconciliation_checks(
             _decimal_to_string(overall.settlement_advertising_fee_abs),
             diff=_decimal_to_string(settlement_diff),
             diff_pct=_optional_ratio_to_string(settlement_diff_pct),
-            message="Ads API spend and Settlement advertising fee use different timing; do not force tie.",
+            message=(
+                "Ads API spend and Settlement advertising fee use different timing; "
+                "do not force tie."
+            ),
         )
     )
     stable_end = generated_at_utc.date() - timedelta(days=thresholds.stable_lag_days)
@@ -1460,7 +1506,9 @@ def _spend_sanity_checks(
                 _decimal_to_string(other),
                 diff=_decimal_to_string(diff),
                 diff_pct=_optional_ratio_to_string(diff_ratio),
-                message="Cross-table spend sanity check; tables are different dimensions, not additive.",
+                message=(
+                    "Cross-table spend sanity check; tables are different dimensions, not additive."
+                ),
             )
         )
     return output
@@ -1629,7 +1677,11 @@ def _campaign_action(
     ):
         return _action("scale_candidate", "high", "Efficient campaign with enough sales/orders.")
     if sales > ZERO and acos is not None and acos > thresholds.watch_acos:
-        return _action("reduce_budget_or_bid_review", "high", "Campaign has sales but ACOS is above watch threshold.")
+        return _action(
+            "reduce_budget_or_bid_review",
+            "high",
+            "Campaign has sales but ACOS is above watch threshold.",
+        )
     if sales == ZERO and spend >= thresholds.no_sale_cost_threshold:
         return _action("waste_review", "high", "Campaign spent above no-sale threshold.")
     if impressions >= 1000 and ctr is not None and ctr < thresholds.low_ctr_threshold:
@@ -1654,13 +1706,27 @@ def _targeting_action(
     ctr = metrics["ctr"]
     cvr = metrics["cvr"]
     cpc = metrics["cpc"]
-    if purchases >= thresholds.min_purchases_to_scale and acos is not None and acos <= thresholds.target_acos:
+    if (
+        purchases >= thresholds.min_purchases_to_scale
+        and acos is not None
+        and acos <= thresholds.target_acos
+    ):
         return _action("increase_bid_review", "high", "Target is converting within target ACOS.")
     if sales > ZERO and acos is not None and acos > thresholds.watch_acos:
         return _action("decrease_bid_review", "high", "Target has sales but inefficient ACOS.")
-    if purchases == 0 and spend >= thresholds.no_sale_cost_threshold and clicks >= thresholds.no_order_click_threshold:
-        return _action("pause_or_negative_review", "high", "Target spent and clicked without purchase.")
-    if clicks >= thresholds.no_order_click_threshold and cvr is not None and cvr < thresholds.low_cvr_threshold:
+    if (
+        purchases == 0
+        and spend >= thresholds.no_sale_cost_threshold
+        and clicks >= thresholds.no_order_click_threshold
+    ):
+        return _action(
+            "pause_or_negative_review", "high", "Target spent and clicked without purchase."
+        )
+    if (
+        clicks >= thresholds.no_order_click_threshold
+        and cvr is not None
+        and cvr < thresholds.low_cvr_threshold
+    ):
         return _action("listing_check", "medium", "Clicks exist but conversion rate is weak.")
     if impressions >= 1000 and ctr is not None and ctr < thresholds.low_ctr_threshold:
         return _action("low_relevance_check", "medium", "High impressions with low CTR.")
@@ -1688,9 +1754,13 @@ def _search_term_action(
     cvr = metrics["cvr"]
     cpc = metrics["cpc"]
     if sales == ZERO and purchases == 0 and spend >= thresholds.no_sale_cost_threshold:
-        return _action("negative_candidate", "high", "Search term spent above threshold with no sales/orders.")
+        return _action(
+            "negative_candidate", "high", "Search term spent above threshold with no sales/orders."
+        )
     if purchases == 0 and clicks >= thresholds.no_order_click_threshold:
-        return _action("negative_candidate_clicks", "medium", "Search term has clicks but no purchases.")
+        return _action(
+            "negative_candidate_clicks", "medium", "Search term has clicks but no purchases."
+        )
     keyword_normalized = _normalize_text(keyword)
     search_normalized = _normalize_text(search_term)
     if (
@@ -1700,19 +1770,29 @@ def _search_term_action(
         and search_normalized
         and search_normalized != keyword_normalized
     ):
-        return _action("harvest_to_exact_candidate", "high", "Search term converts efficiently and differs from parent keyword.")
+        return _action(
+            "harvest_to_exact_candidate",
+            "high",
+            "Search term converts efficiently and differs from parent keyword.",
+        )
     if (
         purchases >= thresholds.min_purchases_to_scale
         and acos is not None
         and acos <= thresholds.target_acos
         and _normalize_text(match_type) == "exact"
     ):
-        return _action("increase_bid_candidate", "medium", "Exact match term converts within target ACOS.")
+        return _action(
+            "increase_bid_candidate", "medium", "Exact match term converts within target ACOS."
+        )
     if sales > ZERO and acos is not None and acos > thresholds.watch_acos:
         return _action("reduce_bid_candidate", "medium", "Search term has sales but ACOS is high.")
     if impressions >= 1000 and ctr is not None and ctr < thresholds.low_ctr_threshold:
         return _action("relevance_review", "medium", "High impressions with low CTR.")
-    if clicks >= thresholds.no_order_click_threshold and cvr is not None and cvr < thresholds.low_cvr_threshold:
+    if (
+        clicks >= thresholds.no_order_click_threshold
+        and cvr is not None
+        and cvr < thresholds.low_cvr_threshold
+    ):
         return _action("conversion_review", "medium", "Clicks exist but conversion is weak.")
     if avg_cpc > ZERO and cpc is not None and cpc > avg_cpc * thresholds.high_cpc_multiplier:
         return _action("high_cpc_review", "low", "CPC is high versus account average.")
@@ -1728,12 +1808,20 @@ def _advertised_product_action(
     purchases = int(metrics["purchases"])
     spend = _to_decimal(metrics["spend"])
     acos = metrics["acos"]
-    if purchases >= thresholds.min_purchases_to_scale and acos is not None and acos <= thresholds.target_acos:
-        return _action("sku_ads_scale_candidate", "medium", "Advertised SKU/ASIN converts within target ACOS.")
+    if (
+        purchases >= thresholds.min_purchases_to_scale
+        and acos is not None
+        and acos <= thresholds.target_acos
+    ):
+        return _action(
+            "sku_ads_scale_candidate", "medium", "Advertised SKU/ASIN converts within target ACOS."
+        )
     if sales > ZERO and acos is not None and acos > thresholds.watch_acos:
         return _action("sku_ads_efficiency_review", "medium", "Advertised SKU/ASIN has high ACOS.")
     if sales == ZERO and spend >= thresholds.no_sale_cost_threshold:
-        return _action("sku_ads_waste_review", "medium", "Advertised SKU/ASIN spent with no attributed sales.")
+        return _action(
+            "sku_ads_waste_review", "medium", "Advertised SKU/ASIN spent with no attributed sales."
+        )
     return _action("keep_observing", "low", "No firm advertised-product action from v1 rules.")
 
 
@@ -1748,8 +1836,8 @@ def _aggregate_ads_rows(
         key = tuple(_empty_to_none(row.get(field)) for field in key_fields)
         bucket = buckets[key]
         _add_to_bucket(bucket, row)
-        for field in passthrough_fields:
-            bucket[field] = _empty_to_none(row.get(field)) or bucket.get(field)
+        for field_name in passthrough_fields:
+            bucket[field_name] = _empty_to_none(row.get(field_name)) or bucket.get(field_name)
     return dict(buckets)
 
 
@@ -1902,14 +1990,13 @@ def _suggested_manual_action(action_label: str) -> str:
 
 def _date_set(start_date: date, end_date: date) -> set[date]:
     return {
-        start_date + timedelta(days=offset)
-        for offset in range((end_date - start_date).days + 1)
+        start_date + timedelta(days=offset) for offset in range((end_date - start_date).days + 1)
     }
 
 
 def _validate_week_start(week_start: date) -> None:
-    if week_start.weekday() != 0:
-        raise ValueError("week_start must be a Monday")
+    if week_start.weekday() not in {0, 5}:
+        raise ValueError("week_start must be a Monday or Saturday")
 
 
 def parse_week_start(value: str) -> date:

@@ -1,0 +1,111 @@
+name: Build GHCR image
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - dev
+    paths:
+      - Dockerfile
+      - .dockerignore
+      - pyproject.toml
+      - requirements*.txt
+      - src/**
+      - scripts/**
+      - sql/**
+      - docs/**
+      - .github/workflows/build-ghcr-image.yml
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: build-ghcr-image-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/seller-data-pipeline
+
+jobs:
+  build-and-push:
+    name: Build and push GHCR image
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Normalize image name
+        id: image
+        shell: bash
+        run: |
+          IMAGE="$(echo "${IMAGE_NAME}" | tr '[:upper:]' '[:lower:]')"
+          SHORT_SHA="${GITHUB_SHA::12}"
+          echo "image=${IMAGE}" >> "$GITHUB_OUTPUT"
+          echo "short_sha=${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+
+      - name: Compute image tags
+        id: tags
+        shell: bash
+        run: |
+          IMAGE="${{ steps.image.outputs.image }}"
+          SHORT_SHA="${{ steps.image.outputs.short_sha }}"
+
+          if [[ "${GITHUB_REF_NAME}" == "main" ]]; then
+            {
+              echo "tags<<EOF"
+              echo "${IMAGE}:latest"
+              echo "${IMAGE}:main"
+              echo "${IMAGE}:main-${SHORT_SHA}"
+              echo "${IMAGE}:${GITHUB_SHA}"
+              echo "EOF"
+            } >> "$GITHUB_OUTPUT"
+          elif [[ "${GITHUB_REF_NAME}" == "dev" ]]; then
+            {
+              echo "tags<<EOF"
+              echo "${IMAGE}:dev"
+              echo "${IMAGE}:dev-${SHORT_SHA}"
+              echo "${IMAGE}:${GITHUB_SHA}"
+              echo "EOF"
+            } >> "$GITHUB_OUTPUT"
+          else
+            SAFE_REF="$(echo "${GITHUB_REF_NAME}" | tr '/_' '--' | tr -cd '[:alnum:]-')"
+            {
+              echo "tags<<EOF"
+              echo "${IMAGE}:${SAFE_REF}-${SHORT_SHA}"
+              echo "${IMAGE}:${GITHUB_SHA}"
+              echo "EOF"
+            } >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: ${{ steps.tags.outputs.tags }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.title=seller-data-pipeline
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Print image references
+        shell: bash
+        run: |
+          echo "Pushed image tags:"
+          printf '%s\n' "${{ steps.tags.outputs.tags }}"

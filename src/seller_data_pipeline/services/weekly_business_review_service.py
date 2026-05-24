@@ -5,12 +5,18 @@ from collections import defaultdict
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta
-from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any, Protocol
 
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
+
+from seller_data_pipeline.services.report_bilingual import (
+    add_bilingual_readme_sheet,
+    bilingual_metric_label,
+    xlsx_header_label,
+)
 
 MONEY_QUANT = Decimal("0.01")
 RATIO_QUANT = Decimal("0.0001")
@@ -145,9 +151,7 @@ class SalesTrafficSummary:
             "units_refunded": self.units_refunded,
             "row_count": self.row_count,
             "avg_selling_price": _optional_decimal_to_string(self.avg_selling_price),
-            "unit_session_percentage": _optional_ratio_to_string(
-                self.unit_session_percentage
-            ),
+            "unit_session_percentage": _optional_ratio_to_string(self.unit_session_percentage),
         }
 
 
@@ -203,14 +207,10 @@ class SettlementPreview:
         return {
             "settlement_net_preview": _decimal_to_string(self.settlement_net_preview),
             "settlement_product_sales": _decimal_to_string(self.settlement_product_sales),
-            "settlement_advertising_fee": _decimal_to_string(
-                self.settlement_advertising_fee
-            ),
+            "settlement_advertising_fee": _decimal_to_string(self.settlement_advertising_fee),
             "settlement_fba_fee": _decimal_to_string(self.settlement_fba_fee),
             "settlement_refund_amount": _decimal_to_string(self.settlement_refund_amount),
-            "settlement_promotion_amount": _decimal_to_string(
-                self.settlement_promotion_amount
-            ),
+            "settlement_promotion_amount": _decimal_to_string(self.settlement_promotion_amount),
             "settlement_row_count": self.settlement_row_count,
             "currency": self.currency,
             "note": self.note,
@@ -239,9 +239,7 @@ class DailyTrendRow:
             "total_order_items": self.total_order_items,
             "sessions": self.sessions,
             "page_views": self.page_views,
-            "unit_session_percentage": _optional_ratio_to_string(
-                self.unit_session_percentage
-            ),
+            "unit_session_percentage": _optional_ratio_to_string(self.unit_session_percentage),
             "avg_selling_price": _optional_decimal_to_string(self.avg_selling_price),
             "ads_spend": _decimal_to_string(self.ads_spend),
             "ads_sales_7d": _decimal_to_string(self.ads_sales_7d),
@@ -284,14 +282,10 @@ class SkuPerformanceRow:
             "order_item_sales": _decimal_to_string(self.order_item_sales),
             "shipping_revenue": _decimal_to_string(self.shipping_revenue),
             "discount_total": _decimal_to_string(self.discount_total),
-            "order_net_sales_estimate": _decimal_to_string(
-                self.order_net_sales_estimate
-            ),
+            "order_net_sales_estimate": _decimal_to_string(self.order_net_sales_estimate),
             "unit_standard_cost": _optional_decimal_to_string(self.unit_standard_cost),
             "estimated_cogs": _decimal_to_string(self.estimated_cogs),
-            "gross_margin_before_ads": _decimal_to_string(
-                self.gross_margin_before_ads
-            ),
+            "gross_margin_before_ads": _decimal_to_string(self.gross_margin_before_ads),
             "gross_margin_rate_before_ads": _optional_ratio_to_string(
                 self.gross_margin_rate_before_ads
             ),
@@ -300,9 +294,7 @@ class SkuPerformanceRow:
             "ads_orders_7d": self.ads_orders_7d,
             "contribution_after_ads": _decimal_to_string(self.contribution_after_ads),
             "sku_tacos": _optional_ratio_to_string(self.sku_tacos),
-            "sku_ads_dependency_rate": _optional_ratio_to_string(
-                self.ads_dependency_rate
-            ),
+            "sku_ads_dependency_rate": _optional_ratio_to_string(self.ads_dependency_rate),
             "fulfillable_quantity": self.fulfillable_quantity,
             "days_of_supply": _optional_decimal_to_string(self.days_of_supply),
             "inventory_risk": self.inventory_risk,
@@ -376,9 +368,7 @@ class InventoryRiskRow:
             ),
             "days_of_supply": _optional_decimal_to_string(self.days_of_supply),
             "unit_standard_cost": _optional_decimal_to_string(self.unit_standard_cost),
-            "inventory_value_at_cost": _optional_decimal_to_string(
-                self.inventory_value_at_cost
-            ),
+            "inventory_value_at_cost": _optional_decimal_to_string(self.inventory_value_at_cost),
             "inventory_risk": self.inventory_risk,
             "inventory_velocity_status": self.velocity_status,
             "notes": self.notes,
@@ -475,9 +465,7 @@ class WeeklyBusinessReviewResult:
             "inventory_risk": [row.to_dict() for row in self.inventory_risk],
             "settlement_finance_preview": self.settlement_finance_preview.to_dict(),
             "alerts": [alert.to_dict() for alert in self.alerts],
-            "reconciliation_checks": [
-                check.to_dict() for check in self.reconciliation_checks
-            ],
+            "reconciliation_checks": [check.to_dict() for check in self.reconciliation_checks],
             "warnings": [warning.to_dict() for warning in self.warnings],
             "raw_metadata": _json_safe_mapping(self.raw_metadata),
             "output_files": self.output_files,
@@ -898,15 +886,15 @@ class WeeklyBusinessReviewService:
             / f"{result.week_start.isoformat()}_{result.week_end.isoformat()}"
         )
         output_dir.mkdir(parents=True, exist_ok=True)
-        json_path = output_dir / "weekly_business_review.json"
-        xlsx_path = output_dir / "weekly_business_review.xlsx"
+        period_key = f"{result.week_start.isoformat()}_{result.week_end.isoformat()}"
+        filename_base = f"weekly_business_review_{period_key}"
+        json_path = output_dir / f"{filename_base}.json"
+        xlsx_path = output_dir / f"{filename_base}.xlsx"
         result_with_files = result.with_output_files(
             {"json": str(json_path), "xlsx": str(xlsx_path)}
         )
         json_path.write_text(
-            json.dumps(
-                result_with_files.to_dict(), ensure_ascii=False, indent=2, sort_keys=True
-            )
+            json.dumps(result_with_files.to_dict(), ensure_ascii=False, indent=2, sort_keys=True)
             + "\n",
             encoding="utf-8",
         )
@@ -919,10 +907,20 @@ def build_weekly_business_review_workbook(result: WeeklyBusinessReviewResult) ->
     workbook = Workbook()
     default = workbook.active
     workbook.remove(default)
-    _write_rows_sheet(workbook, "01_Executive_Summary", _summary_rows(result))
-    _write_rows_sheet(
-        workbook, "02_Daily_Trend", [row.to_dict() for row in result.daily_trend]
+    add_bilingual_readme_sheet(
+        workbook,
+        title_en="Weekly Business Review",
+        title_zh="每周经营复盘",
+        period=f"{result.week_start.isoformat()}_{result.week_end.isoformat()}",
+        status=result.status,
+        scope_en=(
+            "Sales & Traffic and Orders drive weekly business metrics; "
+            "Settlement is finance context only."
+        ),
+        scope_zh="Sales & Traffic 和 Orders 用于周度经营指标；Settlement 仅作为财务参考。",
     )
+    _write_rows_sheet(workbook, "01_Executive_Summary", _summary_rows(result))
+    _write_rows_sheet(workbook, "02_Daily_Trend", [row.to_dict() for row in result.daily_trend])
     _write_rows_sheet(workbook, "03_Sales_Traffic", _sales_traffic_rows(result))
     _write_rows_sheet(
         workbook,
@@ -935,9 +933,7 @@ def build_weekly_business_review_workbook(result: WeeklyBusinessReviewResult) ->
         "06_Inventory_Risk",
         [row.to_dict() for row in result.inventory_risk],
     )
-    _write_rows_sheet(
-        workbook, "07_Alerts_Actions", [row.to_dict() for row in result.alerts]
-    )
+    _write_rows_sheet(workbook, "07_Alerts_Actions", [row.to_dict() for row in result.alerts])
     _write_rows_sheet(
         workbook,
         "08_Reconciliation_Checks",
@@ -1029,11 +1025,11 @@ def _summary_rows(result: WeeklyBusinessReviewResult) -> list[dict[str, Any]]:
 
 def _sales_traffic_rows(result: WeeklyBusinessReviewResult) -> list[dict[str, Any]]:
     rows = [
-        {"metric": key, "value": value, "period": "current_week"}
+        {"metric": bilingual_metric_label(key), "value": value, "period": "current_week"}
         for key, value in result.sales_traffic_summary.to_dict().items()
     ]
     rows.extend(
-        {"metric": key, "value": value, "period": "previous_week"}
+        {"metric": bilingual_metric_label(key), "value": value, "period": "previous_week"}
         for key, value in result.previous_sales_traffic_summary.to_dict().items()
     )
     return rows
@@ -1041,17 +1037,16 @@ def _sales_traffic_rows(result: WeeklyBusinessReviewResult) -> list[dict[str, An
 
 def _ads_overview_rows(result: WeeklyBusinessReviewResult) -> list[dict[str, Any]]:
     rows = [
-        {"section": "summary", "metric": key, "value": value}
+        {"section": "summary", "metric": bilingual_metric_label(key), "value": value}
         for key, value in result.ads_summary.to_dict().items()
     ]
     rows.extend(
-        {"section": "previous_summary", "metric": key, "value": value}
+        {"section": "previous_summary", "metric": bilingual_metric_label(key), "value": value}
         for key, value in result.previous_ads_summary.to_dict().items()
     )
     rows.append({"section": "", "metric": "", "value": ""})
     rows.extend(
-        {"section": "campaign", **campaign.to_dict()}
-        for campaign in result.campaign_summary
+        {"section": "campaign", **campaign.to_dict()} for campaign in result.campaign_summary
     )
     return rows
 
@@ -1065,7 +1060,12 @@ def _metadata_rows(result: WeeklyBusinessReviewResult) -> list[dict[str, Any]]:
 
 
 def _metric_row(metric: str, value: Any, currency: str | None, notes: str) -> dict[str, Any]:
-    return {"metric": metric, "value": _xlsx_value(value), "currency": currency, "notes": notes}
+    return {
+        "metric": bilingual_metric_label(metric),
+        "value": _xlsx_value(value),
+        "currency": currency,
+        "notes": notes,
+    }
 
 
 def _flatten_sku_row(row: SkuPerformanceRow) -> dict[str, Any]:
@@ -1079,8 +1079,8 @@ def _flatten_sku_row(row: SkuPerformanceRow) -> dict[str, Any]:
 def _write_rows_sheet(workbook: Workbook, title: str, rows: Sequence[Mapping[str, Any]]) -> None:
     sheet = workbook.create_sheet(title)
     if not rows:
-        sheet.append(["message"])
-        sheet.append(["No rows"])
+        sheet.append([xlsx_header_label("message")])
+        sheet.append(["No rows / 无数据"])
         _format_sheet(sheet)
         return
     headers = list(rows[0].keys())
@@ -1088,7 +1088,7 @@ def _write_rows_sheet(workbook: Workbook, title: str, rows: Sequence[Mapping[str
         for key in row.keys():
             if key not in headers:
                 headers.append(key)
-    sheet.append(headers)
+    sheet.append([xlsx_header_label(header) for header in headers])
     for row in rows:
         sheet.append([_xlsx_value(row.get(header)) for header in headers])
     _format_sheet(sheet)
@@ -2120,19 +2120,11 @@ def _unit_cost(row: Mapping[str, Any]) -> Decimal:
 
 
 def _build_inventory_index(rows: Iterable[Mapping[str, Any]]) -> dict[str, Mapping[str, Any]]:
-    return {
-        sku: row
-        for row in rows
-        if (sku := _empty_to_none(row.get("seller_sku"))) is not None
-    }
+    return {sku: row for row in rows if (sku := _empty_to_none(row.get("seller_sku"))) is not None}
 
 
 def _build_listing_index(rows: Iterable[Mapping[str, Any]]) -> dict[str, Mapping[str, Any]]:
-    return {
-        sku: row
-        for row in rows
-        if (sku := _empty_to_none(row.get("seller_sku"))) is not None
-    }
+    return {sku: row for row in rows if (sku := _empty_to_none(row.get("seller_sku"))) is not None}
 
 
 def _inventory_risk_label(
@@ -2160,14 +2152,13 @@ def _inventory_risk_label(
 
 def _date_set(start_date: date, end_date: date) -> set[date]:
     return {
-        start_date + timedelta(days=offset)
-        for offset in range((end_date - start_date).days + 1)
+        start_date + timedelta(days=offset) for offset in range((end_date - start_date).days + 1)
     }
 
 
 def _validate_week_start(week_start: date) -> None:
-    if week_start.weekday() != 0:
-        raise ValueError("week_start must be a Monday")
+    if week_start.weekday() not in {0, 5}:
+        raise ValueError("week_start must be a Monday or Saturday")
 
 
 def parse_week_start(value: str) -> date:

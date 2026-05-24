@@ -12,6 +12,8 @@
 | `data_coverage_audit_workflow.md` | 利润/周报前如何审计 normalized 数据覆盖范围和 stable cutoff。 |
 | `historical_backfill_workflow.md` | 按明确日期范围分段提交 SP-API / Ads 历史补数请求，替代人工倒推 `--days`。 |
 | `manual_refresh_plan_workflow.md` | 标准“简单几个指令定期下载所有数据入库”流程，定义 `core_rolling` / `weekly_full` plan 和 submit/collect/ingest/audit phase。 |
+| `azure_container_apps_jobs_workflow.md` | Azure Container Apps Jobs 自动化 runbook；按数据下载、数据入库、报表与发送三阶段迁移手动流程。 |
+| `azure_container_apps_jobs_setup_checklist.md` | Azure Container Apps Jobs 开通、GHCR 镜像、环境变量/secrets、manual job 命令和 schedule 的落地清单。 |
 
 ## 当前原则
 
@@ -48,3 +50,30 @@ python scripts/run_manual_refresh_plan.py --plan core_rolling --phase audit --ma
 ```
 
 每周完整刷新把 `--plan core_rolling` 替换为 `--plan weekly_full`。详见 `manual_refresh_plan_workflow.md`。
+
+
+## 未来自动化入口
+
+Azure Container Apps Jobs 自动化方案见：
+
+```text
+docs/features/feature_automation_jobs_workflow.md
+docs/operations/azure_container_apps_jobs_workflow.md
+docs/adr/ADR-011-azure-container-apps-jobs-automation.md
+```
+
+第一版自动化仍然遵循手动优先原则：先创建 manual-triggered jobs 并手动触发验证，再启用 schedule；先只发给 `feng@cuidena.cn` 测试，再恢复数据库收件人默认三人。
+
+
+## Azure Jobs automation note
+
+`azure_container_apps_jobs_workflow.md` 已在 2026-05-24 修订为 free-first profile：
+
+```text
+Azure Container Apps Jobs consumption plan
++ GHCR image
++ Azure SQL artifact store
++ SMTP delivery
+```
+
+v1 不使用 Azure Files / Blob / ACR / NAT Gateway / Private Endpoint。跨 job 的 runtime/reports 文件通过计划中的 `dbo.pipeline_artifact_store` 压缩持久化。

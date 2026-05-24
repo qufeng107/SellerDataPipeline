@@ -84,16 +84,8 @@ def main() -> None:
 
     print(f"Profit preview status={result.status} period={args.period} dry_run={args.dry_run}")
     print(
-        "period={start}..{end} marketplace={marketplace} settlement_rows={rows} "
-        "settlement_net={net} internal_cogs={cogs} estimated_profit={profit}".format(
-            start=result.start_date.isoformat(),
-            end=result.end_date.isoformat(),
-            marketplace=result.marketplace_id,
-            rows=result.settlement_row_count,
-            net=result.settlement_net_amount,
-            cogs=result.internal_cogs,
-            profit=result.estimated_operating_profit,
-        )
+        f"period={result.start_date.isoformat()}..{result.end_date.isoformat()} marketplace={result.marketplace_id} settlement_rows={result.settlement_row_count} "
+        f"settlement_net={result.settlement_net_amount} internal_cogs={result.internal_cogs} estimated_profit={result.estimated_operating_profit}"
     )
     for name, path in result.output_files.items():
         print(f"{name}={path}")

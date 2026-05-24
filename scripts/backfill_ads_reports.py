@@ -70,10 +70,7 @@ def main() -> None:
     for row in result.window_results:
         suffix = f" manifest={row.manifest_path}" if row.manifest_path else ""
         message = f" message={row.message}" if row.message else ""
-        print(
-            f"{row.status}: {row.report_type} {row.start_date}..{row.end_date}"
-            f"{suffix}{message}"
-        )
+        print(f"{row.status}: {row.report_type} {row.start_date}..{row.end_date}{suffix}{message}")
     if result.dry_run:
         print("Dry-run only. Re-run with --execute after reviewing the planned chunks.")
 

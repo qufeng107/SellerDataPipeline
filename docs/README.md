@@ -1,6 +1,6 @@
 # SellerDataPipeline 文档总索引
 
-> 更新时间：2026-05-22  
+> 更新时间：2026-05-24  
 > 文档定位：本目录是 SellerDataPipeline 的正式文档入口。未来新需求、新设计、新数据库变更和开发进度都应优先维护在 `docs/` 下。`requirements_to_be_deprecated/` 中历史文档只作为迁移来源或兼容参考，暂不直接删除。
 
 ## 1. 文档体系目标
@@ -35,6 +35,7 @@ docs/
     data_coverage_audit_workflow.md
     historical_backfill_workflow.md
     manual_refresh_plan_workflow.md
+    azure_container_apps_jobs_workflow.md
 
   data_access/
     README.md
@@ -72,6 +73,8 @@ docs/
     ADR-007-manual-first-before-automation.md
     ADR-008-ingestion-job-config-table.md
     ADR-009-settlement-led-profit-policy.md
+    ADR-011-azure-container-apps-jobs-automation.md
+    ADR-012-zero-paid-automation-storage-profile.md
 ```
 
 ## 3. 文档职责边界
@@ -121,6 +124,7 @@ docs/
 23. 已冻结设计：[`features/feature_monthly_financial_close_report.md`](features/feature_monthly_financial_close_report.md)，基于 Settlement-led Financial Profit 生成月度 CEO/CFO 财务结算报表
 24. 已冻结设计：[`features/feature_weekly_business_review.md`](features/feature_weekly_business_review.md)，基于 Sales & Traffic / Orders / Ads / SKU Cost / Inventory 生成每周经营复盘
 25. 已冻结设计：[`features/feature_weekly_ads_optimization_report.md`](features/feature_weekly_ads_optimization_report.md)，基于 Sponsored Products Ads 数据生成每周广告优化动作清单
+26. 已冻结设计：[`features/feature_automation_jobs_workflow.md`](features/feature_automation_jobs_workflow.md)，基于 Azure Container Apps Jobs 的三阶段自动化工作流；2026-05-24 修订为 free-first profile，跨 job 文件通过 Azure SQL artifact store 持久化
 25. 相关 ADR，尤其 `ADR-005-progressive-generalization.md`、`ADR-006-azure-sql-connection-warmup.md` 与 `ADR-009-settlement-led-profit-policy.md` 与 `ADR-010-overlapping-refresh-weekly-analysis.md`
 
 ## 5. 当前迁移与治理进展

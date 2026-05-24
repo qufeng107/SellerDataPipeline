@@ -8,19 +8,19 @@ from openpyxl import load_workbook
 
 from seller_data_pipeline.services.weekly_ads_optimization_service import (
     WeeklyAdsOptimizationService,
-    WeeklyAdsOptimizationThresholds,
     parse_week_start,
 )
 
 
-def test_parse_week_start_requires_monday() -> None:
+def test_parse_week_start_accepts_explicit_period_start() -> None:
     assert parse_week_start("2026-05-11") == date(2026, 5, 11)
+    assert parse_week_start("2026-05-16") == date(2026, 5, 16)
     try:
-        parse_week_start("2026-05-12")
+        parse_week_start("2026/05/16")
     except ValueError as exc:
-        assert "Monday" in str(exc)
+        assert "YYYY-MM-DD" in str(exc)
     else:
-        raise AssertionError("Expected non-Monday week_start to fail")
+        raise AssertionError("Expected invalid week_start format to fail")
 
 
 def test_calculate_core_metrics_and_actions_for_2026_05_11_style_week() -> None:
@@ -76,7 +76,9 @@ def test_calculate_core_metrics_and_actions_for_2026_05_11_style_week() -> None:
         )
         for i in range(7)
     ]
-    sales_rows = [_sales_row(week_start + timedelta(days=i), Decimal("100.00"), 4, 100) for i in range(7)]
+    sales_rows = [
+        _sales_row(week_start + timedelta(days=i), Decimal("100.00"), 4, 100) for i in range(7)
+    ]
 
     result = WeeklyAdsOptimizationService().calculate_from_rows(
         marketplace_id="ATVPDKIKX0DER",
@@ -104,8 +106,7 @@ def test_calculate_core_metrics_and_actions_for_2026_05_11_style_week() -> None:
     assert result.currency == "USD"
     assert len(result.campaign_performance) == 1
     assert any(
-        row.action_label == "negative_candidate"
-        for row in result.search_term_action_candidates
+        row.action_label == "negative_candidate" for row in result.search_term_action_candidates
     )
     assert any(
         row.action_label == "harvest_to_exact_candidate"
@@ -151,7 +152,9 @@ def test_missing_search_term_coverage_marks_needs_backfill() -> None:
     )
 
     assert result.status == "needs_backfill"
-    assert any(check.check_name == "ads_search_term_coverage" for check in result.reconciliation_checks)
+    assert any(
+        check.check_name == "ads_search_term_coverage" for check in result.reconciliation_checks
+    )
 
 
 def test_spend_sanity_check_marks_large_difference() -> None:
@@ -161,7 +164,9 @@ def test_spend_sanity_check_marks_large_difference() -> None:
         profile_id="3917953989967300",
         week_start=week_start,
         generated_at_utc=datetime(2026, 5, 23),
-        campaign_rows=[_campaign_row(week_start + timedelta(days=i), cost=Decimal("10.00")) for i in range(7)],
+        campaign_rows=[
+            _campaign_row(week_start + timedelta(days=i), cost=Decimal("10.00")) for i in range(7)
+        ],
         targeting_rows=[
             _targeting_row(
                 report_date=week_start + timedelta(days=i),
@@ -185,8 +190,7 @@ def test_spend_sanity_check_marks_large_difference() -> None:
     )
 
     assert any(
-        check.check_name == "campaign_vs_targeting_spend"
-        and check.status == "needs_review"
+        check.check_name == "campaign_vs_targeting_spend" and check.status == "needs_review"
         for check in result.reconciliation_checks
     )
     assert result.status == "reviewable_with_warnings"
@@ -200,21 +204,31 @@ def test_write_report_files_creates_json_and_xlsx(tmp_path: Path) -> None:
         week_start=week_start,
         generated_at_utc=datetime(2026, 5, 23),
         campaign_rows=[_campaign_row(week_start + timedelta(days=i)) for i in range(7)],
-        targeting_rows=[_targeting_row(report_date=week_start + timedelta(days=i)) for i in range(7)],
-        search_term_rows=[_search_row(report_date=week_start + timedelta(days=i)) for i in range(7)],
-        advertised_product_rows=[_product_row(report_date=week_start + timedelta(days=i)) for i in range(7)],
-        sales_traffic_rows=[_sales_row(week_start + timedelta(days=i), Decimal("10.00"), 1, 10) for i in range(7)],
+        targeting_rows=[
+            _targeting_row(report_date=week_start + timedelta(days=i)) for i in range(7)
+        ],
+        search_term_rows=[
+            _search_row(report_date=week_start + timedelta(days=i)) for i in range(7)
+        ],
+        advertised_product_rows=[
+            _product_row(report_date=week_start + timedelta(days=i)) for i in range(7)
+        ],
+        sales_traffic_rows=[
+            _sales_row(week_start + timedelta(days=i), Decimal("10.00"), 1, 10) for i in range(7)
+        ],
     )
 
     written = WeeklyAdsOptimizationService().write_report_files(result=result, output_root=tmp_path)
 
     assert set(written.output_files) == {"json", "xlsx"}
-    json_path = tmp_path / "3917953989967300/2026-05-11_2026-05-17/weekly_ads_optimization.json"
-    xlsx_path = tmp_path / "3917953989967300/2026-05-11_2026-05-17/weekly_ads_optimization.xlsx"
+    report_dir = tmp_path / "3917953989967300/2026-05-11_2026-05-17"
+    json_path = report_dir / "weekly_ads_optimization_2026-05-11_2026-05-17.json"
+    xlsx_path = report_dir / "weekly_ads_optimization_2026-05-11_2026-05-17.xlsx"
     assert json_path.exists()
     assert xlsx_path.exists()
     workbook = load_workbook(xlsx_path, read_only=True)
     assert workbook.sheetnames == [
+        "00_Readme_说明",
         "01_Executive_Summary",
         "02_Daily_Trend",
         "03_Campaigns",
@@ -238,7 +252,9 @@ def test_run_uses_repo_and_writes_report(tmp_path: Path) -> None:
         output_root=tmp_path,
     )
 
-    assert result.output_files["xlsx"].endswith("weekly_ads_optimization.xlsx")
+    assert result.output_files["xlsx"].endswith(
+        "weekly_ads_optimization_2026-05-11_2026-05-17.xlsx"
+    )
     assert repo.calls == [
         "campaign",
         "targeting",
@@ -446,7 +462,9 @@ class FakeWeeklyAdsRepo:
         end_date: date,
     ) -> list[dict[str, object]]:
         self.calls.append("sales")
-        return [_sales_row(start_date + timedelta(days=i), Decimal("10.00"), 1, 10) for i in range(7)]
+        return [
+            _sales_row(start_date + timedelta(days=i), Decimal("10.00"), 1, 10) for i in range(7)
+        ]
 
     def fetch_sku_cost_rows(
         self,

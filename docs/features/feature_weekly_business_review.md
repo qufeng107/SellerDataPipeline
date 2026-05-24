@@ -45,7 +45,7 @@ WBR 的特点是：
 | 数据刷新依赖 | 依赖 `core_rolling` 每 1-2 天刷新；建议在周报生成前执行一次 `weekly_full` 或至少 `core_rolling`。 |
 | 数据库变更 | v1 不新增数据库表，不新增 migration。 |
 | 代码实现 | 已完成 v1：`scripts/generate_weekly_business_review.py` + service/repo/unit tests。 |
-| 默认输出形式 | `weekly_business_review.json` + `weekly_business_review.xlsx`。 |
+| 默认输出形式 | `weekly_business_review_{week_start}_{week_end}.json` + `weekly_business_review_{week_start}_{week_end}.xlsx`。 |
 | 不再默认输出 | 不默认输出 Markdown；不默认输出多个 CSV。 |
 | 验收样本 | 先以 2026-03 起的完整自然周为主，尤其 2026-03-23、2026-03-30、2026-04-06、2026-04-13、2026-04-20 等周。对于 3/4 月样本，Ads API context 可能 partial；5 月 6 日之后样本可验证 Ads campaign daily 加工。 |
 
@@ -166,7 +166,7 @@ python scripts/generate_weekly_business_review.py `
 
 | 参数 | 默认值 | 说明 |
 |---|---|---|
-| `--week-start` | 必填 | 自然周周一，格式 `YYYY-MM-DD`。 |
+| `--week-start` | 必填 | 7天报表周期起始日，格式 `YYYY-MM-DD`；自动化周报默认使用周六起始，统计周六到周五。 |
 | `--week-end` | 自动 `week_start + 6 days` | v1 可不开放；内部自动计算。 |
 | `--compare-previous-week` | true | 默认和前一自然周比较。 |
 | `--target-acos` | `0.30` | 广告 ACOS 警戒阈值。 |
@@ -211,8 +211,8 @@ v1 默认只输出两个文件：
 
 | 文件 | 用途 |
 |---|---|
-| `weekly_business_review.json` | 结构化 source of truth，供后续 PDF / Email / Dashboard / 自动预警使用。 |
-| `weekly_business_review.xlsx` | 人工复核和每周经营会议使用的多 sheet 表格。 |
+| `weekly_business_review_{week_start}_{week_end}.json` | 结构化 source of truth，供后续 PDF / Email / Dashboard / 自动预警使用。 |
+| `weekly_business_review_{week_start}_{week_end}.xlsx` | 人工复核和每周经营会议使用的多 sheet 表格。 |
 
 不再默认输出：
 
@@ -953,7 +953,7 @@ CLI params
 
 | 阶段 | 失败场景 | 处理 |
 |---|---|---|
-| 参数校验 | `week_start` 不是周一 | fail fast。 |
+| 参数校验 | `week_start` 日期格式错误 | fail fast；自动化 wrapper 要求周六起始。 |
 | 日期解析 | Orders 日期解析失败 | 记录 warning，失败行不参与 SKU 汇总。 |
 | 成本匹配 | SKU 无成本 | `needs_review`，不输出正式贡献结论。 |
 | 数据缺失 | Sales & Traffic 缺天 | `needs_review`。 |
@@ -990,8 +990,8 @@ python scripts/generate_weekly_business_review.py --marketplace-id ATVPDKIKX0DER
 并输出：
 
 ```text
-runtime/analysis_reports/weekly_business_review/ATVPDKIKX0DER/2026-04-06_2026-04-12/weekly_business_review.json
-runtime/analysis_reports/weekly_business_review/ATVPDKIKX0DER/2026-04-06_2026-04-12/weekly_business_review.xlsx
+runtime/analysis_reports/weekly_business_review/ATVPDKIKX0DER/2026-04-06_2026-04-12/weekly_business_review_2026-04-06_2026-04-12.json
+runtime/analysis_reports/weekly_business_review/ATVPDKIKX0DER/2026-04-06_2026-04-12/weekly_business_review_2026-04-06_2026-04-12.xlsx
 ```
 
 XLSX 至少包含：
@@ -1049,8 +1049,8 @@ python scripts/generate_weekly_business_review.py \
 默认输出：
 
 ```text
-runtime/analysis_reports/weekly_business_review/{marketplace_id}/{week_start}_{week_end}/weekly_business_review.json
-runtime/analysis_reports/weekly_business_review/{marketplace_id}/{week_start}_{week_end}/weekly_business_review.xlsx
+runtime/analysis_reports/weekly_business_review/{marketplace_id}/{week_start}_{week_end}/weekly_business_review_{week_start}_{week_end}.json
+runtime/analysis_reports/weekly_business_review/{marketplace_id}/{week_start}_{week_end}/weekly_business_review_{week_start}_{week_end}.xlsx
 ```
 
 验证命令：
@@ -1104,4 +1104,17 @@ Settlement 只做 posted-date finance preview，不作为最终周利润；
 默认输出 JSON + 单个 XLSX 多 sheet；
 不默认输出 Markdown 或多个 CSV；
 人工复核稳定后再实现 PDF / Email / Dashboard 自动化。
+```
+
+---
+
+## Presentation language requirement
+
+Default presentation artifacts must be bilingual:
+
+```text
+1. JSON keeps stable machine-readable English field names.
+2. XLSX includes `00_Readme_说明` and bilingual fixed headers/labels.
+3. Report delivery emails are Chinese-first with English reference text.
+4. Amazon-native raw values such as campaign names, search terms, keywords, SKU/ASIN and raw IDs stay unchanged.
 ```

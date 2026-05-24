@@ -125,11 +125,14 @@ def test_sku_cost_exists_returns_true_when_count_positive() -> None:
     cursor = FakeCursor(one=(1,))
     repo = SkuCostRepo(FakeConnection([cursor]))
 
-    assert repo.sku_cost_exists(
-        marketplace_id="ATVPDKIKX0DER",
-        seller_sku="SKU-A",
-        effective_from=date(2026, 1, 1),
-    ) is True
+    assert (
+        repo.sku_cost_exists(
+            marketplace_id="ATVPDKIKX0DER",
+            seller_sku="SKU-A",
+            effective_from=date(2026, 1, 1),
+        )
+        is True
+    )
     assert cursor.executed[0][1] == ("ATVPDKIKX0DER", "SKU-A", date(2026, 1, 1))
 
 

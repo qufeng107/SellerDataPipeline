@@ -14,7 +14,7 @@ def test_generate_pack_for_weekly_ads_report(tmp_path: Path) -> None:
         tmp_path,
         report_type="weekly_ads_optimization",
         status="ok",
-        output_files_path="weekly_ads_optimization.xlsx",
+        output_files_path="weekly_ads_optimization_2026-05-11_2026-05-17.xlsx",
     )
     service = ReportDeliveryPackService()
 
@@ -28,7 +28,7 @@ def test_generate_pack_for_weekly_ads_report(tmp_path: Path) -> None:
     assert result.report_type == "weekly_ads_optimization"
     assert result.send_guard.send_allowed is True
     assert result.manifest_path.exists()
-    assert result.subject_path.read_text(encoding="utf-8").startswith("[Ads Optimization]")
+    assert result.subject_path.read_text(encoding="utf-8").startswith("[广告优化 Ads Optimization]")
     assert result.body_html_path.exists()
     assert result.body_text_path.exists()
     assert (result.output_dir / "attachments" / xlsx_path.name).exists()
@@ -44,7 +44,7 @@ def test_include_json_attachment(tmp_path: Path) -> None:
         tmp_path,
         report_type="monthly_financial_close",
         status="ok",
-        output_files_path="monthly_financial_close.xlsx",
+        output_files_path="monthly_financial_close_2026-04.xlsx",
     )
 
     result = ReportDeliveryPackService().generate_pack(
@@ -65,7 +65,7 @@ def test_partial_report_is_allowed_for_operations_but_blocked_for_shareholders(
         tmp_path,
         report_type="weekly_business_review",
         status="partial",
-        output_files_path="weekly_business_review.xlsx",
+        output_files_path="weekly_business_review_2026-05-11_2026-05-17.xlsx",
     )
     service = ReportDeliveryPackService()
 
@@ -90,7 +90,7 @@ def test_needs_review_is_blocked_unless_allowed(tmp_path: Path) -> None:
         tmp_path,
         report_type="monthly_financial_close",
         status="needs_review",
-        output_files_path="monthly_financial_close.xlsx",
+        output_files_path="monthly_financial_close_2026-04.xlsx",
     )
     service = ReportDeliveryPackService()
 
@@ -161,9 +161,9 @@ def _write_report_files(
     output_files_path: str,
 ) -> tuple[Path, Path]:
     xlsx_name = {
-        "monthly_financial_close": "monthly_financial_close.xlsx",
-        "weekly_business_review": "weekly_business_review.xlsx",
-        "weekly_ads_optimization": "weekly_ads_optimization.xlsx",
+        "monthly_financial_close": "monthly_financial_close_2026-04.xlsx",
+        "weekly_business_review": "weekly_business_review_2026-05-11_2026-05-17.xlsx",
+        "weekly_ads_optimization": "weekly_ads_optimization_2026-05-11_2026-05-17.xlsx",
     }[report_type]
     xlsx_path = tmp_path / xlsx_name
     xlsx_path.write_bytes(b"fake xlsx content")

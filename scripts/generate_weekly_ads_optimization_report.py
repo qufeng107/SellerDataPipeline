@@ -36,14 +36,12 @@ def main() -> None:
     parser.add_argument(
         "--profile-id",
         default=None,
-        help=(
-            "Amazon Ads profile ID. Defaults to AMAZON_ADS_PROFILE_ID when available."
-        ),
+        help=("Amazon Ads profile ID. Defaults to AMAZON_ADS_PROFILE_ID when available."),
     )
     parser.add_argument(
         "--week-start",
         required=True,
-        help="Natural week Monday in YYYY-MM-DD format, for example 2026-05-11.",
+        help="7-day report period start in YYYY-MM-DD format. Scheduled reports use Saturday starts.",
     )
     parser.add_argument(
         "--output-root",
@@ -53,9 +51,7 @@ def main() -> None:
     parser.add_argument("--target-acos", default="0.30", help="Default: 0.30.")
     parser.add_argument("--watch-acos", default="0.40", help="Default: 0.40.")
     parser.add_argument("--target-tacos", default="0.20", help="Default: 0.20.")
-    parser.add_argument(
-        "--no-sale-cost-threshold", default="10.00", help="Default: 10.00."
-    )
+    parser.add_argument("--no-sale-cost-threshold", default="10.00", help="Default: 10.00.")
     parser.add_argument(
         "--no-order-click-threshold",
         type=int,
@@ -68,14 +64,10 @@ def main() -> None:
         default=2,
         help="Default: 2 attributed purchases.",
     )
-    parser.add_argument(
-        "--min-sales-to-scale", default="40.00", help="Default: 40.00."
-    )
+    parser.add_argument("--min-sales-to-scale", default="40.00", help="Default: 40.00.")
     parser.add_argument("--low-ctr-threshold", default="0.002", help="Default: 0.002.")
     parser.add_argument("--low-cvr-threshold", default="0.03", help="Default: 0.03.")
-    parser.add_argument(
-        "--high-cpc-multiplier", default="1.5", help="Default: 1.5."
-    )
+    parser.add_argument("--high-cpc-multiplier", default="1.5", help="Default: 1.5.")
     parser.add_argument(
         "--stable-lag-days",
         type=int,
@@ -147,21 +139,9 @@ def main() -> None:
     overall = result.overall_summary
     print(f"Weekly Ads Optimization status={result.status} dry_run={args.dry_run}")
     print(
-        "period={start}..{end} marketplace={marketplace} profile={profile} "
-        "ads_spend={spend} ads_sales_7d={sales} purchases={purchases} "
-        "clicks={clicks} acos={acos} tacos={tacos} action_items={actions}".format(
-            start=result.week_start.isoformat(),
-            end=result.week_end.isoformat(),
-            marketplace=marketplace_id,
-            profile=profile_id,
-            spend=overall.ads_spend,
-            sales=overall.ads_sales_7d,
-            purchases=overall.ads_purchases_7d,
-            clicks=overall.clicks,
-            acos=_display_ratio(overall.acos),
-            tacos=_display_ratio(overall.tacos),
-            actions=len(result.action_items),
-        )
+        f"period={result.week_start.isoformat()}..{result.week_end.isoformat()} marketplace={marketplace_id} profile={profile_id} "
+        f"ads_spend={overall.ads_spend} ads_sales_7d={overall.ads_sales_7d} purchases={overall.ads_purchases_7d} "
+        f"clicks={overall.clicks} acos={_display_ratio(overall.acos)} tacos={_display_ratio(overall.tacos)} action_items={len(result.action_items)}"
     )
     reconciliation_warnings = [
         check for check in result.reconciliation_checks if check.status == "warning"
@@ -171,13 +151,8 @@ def main() -> None:
     ]
     non_info_warnings = [warning for warning in result.warnings if warning.severity != "info"]
     print(
-        "reconciliation_warnings={warnings} reconciliation_needs_review={needs_review} "
-        "non_info_warnings={non_info} search_term_actions={search_actions}".format(
-            warnings=len(reconciliation_warnings),
-            needs_review=len(reconciliation_needs_review),
-            non_info=len(non_info_warnings),
-            search_actions=len(result.search_term_action_candidates),
-        )
+        f"reconciliation_warnings={len(reconciliation_warnings)} reconciliation_needs_review={len(reconciliation_needs_review)} "
+        f"non_info_warnings={len(non_info_warnings)} search_term_actions={len(result.search_term_action_candidates)}"
     )
     for name, path in result.output_files.items():
         print(f"{name}={path}")
@@ -186,14 +161,8 @@ def main() -> None:
         print("reconciliation_non_ok_checks:")
         for check in non_ok_checks:
             print(
-                "- [{severity}] {name}: expected={expected} actual={actual} "
-                "message={message}".format(
-                    severity=check.severity,
-                    name=check.check_name,
-                    expected=check.expected,
-                    actual=check.actual,
-                    message=check.message,
-                )
+                f"- [{check.severity}] {check.check_name}: expected={check.expected} actual={check.actual} "
+                f"message={check.message}"
             )
     if result.warnings:
         print("warnings:")

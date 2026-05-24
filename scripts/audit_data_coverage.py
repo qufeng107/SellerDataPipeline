@@ -47,7 +47,9 @@ def main() -> None:
         raise SystemExit("Missing --marketplace-id or AMAZON_MARKETPLACE_ID.")
 
     target_start_date = date.fromisoformat(args.target_start_date)
-    target_end_date = date.fromisoformat(args.target_end_date) if args.target_end_date else date.today()
+    target_end_date = (
+        date.fromisoformat(args.target_end_date) if args.target_end_date else date.today()
+    )
 
     with get_connection(settings=settings, autocommit=True) as connection:
         service = DataCoverageAuditService(repo=DataCoverageRepo(connection))
@@ -61,8 +63,14 @@ def main() -> None:
     print("Data coverage audit completed.")
     print(f"marketplace={result.marketplace_id}")
     print(f"target_window={result.target_start_date}..{result.target_end_date}")
-    print("stable_status_counts=" + ", ".join(f"{k}:{v}" for k, v in sorted(result.stable_status_counts.items())))
-    print("raw_status_counts=" + ", ".join(f"{k}:{v}" for k, v in sorted(result.status_counts.items())))
+    print(
+        "stable_status_counts="
+        + ", ".join(f"{k}:{v}" for k, v in sorted(result.stable_status_counts.items()))
+    )
+    print(
+        "raw_status_counts="
+        + ", ".join(f"{k}:{v}" for k, v in sorted(result.status_counts.items()))
+    )
     for name, path in result.output_files.items():
         print(f"{name}={path}")
 

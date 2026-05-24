@@ -170,8 +170,7 @@ class Settings:
     report_email_smtp_password: str | None = _env("REPORT_EMAIL_SMTP_PASSWORD")
     report_email_from: str | None = _env("REPORT_EMAIL_FROM")
     report_email_from_name: str = (
-        _env("REPORT_EMAIL_FROM_NAME", "SellerDataPipeline Reports")
-        or "SellerDataPipeline Reports"
+        _env("REPORT_EMAIL_FROM_NAME", "SellerDataPipeline Reports") or "SellerDataPipeline Reports"
     )
     report_email_reply_to: str | None = _env("REPORT_EMAIL_REPLY_TO")
     report_email_smtp_timeout_seconds: int = _env_int("REPORT_EMAIL_SMTP_TIMEOUT_SECONDS", 30)

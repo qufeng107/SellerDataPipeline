@@ -42,7 +42,7 @@ v1 不新增数据库结果表，不自动发送邮件，不生成正式 PDF；�
 | 设计状态 | 本文冻结 v1 设计到指标、字段、公式、输出文件和 XLSX sheet 级别。 |
 | 数据库变更 | v1 不新增数据库表，不新增 migration。 |
 | 代码实现 | 已实现 v1：新增 service / repo / CLI / unit tests；待真实 Azure SQL 跑 2026-03、2026-04 人工复核。 |
-| 默认输出形式 | `monthly_financial_close.json` + `monthly_financial_close.xlsx`。已由 CLI 默认生成。 |
+| 默认输出形式 | `monthly_financial_close_{YYYY-MM}.json` + `monthly_financial_close_{YYYY-MM}.xlsx`。已由 CLI 默认生成。 |
 | 不再默认输出 | 不默认输出 Markdown；不默认输出多个 CSV。 |
 | 验收样本 | 先以 `2026-03`、`2026-04` 为主，因为 Settlement 和 SKU 成本当前最完整。 |
 
@@ -661,8 +661,8 @@ runtime/analysis_reports/monthly_financial_close/ATVPDKIKX0DER/2026-03/
 v1 默认只输出两个文件：
 
 ```text
-monthly_financial_close.json
-monthly_financial_close.xlsx
+monthly_financial_close_{YYYY-MM}.json
+monthly_financial_close_{YYYY-MM}.xlsx
 ```
 
 不默认输出：
@@ -702,16 +702,16 @@ JSON + XLSX 更适合后续 PDF / Email 自动化。
 数据库查询
    ↓
 MonthlyFinancialCloseResult
-   ├── monthly_financial_close.json
-   └── monthly_financial_close.xlsx
+   ├── monthly_financial_close_{YYYY-MM}.json
+   └── monthly_financial_close_{YYYY-MM}.xlsx
 ```
 
 不要让 XLSX 生成 JSON，也不要让 JSON 反推 XLSX。二者应来自同一个计算结果对象，保证数字一致。
 
 | 文件 | 定位 | 面向对象 | 内容特点 |
 |---|---|---|---|
-| `monthly_financial_close.json` | 机器可读的完整报表结果 / source of truth | 后续 PDF、Email、Dashboard、自动预警、趋势分析 | 结构化、嵌套、包含完整元信息、指标、明细、warnings、可用于生成文本摘要。 |
-| `monthly_financial_close.xlsx` | 人可读、可筛选、可归档的复核表 | CEO、运营负责人、会计、股东 | 多 sheet 扁平表格，适合查看、筛选、排序、对账和人工复核。 |
+| `monthly_financial_close_{YYYY-MM}.json` | 机器可读的完整报表结果 / source of truth | 后续 PDF、Email、Dashboard、自动预警、趋势分析 | 结构化、嵌套、包含完整元信息、指标、明细、warnings、可用于生成文本摘要。 |
+| `monthly_financial_close_{YYYY-MM}.xlsx` | 人可读、可筛选、可归档的复核表 | CEO、运营负责人、会计、股东 | 多 sheet 扁平表格，适合查看、筛选、排序、对账和人工复核。 |
 
 JSON 不是“转换成文本”的最终报告，但可以包含后续生成邮件/PDF 所需的文本素材，例如 `executive_summary.headline`、`key_findings`、`management_notes`。
 
@@ -722,7 +722,7 @@ JSON 不是“转换成文本”的最终报告，但可以包含后续生成邮
 文件：
 
 ```text
-monthly_financial_close.json
+monthly_financial_close_{YYYY-MM}.json
 ```
 
 建议结构：
@@ -822,7 +822,7 @@ raw_file_paths if available
 文件：
 
 ```text
-monthly_financial_close.xlsx
+monthly_financial_close_{YYYY-MM}.xlsx
 ```
 
 ### 13.1 Sheet 总览
@@ -1217,8 +1217,8 @@ fetch_fba_reimbursement_summary(marketplace_id, start_date, end_date)
 11. Run reconciliation checks.
 12. Determine status and warnings.
 13. Build MonthlyFinancialCloseResult.
-14. Write monthly_financial_close.json.
-15. Write monthly_financial_close.xlsx.
+14. Write monthly_financial_close_{YYYY-MM}.json.
+15. Write monthly_financial_close_{YYYY-MM}.xlsx.
 16. If --export-csv is passed, optionally write split CSV files for debugging only.
 ```
 
@@ -1275,10 +1275,10 @@ python scripts/generate_monthly_financial_close_report.py --marketplace-id ATVPD
 应输出：
 
 ```text
-runtime/analysis_reports/monthly_financial_close/ATVPDKIKX0DER/2026-03/monthly_financial_close.json
-runtime/analysis_reports/monthly_financial_close/ATVPDKIKX0DER/2026-03/monthly_financial_close.xlsx
-runtime/analysis_reports/monthly_financial_close/ATVPDKIKX0DER/2026-04/monthly_financial_close.json
-runtime/analysis_reports/monthly_financial_close/ATVPDKIKX0DER/2026-04/monthly_financial_close.xlsx
+runtime/analysis_reports/monthly_financial_close/ATVPDKIKX0DER/2026-03/monthly_financial_close_2026-03.json
+runtime/analysis_reports/monthly_financial_close/ATVPDKIKX0DER/2026-03/monthly_financial_close_2026-03.xlsx
+runtime/analysis_reports/monthly_financial_close/ATVPDKIKX0DER/2026-04/monthly_financial_close_2026-04.json
+runtime/analysis_reports/monthly_financial_close/ATVPDKIKX0DER/2026-04/monthly_financial_close_2026-04.xlsx
 ```
 
 应满足：
@@ -1379,8 +1379,8 @@ python scripts/generate_monthly_financial_close_report.py --marketplace-id ATVPD
 ### 18.3 默认输出
 
 ```text
-runtime/analysis_reports/monthly_financial_close/{marketplace_id}/{YYYY-MM}/monthly_financial_close.json
-runtime/analysis_reports/monthly_financial_close/{marketplace_id}/{YYYY-MM}/monthly_financial_close.xlsx
+runtime/analysis_reports/monthly_financial_close/{marketplace_id}/{YYYY-MM}/monthly_financial_close_{YYYY-MM}.json
+runtime/analysis_reports/monthly_financial_close/{marketplace_id}/{YYYY-MM}/monthly_financial_close_{YYYY-MM}.xlsx
 ```
 
 ### 18.4 实现说明
@@ -1407,3 +1407,16 @@ python -m compileall -q scripts src tests -> passed
 
 `ruff check src tests scripts` 在当前容器中无法执行，因为该环境未安装 `ruff` 命令/模块；代码已按项目 `line-length=100` 做了人工检查，用户本地或 CI 仍应运行正式 ruff。
 
+
+---
+
+## Presentation language requirement
+
+Default presentation artifacts must be bilingual:
+
+```text
+1. JSON keeps stable machine-readable English field names.
+2. XLSX includes `00_Readme_说明` and bilingual fixed headers/labels.
+3. Report delivery emails are Chinese-first with English reference text.
+4. Amazon-native raw values such as campaign names, search terms, keywords, SKU/ASIN and raw IDs stay unchanged.
+```

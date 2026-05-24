@@ -42,7 +42,7 @@ def main() -> None:
     parser.add_argument(
         "--week-start",
         required=True,
-        help="Natural week Monday in YYYY-MM-DD format, for example 2026-04-06.",
+        help="7-day report period start in YYYY-MM-DD format. Scheduled reports use Saturday starts.",
     )
     parser.add_argument(
         "--output-root",
@@ -160,13 +160,8 @@ def main() -> None:
     ]
     non_info_warnings = [warning for warning in result.warnings if warning.severity != "info"]
     print(
-        "reconciliation_warnings={warnings} reconciliation_needs_review={needs_review} "
-        "non_info_warnings={non_info} alerts={alerts}".format(
-            warnings=len(reconciliation_warnings),
-            needs_review=len(reconciliation_needs_review),
-            non_info=len(non_info_warnings),
-            alerts=len(result.alerts),
-        )
+        f"reconciliation_warnings={len(reconciliation_warnings)} reconciliation_needs_review={len(reconciliation_needs_review)} "
+        f"non_info_warnings={len(non_info_warnings)} alerts={len(result.alerts)}"
     )
     for name, path in result.output_files.items():
         print(f"{name}={path}")
@@ -175,14 +170,8 @@ def main() -> None:
         print("reconciliation_non_ok_checks:")
         for check in non_ok_checks:
             print(
-                "- [{severity}] {name}: expected={expected} actual={actual} "
-                "message={message}".format(
-                    severity=check.severity,
-                    name=check.check_name,
-                    expected=check.expected,
-                    actual=check.actual,
-                    message=check.message,
-                )
+                f"- [{check.severity}] {check.check_name}: expected={check.expected} actual={check.actual} "
+                f"message={check.message}"
             )
     if result.warnings:
         print("warnings:")
