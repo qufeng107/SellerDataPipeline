@@ -1,7 +1,7 @@
 # SellerDataPipeline 当前进展与下一步计划
 
-> 更新时间：2026-05-24  
-> 当前版本：v1.72 Automation artifact store + local wrapper implemented  
+> 更新时间：2026-05-25  
+> 当前版本：v1.75 Azure Container Apps Jobs dev submit smoke succeeded  
 > 文档定位：记录项目真实进展、已完成里程碑、当前非阻塞问题和下一步开发顺序。本文不承载详细字段设计；功能细节见 `docs/features/`。
 
 ## 1. 当前一句话状态
@@ -20,8 +20,79 @@
 -> SMTP 邮件发送已实现并通过真实邮件验收
 -> 中英文双语 Report Delivery 已实现
 -> Azure Container Apps Jobs 自动化设计已修订为 free-first profile（GHCR + Azure SQL artifact store，v1 不用 Azure Files/ACR）
--> pipeline_artifact_store migration + artifact save/restore service + run_automation_stage.py 本地 wrapper 已实现，待执行 migration 014 后验证
+-> pipeline_artifact_store migration + artifact save/restore service + run_automation_stage.py 本地 wrapper 已实现并完成本地 smoke
+-> GHCR 镜像已构建成功，dev tag 可用于 Azure manual dev jobs
+-> Azure Container Apps Environment / smoke job / weekly submit dev job 已创建
+-> sdp-weekly-submit-dev 已在 Azure 上执行成功，下一步创建 sdp-weekly-collect-ingest-dev
 ```
+
+
+## 1.1 2026-05-25 Azure Jobs handoff status
+
+当前 Azure manual dev rollout 已进入第二阶段前：
+
+```text
+GHCR package: ghcr.io/qufeng107/seller-data-pipeline
+dev image: ghcr.io/qufeng107/seller-data-pipeline:dev
+Azure resource group: rg-amazon-ops
+Container Apps environment: sdp-containerapps-env
+Log Analytics workspace: workspacecergamazonopsb210
+SQL firewall: Allow Azure services enabled
+```
+
+已验证：
+
+```text
+sdp-smoke-dev:
+  status: succeeded
+  purpose: verify GHCR image pull and Python container startup
+
+sdp-weekly-submit-dev:
+  status: succeeded
+  command: /bin/sh
+  args: -c, python scripts/run_automation_stage.py --workflow weekly --phase submit --marketplace-id ATVPDKIKX0DER --profile-id 3917953989967300 --execute
+  evidence:
+    weekly_window=stats=2026-05-16..2026-05-22 request=2026-05-13..2026-05-22
+    Azure SQL warm-up succeeded after retries
+    SP-API Sales & Traffic submitted
+    SP-API Orders submitted
+    SP-API Inventory snapshot submitted
+    Amazon Ads reports submitted total=5
+    Automation stage commands=4 failed=0
+    artifact_save scanned=8 saved=8 skipped=0
+```
+
+旧失败原因已确认并解决：
+
+```text
+1. Command=python + Arguments='scripts/run_automation_stage.py --workflow ...'
+   -> Azure 把整行 arguments 当成一个文件名，导致 can't open file。
+
+2. Command=python + Arguments='-c, python scripts/run_automation_stage.py ...'
+   -> 变成 python -c "python scripts/..."，导致 SyntaxError。
+
+正确 Portal 写法：
+Command override = /bin/sh
+Arguments override = -c, python scripts/run_automation_stage.py ...
+```
+
+下一步：
+
+```text
+1. 在 Azure SQL 查询 pipeline_artifact_store，确认 submit manifests 已保存。
+2. 创建 sdp-weekly-collect-ingest-dev。
+3. 运行 collect_ingest；如 reports pending，30 分钟后再手动重试一次。
+4. 创建 sdp-weekly-report-delivery-dev，先用 --email-to feng@cuidena.cn。
+5. 三个 weekly dev jobs 稳定后，再创建 monthly dev jobs。
+6. 最后再设计 main-only GitHub Actions deploy workflow 更新正式 Azure Jobs。
+```
+
+为避免手动重复填写环境变量，后续 jobs 推荐用 Azure CLI/Cloud Shell 按模板创建，而不是 Portal 逐项复制。详见：
+
+```text
+docs/operations/azure_container_apps_jobs_setup_checklist.md
+```
+
 
 ## 2. 已完成真实入库闭环
 
@@ -55,6 +126,8 @@
 010_add_promotion_coupon_business_keys.sql
 011_add_inventory_ledger_business_keys.sql
 012_create_ingestion_job_config.sql
+013_create_report_email_recipient_config.sql
+014_create_pipeline_artifact_store.sql
 ```
 
 Seed 已执行成功：
@@ -75,7 +148,7 @@ Seed 已执行成功：
 docs/database/database_current_schema_spec.md
 ```
 
-`runtime/schema_exports/after_012_job_config.md/json` 显示当前用户表数量为 29，`pipeline_job_config` 当前 13 行。
+最新 schema export 已在 migration 014 后执行，当前用户表数量为 31，新增 `report_email_recipient_config` 与 `pipeline_artifact_store`。
 
 ## 4. 已完成基础设施
 
@@ -137,7 +210,7 @@ docs/project/requirements_deprecation_plan.md
 | SKU 成本、采购成本、头程/海运成本需要录入机制 | 已实现 xlsx 模板导出/导入脚本，目标表为 `amazon_sku_cost`。 |
 | 2026-03 起核心数据已完成第一轮补数 | Orders 历史 backfill 已逐 raw file 入库；Ads 历史 backfill 已入库；coverage audit 中 covers_stable_window 提升到 4。后续日常更新改用 `run_manual_refresh_plan.py`。 |
 | 周报脚本已实现；月报脚本已初步复核 | Monthly Financial Close Report v1 已实现 JSON + 单个 XLSX 多 sheet 输出，且 2026-03 / 2026-04 dry-run 已初步复核；Weekly Business Review v1 已实现 JSON + 单个 XLSX 多 sheet 输出，并用 2026-05-11..2026-05-17 真实数据生成 status=ok。Ads API campaign daily 目前 5 月后可用于周度加工，3/4 月 Ads context 缺失仅作为运营解释 warning。Weekly Ads Optimization Report v1 已完成代码实现，并已用 2026-05-11..2026-05-17 真实 Ads 数据执行 live dry-run，结果 status=ok、reconciliation_warnings=0。Report Delivery / Email Pack v1 已实现草稿包生成；SMTP 真实发送 v1.1 已实现，采用 Python 标准库 `smtplib` / `EmailMessage`，收件人通过 `runtime/config/report_delivery_recipients.json` 按 `report_type + audience` 配置，真实发送必须显式 `--execute`。 |
-| Azure Jobs 未实现 | Report Delivery / Email Pack、SMTP 发送、DB 收件人和双语 presentation 已完成真实邮件验收；free-first 自动化本轮已实现 `pipeline_artifact_store` migration、artifact save/restore service、`run_automation_stage.py` local wrapper。下一步先执行 migration 014、导出 schema spec，再本地验证 weekly/monthly 三阶段，之后创建 manual-triggered Azure Jobs。 |
+| Azure Jobs manual dev rollout | Report Delivery / Email Pack、SMTP 发送、DB 收件人和双语 presentation 已完成真实邮件验收；free-first 自动化已完成 `pipeline_artifact_store`、artifact save/restore、`run_automation_stage.py` wrapper、GHCR build、Azure `sdp-smoke-dev` 与 `sdp-weekly-submit-dev`。下一步创建 `sdp-weekly-collect-ingest-dev`，再创建 `sdp-weekly-report-delivery-dev`。 |
 
 ## 8. 下一步建议
 
@@ -243,20 +316,34 @@ Monthly = 每月3日处理上一个自然月。
 ```
 
 
-## 12. Automation free-first implementation next step
+## 12. Automation free-first current next step
 
-下一步不应直接创建 Azure schedule，而应先验证本地 artifact 持久化层：
+本地 artifact 持久化层和 Azure manual dev submit 已通过。当前不应直接启用 schedule，而应继续按 manual dev jobs 验证：
 
 ```text
-1. dry-run 并执行 `sql/migrations/014_create_pipeline_artifact_store.sql`。
-2. 运行 `scripts/export_database_schema_spec.py`，再更新 `database_current_schema_spec.md`。
-3. 本地跑 `scripts/manage_pipeline_artifacts.py save/restore/list` smoke test。
-4. 本地跑 `scripts/run_automation_stage.py --workflow weekly` 三阶段 dry-run。
-5. 选择一个真实周一 reference-date 执行 weekly submit -> collect_ingest -> report_delivery。
-6. 再创建 manual-triggered Azure Container Apps Jobs。
+已完成：
+1. migration 014 已执行，pipeline_artifact_store 已进入 live schema。
+2. 本地 manage_pipeline_artifacts.py save/list/restore smoke test 已通过。
+3. 本地 run_automation_stage.py weekly report_delivery 已通过，并成功发送双语 WBR/WAOR 邮件。
+4. GHCR dev image 已构建成功。
+5. Azure sdp-smoke-dev 已成功。
+6. Azure sdp-weekly-submit-dev 已成功，submit manifests 已保存到 artifact store。
+
+下一步：
+1. SQL 查询 pipeline_artifact_store，确认 Azure submit 保存的 8 个 manifests。注意使用 live schema 字段：`artifact_scope`、`content_size_bytes`、`compressed_size_bytes`，不要使用旧写法 `scope` / `original_size_bytes`。
+2. 创建 sdp-weekly-collect-ingest-dev。
+3. 运行 collect_ingest；如果 reports pending，30 分钟后手动重试一次。
+4. 创建 sdp-weekly-report-delivery-dev，先用 --email-to feng@cuidena.cn。
+5. weekly 三阶段稳定后，再创建 monthly dev jobs。
+6. dev manual jobs 稳定后合并到 main，再用 `:main` / `:latest` 镜像创建或更新正式 jobs；正式 jobs 也先 manual 验证，再启用 schedule。
+7. 最后再做 main-only GitHub Actions deploy workflow。
 ```
 
-`database_current_schema_spec.md` 只在 migration 真实执行并导出 live schema 后更新。
+复制 jobs 时不要继续在 Portal 逐项手填。优先使用 Azure CLI / Cloud Shell 按模板创建 job、设置 secret references 和 env vars，详见：
+
+```text
+docs/operations/azure_container_apps_jobs_setup_checklist.md
+```
 
 
 ## 2026-05-24 update — date-stamped report files
@@ -285,3 +372,25 @@ sha  -> ghcr.io/<owner>/seller-data-pipeline:<git-sha>
 2. 用 `:dev` 创建/验证第一个 manual Azure Container Apps Job。
 3. 合并到 main 后，由 `:latest` 作为正式 job 镜像。
 4. 等 manual jobs 全部跑通后，再新增 main-only deploy workflow 自动更新 Azure jobs。
+
+
+## 15. Azure manual dev rollout update
+
+2026-05-25 当前 Azure dev rollout 状态：
+
+| Job | Status | Notes |
+|---|---|---|
+| `sdp-smoke-dev` | Succeeded | GHCR image pull + Python startup verified. |
+| `sdp-weekly-submit-dev` | Succeeded | Submitted weekly Sales & Traffic, Orders, Inventory snapshot and Ads requests; saved 8 artifacts. |
+| `sdp-weekly-collect-ingest-dev` | Pending creation | Use same image/env/secrets as submit; command changes to collect_ingest. |
+| `sdp-weekly-report-delivery-dev` | Pending creation | Requires SMTP secrets; first run should use `--email-to feng@cuidena.cn`. |
+
+Important operational lesson:
+
+```text
+Azure Portal command/args:
+Command override = /bin/sh
+Arguments override = -c, python scripts/run_automation_stage.py ...
+```
+
+Do not use `Command=python` with the whole script command in Arguments.

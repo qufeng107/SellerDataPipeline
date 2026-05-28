@@ -77,3 +77,33 @@ Azure Container Apps Jobs consumption plan
 ```
 
 v1 不使用 Azure Files / Blob / ACR / NAT Gateway / Private Endpoint。跨 job 的 runtime/reports 文件通过计划中的 `dbo.pipeline_artifact_store` 压缩持久化。
+
+
+## 2026-05-25 Azure Jobs dev rollout note
+
+Azure Container Apps Jobs free-first 方案已从设计进入 manual dev rollout：
+
+```text
+GHCR package: ghcr.io/qufeng107/seller-data-pipeline
+dev image: ghcr.io/qufeng107/seller-data-pipeline:dev
+Container Apps environment: sdp-containerapps-env
+sdp-smoke-dev: succeeded
+sdp-weekly-submit-dev: succeeded
+```
+
+当前下一步：
+
+```text
+1. 查询 pipeline_artifact_store，确认 Azure submit artifacts。
+2. 创建 sdp-weekly-collect-ingest-dev。
+3. 创建 sdp-weekly-report-delivery-dev。
+4. 不要继续逐项手填 Portal；使用 `azure_container_apps_jobs_setup_checklist.md` 里的 Azure CLI 模板复制 jobs。
+```
+
+Portal 参数规则：
+
+```text
+Command override = /bin/sh
+Arguments override = -c, python scripts/run_automation_stage.py ...
+```
+

@@ -20,6 +20,7 @@ ORDERS_EXPECTED_FIELDS: tuple[str, ...] = (
     "purchase-date",
     "last-updated-date",
     "order-status",
+    "order-item-id",
     "fulfillment-channel",
     "sales-channel",
     "order-channel",

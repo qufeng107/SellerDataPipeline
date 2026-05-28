@@ -75,7 +75,7 @@ Orders 数据本身不是最终利润口径。后续利润计算必须以 Settle
 ### 4.1 本功能包含
 
 - 读取本地已下载的 `GET_FLAT_FILE_ALL_ORDERS_DATA_BY_ORDER_DATE_GENERAL` raw flat file。
-- 校验 33 个当前观察到的源字段，以及入库所需 required fields。
+- 校验当前观察到的源字段，以及入库所需 required fields。2026-05-28 云端 collect_ingest 观察到 Amazon 新增返回 `order-item-id`，已将其纳入允许的 raw schema。
 - 解析订单行项目字段：订单 id、日期、状态、SKU/ASIN、数量、金额、税、运费、促销折扣、履约方式、销售渠道、发货国家/州/邮编等。
 - 生成 `source_row_index`、`source_row_hash` 和 `business_key_hash`。
 - 生成 DB-ready preview JSONL。
@@ -107,13 +107,13 @@ Orders 数据本身不是最终利润口径。后续利润计算必须以 Settle
 | marketplace_id | `ATVPDKIKX0DER` |
 | raw_file_path | `reports/raw/amazon/ATVPDKIKX0DER/GET_FLAT_FILE_ALL_ORDERS_DATA_BY_ORDER_DATE_GENERAL/2026-05-14/112467020587.txt` |
 | row_count | `112` |
-| field_path_count | `33` |
+| field_path_count | `34` after 2026-05-28 cloud run (`order-item-id` observed); older sample doc may still show 33 |
 | delimiter | tab |
 | sample doc | `requirements_to_be_deprecated/data_samples/GET_FLAT_FILE_ALL_ORDERS_DATA_BY_ORDER_DATE_GENERAL.md` |
 
 ## 6. 源字段结构
 
-当前观察到的 33 个源字段：
+当前观察到的源字段。2026-05-28 云端 weekly collect_ingest 中，Amazon All Orders raw file 在原有字段之外新增了 `order-item-id`：
 
 ```text
 amazon-order-id
@@ -121,6 +121,7 @@ merchant-order-id
 purchase-date
 last-updated-date
 order-status
+order-item-id
 fulfillment-channel
 sales-channel
 order-channel
@@ -150,6 +151,8 @@ purchase-order-number
 price-designation
 signature-confirmation-recommended
 ```
+
+`order-item-id` 当前只作为已知 raw field 接受并保留在 `raw_data` 中，暂不新增数据库列，也暂不改变既有 `business_key_hash` 算法，避免与已入库历史订单产生幂等键不兼容。后续如果确认它长期稳定，可另行设计 migration/业务键版本。
 
 第一版 required fields 应以现有 parser 的 `ALL_ORDERS_REQUIRED_FIELDS` 为基础，但需要新增 privacy guard：如果 `cpf` 非空，应设置 `requires_review=True` 并阻断 execute，直到明确是否要丢弃、脱敏或单独加密保存。
 
@@ -207,6 +210,7 @@ local orders raw file
 | `purchase-date` | `purchase_date_raw` | string | yes | 原样保存 ISO datetime string。 |
 | `last-updated-date` | `last_updated_date_raw` | string | yes | 原样保存 ISO datetime string。 |
 | `order-status` | `order_status` | string | yes | Cancelled / Shipping / Shipped / Pending 等。 |
+| `order-item-id` | not structured | string | no | 2026-05-28 云端样例观察到的订单行 id；当前保留在 `raw_data`，不结构化入库、不参与既有 business key。 |
 | `fulfillment-channel` | `fulfillment_channel` | string | yes | 样例为 Amazon。 |
 | `sales-channel` | `sales_channel` | string | yes | Amazon.com / Non-Amazon。 |
 | `order-channel` | `order_channel` | string | no | 当前样例为空。 |
@@ -273,7 +277,7 @@ business_key = marketplace_id
 理由：
 
 1. `amazon-order-id` 是订单主键。
-2. 当前 report 没有稳定 `order-item-id` 字段，因此需要 SKU/ASIN 共同限定订单行。
+2. 历史取样阶段没有稳定 `order-item-id` 字段，因此既有入库键使用 SKU/ASIN 共同限定订单行；2026-05-28 云端样例开始观察到 `order-item-id`，但为避免改变历史幂等键，当前仅接受并保存在 `raw_data`。
 3. `purchase-date` 增加防冲突能力。
 4. `order-status` / `item-status` 不进入 business key，这样同一订单行状态变化时应 update，而不是插入新行。
 
@@ -308,7 +312,7 @@ business_key = marketplace_id
 | 场景 | 处理方式 | 是否阻塞入库 | 是否记录 validation event |
 |---|---|---|---|
 | 缺少 required fields | 阻断 | yes | yes |
-| 出现新增字段 | 记录 warning；如为潜在敏感字段则 requires_review | conditional | yes |
+| 出现新增字段 | 未登记字段记录 warning 并 requires_review；已登记但暂不结构化的字段如 `order-item-id` 不阻断，保留在 `raw_data` | conditional | yes |
 | `cpf` 非空 | requires_review=True，阻断 execute | yes | yes |
 | decimal/int/bool 解析失败 | 阻断 execute | yes | yes |
 | 日期字段为空或格式异常 | required 字段为空时阻断；格式异常先保留 raw string 并 warning | conditional | yes |
