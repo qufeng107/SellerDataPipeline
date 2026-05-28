@@ -141,13 +141,13 @@ Observed source fields:
 | Format | `delimited` |
 | Delimiter | `tab` |
 | Current sample rows | `112` |
-| Observed field/path count | `33` |
+| Observed field/path count | `34` in 2026-05-28 cloud run; original sample doc still has 33 |
 | Status | `real ingestion verified` |
 | Data domain | Order-item level order report by order date |
 
 Observed source fields:
 
-`amazon-order-id`, `merchant-order-id`, `purchase-date`, `last-updated-date`, `order-status`, `fulfillment-channel`, `sales-channel`, `order-channel`, `ship-service-level`, `product-name`, `sku`, `asin`, `item-status`, `quantity`, `currency`, `item-price`, `item-tax`, `shipping-price`, `shipping-tax`, `gift-wrap-price`, `gift-wrap-tax`, `item-promotion-discount`, `ship-promotion-discount`, `ship-city`, `ship-state`, `ship-postal-code`, `ship-country`, `promotion-ids`, `cpf`, `is-business-order`, `purchase-order-number`, `price-designation`, `signature-confirmation-recommended`
+`amazon-order-id`, `merchant-order-id`, `purchase-date`, `last-updated-date`, `order-status`, `order-item-id`, `fulfillment-channel`, `sales-channel`, `order-channel`, `ship-service-level`, `product-name`, `sku`, `asin`, `item-status`, `quantity`, `currency`, `item-price`, `item-tax`, `shipping-price`, `shipping-tax`, `gift-wrap-price`, `gift-wrap-tax`, `item-promotion-discount`, `ship-promotion-discount`, `ship-city`, `ship-state`, `ship-postal-code`, `ship-country`, `promotion-ids`, `cpf`, `is-business-order`, `purchase-order-number`, `price-designation`, `signature-confirmation-recommended`
 
 ### GET_FLAT_FILE_RETURNS_DATA_BY_RETURN_DATE
 

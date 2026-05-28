@@ -7,14 +7,14 @@ from seller_data_pipeline.ingestion.orders_ingestion_dry_run import OrdersIngest
 
 ORDERS_CONTENT = (
     "amazon-order-id\tmerchant-order-id\tpurchase-date\tlast-updated-date\torder-status\t"
-    "fulfillment-channel\tsales-channel\torder-channel\tship-service-level\tproduct-name\t"
+    "order-item-id\tfulfillment-channel\tsales-channel\torder-channel\tship-service-level\tproduct-name\t"
     "sku\tasin\titem-status\tquantity\tcurrency\titem-price\titem-tax\tshipping-price\t"
     "shipping-tax\tgift-wrap-price\tgift-wrap-tax\titem-promotion-discount\t"
     "ship-promotion-discount\tship-city\tship-state\tship-postal-code\tship-country\t"
     "promotion-ids\tcpf\tis-business-order\tpurchase-order-number\tprice-designation\t"
     "signature-confirmation-recommended\n"
     "ORDER-1\tMERCHANT-1\t2026-05-08T23:36:26+00:00\t2026-05-09T01:00:00+00:00\t"
-    "Shipped\tAmazon\tAmazon.com\t\tStandard\tTravel Wallet\tSKU-1\tB000TEST\tShipped\t2\t"
+    "Shipped\tORDER-ITEM-1\tAmazon\tAmazon.com\t\tStandard\tTravel Wallet\tSKU-1\tB000TEST\tShipped\t2\t"
     "USD\t20.00\t1.20\t4.99\t0.30\t\t\t-2.00\t0.00\tReading\tCA\t90001\tUS\t"
     "PROMO-1\t\tfalse\t\t\tfalse\n"
 )
@@ -67,6 +67,7 @@ def test_orders_ingestion_dry_run_writes_preview_and_audit(tmp_path: Path) -> No
     assert preview_rows[0]["amazon_order_id"] == "ORDER-1"
     assert preview_rows[0]["business_key_hash"]
     assert preview_rows[0]["source_row_index"] == 1
+    assert json.loads(preview_rows[0]["raw_data"])["order-item-id"] == "ORDER-ITEM-1"
 
 
 def test_orders_ingestion_dry_run_blocks_non_empty_cpf(tmp_path: Path) -> None:

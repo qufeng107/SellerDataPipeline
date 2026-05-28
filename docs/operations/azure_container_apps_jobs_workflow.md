@@ -1,6 +1,6 @@
 # Azure Container Apps Jobs Workflow
 
-> 更新时间：2026-05-24  
+> 更新时间：2026-05-25  
 > 文档定位：定义 SellerDataPipeline 从手动流程迁移到 Azure Container Apps Jobs 的运行方案。本文是 operations runbook，不定义业务指标口径；业务口径见 `docs/features/`。
 
 ---
@@ -8,10 +8,31 @@
 
 ## 0. 当前落地清单
 
-Azure Container Apps Jobs 尚未开通。开通和配置步骤见：
+Azure Container Apps Jobs 已开始 manual dev rollout。开通和配置步骤见：
 
 ```text
 docs/operations/azure_container_apps_jobs_setup_checklist.md
+```
+
+当前已完成：
+
+```text
+GHCR package: ghcr.io/qufeng107/seller-data-pipeline
+dev image: ghcr.io/qufeng107/seller-data-pipeline:dev
+Container Apps environment: sdp-containerapps-env
+Log Analytics workspace: workspacecergamazonopsb210
+sdp-smoke-dev: succeeded
+sdp-weekly-submit-dev: succeeded
+```
+
+`sdp-weekly-submit-dev` 真实成功证据：
+
+```text
+weekly_window=stats=2026-05-16..2026-05-22 request=2026-05-13..2026-05-22
+SP-API Sales & Traffic / Orders / Inventory requests submitted
+Amazon Ads report requests submitted total=5
+Automation stage workflow=weekly phase=submit mode=execute commands=4 failed=0
+artifact_save scanned=8 saved=8 skipped=0
 ```
 
 当前代码已支持：
@@ -21,6 +42,15 @@ run_automation_stage.py --email-to feng@cuidena.cn
 ```
 
 该参数只在 `report_delivery` 阶段透传到 `send_report_email.py --to ...`，用于云端 smoke test 时临时只发给自己；稳定后去掉该参数，恢复数据库收件人路由。
+
+Portal command/args 规则已冻结：
+
+```text
+Command override = /bin/sh
+Arguments override = -c, python scripts/run_automation_stage.py ...
+```
+
+下一步：创建 `sdp-weekly-collect-ingest-dev`，再创建 `sdp-weekly-report-delivery-dev`。
 
 ---
 
@@ -165,6 +195,36 @@ reports/raw/...
 
 ---
 
+## 5. Efficient Azure Job provisioning
+
+Do not continue creating every job manually through Azure Portal. The first smoke and submit jobs were useful to validate Portal behavior, but future jobs should be created through Azure CLI / Cloud Shell so env vars and secret references are repeatable.
+
+Recommended pattern:
+
+```text
+1. Portal only for smoke/debug.
+2. Azure CLI for collect_ingest/report_delivery/monthly jobs.
+3. Same GHCR image, same SQL/Amazon secrets.
+4. Only command arguments differ by job.
+5. Report delivery jobs additionally receive SMTP secrets.
+```
+
+Core reason: Azure Portal does not provide a reliable project-level clone workflow for copying the full job definition and only changing arguments. CLI templates reduce manual mistakes.
+
+Example command pattern is maintained in:
+
+```text
+docs/operations/azure_container_apps_jobs_setup_checklist.md
+```
+
+Important argument rule:
+
+```text
+--command "/bin/sh"
+--args "-c" "python scripts/run_automation_stage.py ..."
+```
+
+
 ## 5. 推荐命令模型
 
 第一版建议新增 wrapper：
@@ -299,15 +359,25 @@ prune expired artifacts dry-run
 
 先创建 jobs，但不启用 schedule。
 
+当前 Azure rollout 采用 dev-first / manual-first：
+
+```text
+dev branch -> GHCR :dev -> manual dev jobs -> validate logs/data/email
+main branch -> GHCR :main/:latest -> official jobs -> manual validation -> schedule
+```
+
 顺序：
 
 ```text
 health check
-core_rolling submit
-core_rolling collect
-core_rolling ingest
-core_rolling audit
-weekly report delivery with --to feng@cuidena.cn
+weekly submit
+weekly collect_ingest
+weekly report delivery with --email-to feng@cuidena.cn
+monthly submit
+monthly collect_ingest
+monthly report delivery with --email-to feng@cuidena.cn
+main-image official jobs manual validation
+scheduled refresh/report delivery
 ```
 
 ### 9.3 Scheduled refresh only

@@ -2,8 +2,8 @@
 
 > 文档状态：Design + v1 local wrapper implemented  
 > 负责人：AI + Feng  
-> 更新时间：2026-05-24  
-> 功能状态：pipeline_artifact_store migration + local automation wrapper implemented; Azure resources not created  
+> 更新时间：2026-05-25  
+> 功能状态：pipeline_artifact_store + local wrapper implemented; GHCR image and Azure manual dev submit job verified  
 > 相关 operations：`docs/operations/manual_refresh_plan_workflow.md`, `docs/operations/azure_container_apps_jobs_workflow.md`, `docs/operations/data_refresh_policy.md`  
 > 相关功能：`feature_pipeline_artifact_store.md`, `feature_report_delivery_email.md`, `feature_weekly_business_review.md`, `feature_weekly_ads_optimization_report.md`, `feature_monthly_financial_close_report.md`  
 > 相关 ADR：`docs/adr/ADR-007-manual-first-before-automation.md`, `docs/adr/ADR-011-azure-container-apps-jobs-automation.md`, `docs/adr/ADR-012-zero-paid-automation-storage-profile.md`
@@ -45,6 +45,69 @@ Stage 3 数据报表与发送 / Reporting & delivery
 ```
 
 ---
+
+## 1.1 2026-05-25 implementation evidence
+
+当前实现与云端验证状态：
+
+```text
+Code:
+  scripts/run_automation_stage.py implemented
+  scripts/manage_pipeline_artifacts.py implemented
+  pipeline_artifact_store repository/service implemented
+  --email-to override implemented for report_delivery smoke tests
+
+Database:
+  014_create_pipeline_artifact_store.sql executed
+  database_current_schema_spec.md updated after live schema export
+  pipeline_artifact_store used as Azure SQL artifact store
+
+Report delivery:
+  WBR / WAOR / Monthly Close output date-stamped JSON/XLSX
+  Report Delivery bilingual email and XLSX labels verified
+  SMTP sending verified with feng@cuidena.cn
+
+GHCR:
+  ghcr.io/qufeng107/seller-data-pipeline:dev built successfully from dev branch
+  dev branch no longer pushes latest
+  main branch will later publish latest/main
+
+Azure manual dev jobs:
+  sdp-smoke-dev succeeded
+  sdp-weekly-submit-dev succeeded
+  sdp-weekly-collect-ingest-dev pending
+  sdp-weekly-report-delivery-dev pending
+```
+
+`sdp-weekly-submit-dev` 已验证：
+
+```text
+weekly_window=stats=2026-05-16..2026-05-22 request=2026-05-13..2026-05-22
+SP-API Sales & Traffic submitted
+SP-API Orders submitted
+SP-API Inventory snapshot submitted
+Ads reports submitted total=5
+commands=4 failed=0
+artifact_save scanned=8 saved=8 skipped=0
+```
+
+Portal command/args 经验已冻结：
+
+```text
+Command override = /bin/sh
+Arguments override = -c, python scripts/run_automation_stage.py ...
+```
+
+下一步不是 schedule，而是 manual dev jobs 继续验证：
+
+```text
+1. SQL 查询 pipeline_artifact_store 是否包含 Azure submit artifacts。
+2. 创建 sdp-weekly-collect-ingest-dev。
+3. 创建 sdp-weekly-report-delivery-dev，先只发 feng@cuidena.cn。
+4. weekly dev 三阶段稳定后再创建 monthly dev jobs。
+5. 最后再新增 main-only deploy workflow。
+```
+
 
 ## 2. v1 Free-first profile 冻结结论
 
