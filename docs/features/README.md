@@ -36,6 +36,7 @@
 | [`feature_report_delivery_email.md`](feature_report_delivery_email.md) | Implemented v1.3 | 统一报表交付/邮件草稿包；已支持从三类报表 JSON 生成不同模板邮件正文、manifest 和 XLSX 附件包。SMTP 发送已实现，收件人从 `report_email_recipient_config` 读取；v1.3 增加中英文双语邮件正文和 XLSX 固定标签/说明。 |
 | [`feature_pipeline_artifact_store.md`](feature_pipeline_artifact_store.md) | Implemented | free-first 自动化 artifact store；migration 014 已执行，使用 Azure SQL 压缩保存 manifests/raw reports/report packs，替代 Azure Files v1。 |
 | [`feature_automation_jobs_workflow.md`](feature_automation_jobs_workflow.md) | Manual dev rollout in progress | Azure Container Apps Jobs 自动化工作流设计；GHCR dev image、sdp-smoke-dev、sdp-weekly-submit-dev 已验证，下一步创建 collect_ingest/report_delivery dev jobs。 |
+| [`feature_pipeline_job_run_audit_log.md`](feature_pipeline_job_run_audit_log.md) | Implementation ready / migration pending | 自动化 Job Run 结构化审计账本；已新增 migration/repository/service/wrapper 接入设计，用于周报/月报数据错误回溯与运行审计。 |
 | Historical backfill CLI | Implemented | `scripts/backfill_report_requests.py` / `scripts/backfill_ads_reports.py`；按明确日期范围分段提交历史补数请求，详见 `docs/operations/historical_backfill_workflow.md`。 |
 
 ## 3. 下一批建议

@@ -95,3 +95,12 @@ class _FakeRepo:
 
     def mark_expired_deleted(self) -> int:
         return 0
+
+
+def test_infer_artifact_type_detects_automation_audit() -> None:
+    from seller_data_pipeline.services.pipeline_artifact_service import infer_artifact_type
+
+    assert (
+        infer_artifact_type("runtime/automation_audit/weekly_scope/submit/stage_result.json")
+        == "automation_audit"
+    )

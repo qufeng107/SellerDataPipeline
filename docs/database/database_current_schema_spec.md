@@ -1,7 +1,7 @@
 # SellerDataPipeline 当前真实数据库 Schema Spec
 
-> 文档版本：v1.15  
-> 更新日期：2026-05-24  
+> 文档版本：v1.16  
+> 更新日期：2026-05-29  
 > 文档定位：**当前真实实现记录**。本文件只记录已经在 Azure SQL `amazon_ops` 执行成功的表、字段、索引与数据来源；不写未来设计。设计变更请先更新对应的 `docs/features/feature_*.md` 或 `docs/data_access/*.md`；如涉及库结构变化，先对比本文件，再新增 migration；migration 执行成功后优先运行 `scripts/export_database_schema_spec.py` 导出 live schema snapshot，再更新本文件。
 
 ## 1. 当前数据库状态
@@ -10,23 +10,23 @@
 |---|---|
 | Azure SQL database | `amazon_ops` |
 | Server | `amazon-ops-sql` |
-| 已执行 migration | `001_create_core_tables.sql` 29/29 batches；`002_create_indexes.sql` 54/54 batches；`003_add_listing_snapshot_business_key_hash.sql` 3/3 batches；`004_add_inventory_daily_business_key_hash.sql` 3/3 batches；`005_add_sales_traffic_business_key_hashes.sql` 5/5 batches；`006_add_settlement_transaction_business_key.sql` 4/4 batches；`007_add_order_item_business_key.sql` 4/4 batches；`008_add_fba_reimbursement_business_key.sql` 4/4 batches；`009_add_fba_fee_preview_business_key.sql` 4/4 batches；`010_add_promotion_coupon_business_keys.sql` 8/8 batches；`011_add_inventory_ledger_business_keys.sql` 4/4 batches；`012_create_ingestion_job_config.sql` 4/4 batches；`001_seed_ingestion_job_config_core_jobs.sql` 1/1 batch；`013_create_report_email_recipient_config.sql` 3/3 batches；`003_seed_report_email_recipient_config_initial.sql` 2/2 batches；`014_create_pipeline_artifact_store.sql` 5/5 batches |
-| 用户表数量 | 31 |
+| 已执行 migration | `001_create_core_tables.sql` 29/29 batches；`002_create_indexes.sql` 54/54 batches；`003_add_listing_snapshot_business_key_hash.sql` 3/3 batches；`004_add_inventory_daily_business_key_hash.sql` 3/3 batches；`005_add_sales_traffic_business_key_hashes.sql` 5/5 batches；`006_add_settlement_transaction_business_key.sql` 4/4 batches；`007_add_order_item_business_key.sql` 4/4 batches；`008_add_fba_reimbursement_business_key.sql` 4/4 batches；`009_add_fba_fee_preview_business_key.sql` 4/4 batches；`010_add_promotion_coupon_business_keys.sql` 8/8 batches；`011_add_inventory_ledger_business_keys.sql` 4/4 batches；`012_create_ingestion_job_config.sql` 4/4 batches；`001_seed_ingestion_job_config_core_jobs.sql` 1/1 batch；`013_create_report_email_recipient_config.sql` 3/3 batches；`003_seed_report_email_recipient_config_initial.sql` 2/2 batches；`014_create_pipeline_artifact_store.sql` 5/5 batches；`015_create_pipeline_job_run_audit_tables.sql` 17/17 batches |
+| 用户表数量 | 35 |
 | 已真实入库验证 | Amazon Ads 4 张 SP 日表，首次 inserted=200、重复执行 inserted=0/updated=200；Listing 快照表首次 inserted=6、重复执行 inserted=0/updated=6；Inventory 快照表首次 inserted=5、重复执行 inserted=0/updated=5；Sales & Traffic 首次 inserted=7、重复执行 inserted=0/updated=7；Settlement 首次 inserted=4911、重复执行 inserted=0/updated=4911；Orders 首次 inserted=112、重复执行 inserted=0/updated=112；FBA Reimbursements 首次 inserted=19、重复执行 inserted=0/updated=19；FBA Fee Preview 首次 inserted=8、重复执行 inserted=0/updated=8；Promotion/Coupon 首次 inserted=10、重复执行 inserted=0/updated=10；Inventory Ledger 首次 inserted=357、重复执行 inserted=0/updated=357 |
-| 当前限制 | `amazon_sync_run_log` 尚无 rows_inserted / rows_updated 字段；normalized 表当前 `source_raw_file_id` 仍可能为 NULL；`pipeline_job_config` 已创建并 seed 13 条任务配置，其中利润、周报、邮件任务仍是 disabled placeholder，待功能实现后再启用；`report_email_recipient_config` 已创建并 seed 3 条全局收件人路由 |
+| 当前限制 | `amazon_sync_run_log` 尚无 rows_inserted / rows_updated 字段；normalized 表当前 `source_raw_file_id` 仍可能为 NULL；`pipeline_job_config` 已创建并 seed 13 条任务配置，其中利润、周报、邮件任务仍是 disabled placeholder，待功能实现后再启用；`report_email_recipient_config` 已创建并 seed 3 条全局收件人路由；`pipeline_job_run` / `pipeline_job_command_run` / `pipeline_job_artifact_link` / `pipeline_job_table_write_summary` 已创建，等待新镜像 job 首次写入审计记录 |
 
 ## 1.1 最新执行记录
 
-`014_create_pipeline_artifact_store.sql` 已在 Azure SQL `amazon_ops` 执行成功，执行结果为 5/5 batches。随后已运行 `scripts/export_database_schema_spec.py` 导出 live schema snapshot。
+`015_create_pipeline_job_run_audit_tables.sql` 已在 Azure SQL `amazon_ops` 执行成功，执行结果为 17/17 batches。随后已运行 `scripts/export_database_schema_spec.py --output-prefix after_015_pipeline_job_run_audit --include-row-counts` 导出 live schema snapshot。
 
 最新 live schema 已导出到：
 
 ```text
-runtime/schema_exports/azure_sql_schema_20260524_003605.json
-runtime/schema_exports/azure_sql_schema_20260524_003605.md
+runtime/schema_exports/after_015_pipeline_job_run_audit.json
+runtime/schema_exports/after_015_pipeline_job_run_audit.md
 ```
 
-导出结果显示当前用户表数量为 31，`pipeline_artifact_store` 已存在。该表用于 free-first 自动化 profile 下的跨 job 文件持久化，不承载 normalized 业务事实，不保存 secrets。
+导出结果显示当前用户表数量为 35，`pipeline_job_run`、`pipeline_job_command_run`、`pipeline_job_artifact_link`、`pipeline_job_table_write_summary` 已存在。该审计表组用于保存 weekly/monthly automation job 的结构化运行审计、子命令状态、artifact lineage 和 normalized table write summary；不保存 secrets，不替代 Log Analytics 的完整 stdout/stderr，也不替代 `pipeline_artifact_store` 的 raw/report 文件证据。
 
 ## 1.2 Schema 更新辅助工具
 
@@ -72,6 +72,10 @@ python scripts/export_database_schema_spec.py --output-prefix after_NNN_xxx --in
 | `amazon_sync_run_log` | 审计控制 | 所有采集/解析/入库任务 | 任务运行状态、行数、耗时、错误信息。 |
 | `pipeline_job_config` | 任务配置 | 手动 seed / 未来自动化配置 | 数据下载、入库、加工、报表和邮件任务的周期、脚本路径、默认参数和执行阶段。 |
 | `pipeline_artifact_store` | 自动化 artifact store | 本地/容器化 pipeline 文件产物 | free-first 自动化下存放压缩后的 manifest、raw report、报表 JSON/XLSX、delivery pack 等跨 job 文件；不保存 secrets，不作为业务事实源。 |
+| `pipeline_job_run` | Pipeline job 审计主表 | Azure Container Apps Jobs / automation wrapper | 每次 weekly/monthly submit、collect_ingest、report_delivery stage execution 一行，记录运行窗口、触发类型、Azure job/image、状态、耗时和错误摘要。 |
+| `pipeline_job_command_run` | Pipeline 子命令审计 | automation wrapper command execution | 每个 stage 内部子命令一行，记录脚本路径、脱敏参数 hash、exit code、耗时、行数摘要和错误摘要。 |
+| `pipeline_job_artifact_link` | Pipeline artifact lineage | `pipeline_artifact_store` + automation audit service | 将 job run / command run 与实际 restore/save/raw/report/email artifact 关联起来，方便从报表/入库结果回溯到原始证据文件。 |
+| `pipeline_job_table_write_summary` | Pipeline 表写入摘要 | ingestion/report command summary | 记录每次 command 对 normalized 表或输出表的 rows_read/inserted/updated/skipped/failed、来源 report 和数据日期范围。 |
 | `report_email_recipient_config` | 邮件收件人路由配置 | 手动 seed / 后续后台维护 | 报表类型 + audience -> to/cc/bcc 收件人路由；不保存 SMTP 密码。 |
 
 ## 3. 索引清单
@@ -153,6 +157,20 @@ python scripts/export_database_schema_spec.py --output-prefix after_NNN_xxx --in
 | `pipeline_artifact_store` | `IX_pipeline_artifact_store_scope_path_created` | 否 | `artifact_scope, relative_path, created_at DESC` | `` |
 | `pipeline_artifact_store` | `IX_pipeline_artifact_store_scope_type_created` | 否 | `artifact_scope, artifact_type, created_at DESC` | `` |
 | `pipeline_artifact_store` | `UX_pipeline_artifact_store_scope_path_hash_active` | 是 | `artifact_scope, relative_path, content_sha256` | `([is_deleted]=(0))` |
+| `pipeline_job_run` | `UX_pipeline_job_run_uid` | 是 | `run_uid` | `` |
+| `pipeline_job_run` | `IX_pipeline_job_run_scope_phase_started` | 否 | `artifact_scope, phase, started_at DESC` | `` |
+| `pipeline_job_run` | `IX_pipeline_job_run_status_started` | 否 | `status, started_at DESC` | `` |
+| `pipeline_job_run` | `IX_pipeline_job_run_workflow_period` | 否 | `workflow, period_key, phase` | `` |
+| `pipeline_job_run` | `IX_pipeline_job_run_azure_job_started` | 否 | `azure_job_name, started_at DESC` | `` |
+| `pipeline_job_command_run` | `UX_pipeline_job_command_run_index` | 是 | `job_run_id, command_index` | `` |
+| `pipeline_job_command_run` | `IX_pipeline_job_command_run_script_started` | 否 | `script_path, started_at DESC` | `` |
+| `pipeline_job_command_run` | `IX_pipeline_job_command_run_status_started` | 否 | `status, started_at DESC` | `` |
+| `pipeline_job_artifact_link` | `UX_pipeline_job_artifact_link_run_command_artifact_role` | 是 | `job_run_id, command_run_id, artifact_id, artifact_role` | `command_run_id IS NOT NULL` |
+| `pipeline_job_artifact_link` | `UX_pipeline_job_artifact_link_run_artifact_role_no_command` | 是 | `job_run_id, artifact_id, artifact_role` | `command_run_id IS NULL` |
+| `pipeline_job_artifact_link` | `IX_pipeline_job_artifact_link_scope_type` | 否 | `artifact_scope, artifact_type` | `` |
+| `pipeline_job_table_write_summary` | `IX_pipeline_job_table_write_target_date` | 否 | `target_table, data_start_date, data_end_date` | `` |
+| `pipeline_job_table_write_summary` | `IX_pipeline_job_table_write_run` | 否 | `job_run_id, command_run_id` | `` |
+| `pipeline_job_table_write_summary` | `IX_pipeline_job_table_write_source_report` | 否 | `source_system, source_report_type, source_report_id` | `` |
 | `report_email_recipient_config` | `IX_report_email_recipient_config_lookup` | 否 | `enabled, report_type, audience, recipient_type, sort_order` | `` |
 | `report_email_recipient_config` | `UX_report_email_recipient_config_active_route` | 是 | `report_type, audience, recipient_type, email` | `([enabled]=(1))` |
 
@@ -1399,6 +1417,145 @@ python scripts/export_database_schema_spec.py --output-prefix after_NNN_xxx --in
 | `is_deleted` | `BIT` | NOT NULL | `((0))` | 软删除标记；`1` 表示不再参与 active restore/list。 |
 
 
+
+### 4.32 `pipeline_job_run`
+
+- 数据来源：`scripts/run_automation_stage.py` / `pipeline_job_audit_service`
+- 表用途：每次 weekly/monthly automation stage execution 的结构化审计主账本，用于数据审计、报表回溯、失败排查和运行健康监控。
+- 当前索引：`UX_pipeline_job_run_uid`(run_uid, unique)；`IX_pipeline_job_run_scope_phase_started`(artifact_scope, phase, started_at DESC)；`IX_pipeline_job_run_status_started`(status, started_at DESC)；`IX_pipeline_job_run_workflow_period`(workflow, period_key, phase)；`IX_pipeline_job_run_azure_job_started`(azure_job_name, started_at DESC)
+- 当前说明：该表保存 job 级摘要，不保存完整 stdout/stderr；完整 console log 仍在 Azure Log Analytics，文件级证据在 `pipeline_artifact_store`。
+- 当前行数：`0`（migration 015 执行后尚未由新镜像 job 写入审计记录）。
+
+| 字段 | 类型 | 可空 | 默认值 | 字段说明 |
+|---|---|---|---|---|
+| `id` | `BIGINT` | NOT NULL | `` | 数据库自增主键。 |
+| `run_uid` | `UNIQUEIDENTIFIER` | NOT NULL | `(newid())` | 跨表追踪用唯一运行 ID。 |
+| `workflow` | `NVARCHAR(40)` | NOT NULL | `` | workflow 名称，当前允许 `weekly` / `monthly`。 |
+| `phase` | `NVARCHAR(40)` | NOT NULL | `` | stage 名称，当前允许 `submit` / `collect_ingest` / `report_delivery`。 |
+| `execution_mode` | `NVARCHAR(20)` | NOT NULL | `` | 执行模式，当前允许 `dry_run` / `execute`。 |
+| `configured_trigger_type` | `NVARCHAR(40)` | NULL | `` | Azure job 配置触发类型，例如 `Manual` / `Schedule`。 |
+| `run_trigger_type` | `NVARCHAR(40)` | NULL | `` | 本次运行触发类型，例如 `schedule` / `manual` / `manual_backfill`，由 env/参数 best-effort 注入。 |
+| `run_trigger_source` | `NVARCHAR(160)` | NULL | `` | 运行触发来源说明，例如 Azure Portal、CLI、cron 或人工补跑备注。 |
+| `marketplace_id` | `NVARCHAR(50)` | NULL | `` | Amazon marketplace id。 |
+| `profile_id` | `NVARCHAR(100)` | NULL | `` | Amazon Ads profile id。 |
+| `period_key` | `NVARCHAR(80)` | NULL | `` | 周/月报期间标识，例如 `2026-05-16_2026-05-22` 或 `2026-04`。 |
+| `stats_start` | `DATE` | NULL | `` | 报表统计窗口开始日期。 |
+| `stats_end` | `DATE` | NULL | `` | 报表统计窗口结束日期。 |
+| `request_start` | `DATE` | NULL | `` | 请求补数窗口开始日期。 |
+| `request_end` | `DATE` | NULL | `` | 请求补数窗口结束日期。 |
+| `artifact_scope` | `NVARCHAR(220)` | NOT NULL | `` | 本次 run 对应 artifact scope，用于关联 raw/report/audit 文件证据。 |
+| `azure_resource_group` | `NVARCHAR(200)` | NULL | `` | Azure resource group 名称。 |
+| `azure_job_name` | `NVARCHAR(200)` | NULL | `` | Azure Container Apps Job 名称。 |
+| `azure_execution_name` | `NVARCHAR(300)` | NULL | `` | Azure Job execution 名称，如可从环境变量/平台注入则记录。 |
+| `container_app_name` | `NVARCHAR(200)` | NULL | `` | Container App / Job 容器应用名称。 |
+| `container_revision` | `NVARCHAR(200)` | NULL | `` | 容器 revision 名称。 |
+| `container_replica` | `NVARCHAR(200)` | NULL | `` | 容器 replica 名称。 |
+| `container_image` | `NVARCHAR(500)` | NULL | `` | 容器镜像完整名称，例如 `ghcr.io/qufeng107/seller-data-pipeline:main`。 |
+| `image_tag` | `NVARCHAR(120)` | NULL | `` | 镜像 tag，例如 `dev` / `main`。 |
+| `git_sha` | `NVARCHAR(80)` | NULL | `` | 构建对应 Git SHA，如 CI 注入则记录。 |
+| `command_line_hash` | `CHAR(64)` | NULL | `` | stage 顶层命令行 hash，用于审计配置漂移；不保存 secret。 |
+| `status` | `NVARCHAR(40)` | NOT NULL | `('running')` | job run 状态，允许 `running` / `succeeded` / `failed` / `partial` / `skipped` / `blocked`。 |
+| `started_at` | `DATETIME2(7)` | NOT NULL | `(sysutcdatetime())` | job run 开始时间 UTC。 |
+| `finished_at` | `DATETIME2(7)` | NULL | `` | job run 结束时间 UTC。 |
+| `duration_ms` | `BIGINT` | NULL | `` | job run 耗时毫秒。 |
+| `commands_total` | `INT` | NOT NULL | `((0))` | 本次 stage 子命令总数。 |
+| `commands_failed` | `INT` | NOT NULL | `((0))` | 本次 stage 失败子命令数。 |
+| `artifact_restored_count` | `INT` | NOT NULL | `((0))` | 本次 stage restore 的 artifact 数量。 |
+| `artifact_saved_count` | `INT` | NOT NULL | `((0))` | 本次 stage save 的 artifact 数量。 |
+| `artifact_skipped_count` | `INT` | NOT NULL | `((0))` | 本次 stage save 时跳过的 artifact 数量。 |
+| `error_type` | `NVARCHAR(200)` | NULL | `` | 错误类型摘要，例如 `command_failed` / `exception`。 |
+| `error_summary` | `NVARCHAR(MAX)` | NULL | `` | 错误摘要，已脱敏，不替代完整 console log。 |
+| `config_snapshot_json` | `NVARCHAR(MAX)` | NULL | `` | 本次运行非敏感配置 snapshot，受 `ISJSON` check constraint 约束。 |
+| `created_at` | `DATETIME2(7)` | NOT NULL | `(sysutcdatetime())` | 数据库记录创建时间 UTC。 |
+| `updated_at` | `DATETIME2(7)` | NOT NULL | `(sysutcdatetime())` | 数据库记录最后更新时间 UTC。 |
+
+### 4.33 `pipeline_job_command_run`
+
+- 数据来源：`scripts/run_automation_stage.py` / `pipeline_job_audit_service`
+- 表用途：记录每个 automation stage 内部子命令运行情况，用于定位具体失败脚本、exit code、行数摘要和耗时瓶颈。
+- 当前索引：`UX_pipeline_job_command_run_index`(job_run_id, command_index, unique)；`IX_pipeline_job_command_run_script_started`(script_path, started_at DESC)；`IX_pipeline_job_command_run_status_started`(status, started_at DESC)
+- 当前说明：命令参数以脱敏 JSON 和 hash 记录，避免 token/password 等敏感信息落库。
+- 当前行数：`0`（migration 015 执行后尚未由新镜像 job 写入审计记录）。
+
+| 字段 | 类型 | 可空 | 默认值 | 字段说明 |
+|---|---|---|---|---|
+| `id` | `BIGINT` | NOT NULL | `` | 数据库自增主键。 |
+| `job_run_id` | `BIGINT` | NOT NULL | `` | 所属 `pipeline_job_run.id`。 |
+| `command_index` | `INT` | NOT NULL | `` | 子命令在 stage 内的执行顺序，从 1 开始。 |
+| `command_label` | `NVARCHAR(240)` | NOT NULL | `` | 子命令人类可读标签，例如 `Collect ready SP-API reports`。 |
+| `script_path` | `NVARCHAR(500)` | NOT NULL | `` | 执行脚本路径，例如 `scripts/ingest_orders.py`。 |
+| `redacted_args_json` | `NVARCHAR(MAX)` | NULL | `` | 脱敏后的参数 JSON，受 `ISJSON` check constraint 约束。 |
+| `args_sha256` | `CHAR(64)` | NULL | `` | 原始参数序列 hash，用于配置漂移审计，不保存明文 secret。 |
+| `writes_external_or_database` | `BIT` | NOT NULL | `((0))` | 该命令是否会写外部系统或数据库。 |
+| `status` | `NVARCHAR(40)` | NOT NULL | `('running')` | 命令状态，允许 `running` / `succeeded` / `failed` / `partial` / `skipped` / `blocked`。 |
+| `exit_code` | `INT` | NULL | `` | 子命令退出码。 |
+| `started_at` | `DATETIME2(7)` | NOT NULL | `(sysutcdatetime())` | 命令开始时间 UTC。 |
+| `finished_at` | `DATETIME2(7)` | NULL | `` | 命令结束时间 UTC。 |
+| `duration_ms` | `BIGINT` | NULL | `` | 命令耗时毫秒。 |
+| `rows_read` | `INT` | NULL | `` | 命令读取/准备行数摘要。 |
+| `rows_inserted` | `INT` | NULL | `` | 命令插入行数摘要。 |
+| `rows_updated` | `INT` | NULL | `` | 命令更新行数摘要。 |
+| `rows_skipped` | `INT` | NULL | `` | 命令跳过行数摘要。 |
+| `rows_failed` | `INT` | NULL | `` | 命令失败行数摘要。 |
+| `files_created` | `INT` | NULL | `` | 命令生成文件数量摘要。 |
+| `error_type` | `NVARCHAR(200)` | NULL | `` | 错误类型摘要。 |
+| `error_summary` | `NVARCHAR(MAX)` | NULL | `` | 错误摘要，已脱敏。 |
+| `output_summary_json` | `NVARCHAR(MAX)` | NULL | `` | 命令输出摘要 JSON，例如 ingestion summary / send result summary，受 `ISJSON` check constraint 约束。 |
+| `created_at` | `DATETIME2(7)` | NOT NULL | `(sysutcdatetime())` | 数据库记录创建时间 UTC。 |
+| `updated_at` | `DATETIME2(7)` | NOT NULL | `(sysutcdatetime())` | 数据库记录最后更新时间 UTC。 |
+
+### 4.34 `pipeline_job_artifact_link`
+
+- 数据来源：`pipeline_artifact_store` / `pipeline_job_audit_service`
+- 表用途：将某次 job/command 与实际 restore/save/raw/report/email artifact 关联，用于从报表、邮件、入库输出反查原始 Amazon 报告和中间文件证据。
+- 当前索引：`UX_pipeline_job_artifact_link_run_command_artifact_role`(job_run_id, command_run_id, artifact_id, artifact_role, unique, command_run_id is not null)；`UX_pipeline_job_artifact_link_run_artifact_role_no_command`(job_run_id, artifact_id, artifact_role, unique, command_run_id is null)；`IX_pipeline_job_artifact_link_scope_type`(artifact_scope, artifact_type)
+- 当前说明：该表不重复保存文件内容，只保存与 `pipeline_artifact_store.id` 的 lineage 关系和关键 hash/size metadata。
+- 当前行数：`0`（migration 015 执行后尚未由新镜像 job 写入审计记录）。
+
+| 字段 | 类型 | 可空 | 默认值 | 字段说明 |
+|---|---|---|---|---|
+| `id` | `BIGINT` | NOT NULL | `` | 数据库自增主键。 |
+| `job_run_id` | `BIGINT` | NOT NULL | `` | 所属 `pipeline_job_run.id`。 |
+| `command_run_id` | `BIGINT` | NULL | `` | 所属 `pipeline_job_command_run.id`；stage 级 artifact 可为空。 |
+| `artifact_id` | `BIGINT` | NOT NULL | `` | 关联的 `pipeline_artifact_store.id`。 |
+| `artifact_role` | `NVARCHAR(40)` | NOT NULL | `` | artifact 在本次 run 中的角色，例如 `restored_input` / `saved_output` / `raw_report` / `email_send_result`。 |
+| `artifact_type` | `NVARCHAR(80)` | NOT NULL | `` | artifact 类型，与 `pipeline_artifact_store.artifact_type` 对齐。 |
+| `artifact_scope` | `NVARCHAR(220)` | NOT NULL | `` | artifact scope，与 `pipeline_artifact_store.artifact_scope` 对齐。 |
+| `relative_path` | `NVARCHAR(600)` | NOT NULL | `` | artifact 相对路径，与 `pipeline_artifact_store.relative_path` 对齐。 |
+| `content_sha256` | `CHAR(64)` | NOT NULL | `` | artifact 原始内容 SHA-256。 |
+| `content_size_bytes` | `BIGINT` | NULL | `` | artifact 原始大小 bytes。 |
+| `created_at` | `DATETIME2(7)` | NOT NULL | `(sysutcdatetime())` | 数据库记录创建时间 UTC。 |
+
+### 4.35 `pipeline_job_table_write_summary`
+
+- 数据来源：ingestion/report 子命令 summary / `pipeline_job_audit_service`
+- 表用途：记录每次命令对 normalized 表或输出表的写入摘要，便于从数据异常反查是哪次 job、哪个 raw report、哪个 ingestion 命令造成。
+- 当前索引：`IX_pipeline_job_table_write_target_date`(target_table, data_start_date, data_end_date)；`IX_pipeline_job_table_write_run`(job_run_id, command_run_id)；`IX_pipeline_job_table_write_source_report`(source_system, source_report_type, source_report_id)
+- 当前说明：该表保存表级 rows summary，不保存完整业务明细；业务事实仍在各 normalized 表，原始文件仍在 `pipeline_artifact_store`。
+- 当前行数：`0`（migration 015 执行后尚未由新镜像 job 写入审计记录）。
+
+| 字段 | 类型 | 可空 | 默认值 | 字段说明 |
+|---|---|---|---|---|
+| `id` | `BIGINT` | NOT NULL | `` | 数据库自增主键。 |
+| `job_run_id` | `BIGINT` | NOT NULL | `` | 所属 `pipeline_job_run.id`。 |
+| `command_run_id` | `BIGINT` | NULL | `` | 所属 `pipeline_job_command_run.id`。 |
+| `target_table` | `NVARCHAR(300)` | NOT NULL | `` | 被写入/影响的目标表名，例如 `dbo.amazon_order_item`。 |
+| `source_system` | `NVARCHAR(50)` | NULL | `` | 来源系统，例如 `sp_api` / `ads_api` / `pipeline`。 |
+| `source_report_type` | `NVARCHAR(180)` | NULL | `` | 来源报告类型，例如 `GET_FLAT_FILE_ALL_ORDERS_DATA_BY_ORDER_DATE_GENERAL`。 |
+| `source_report_id` | `NVARCHAR(180)` | NULL | `` | Amazon report id 或 Ads report id。 |
+| `source_raw_file_path` | `NVARCHAR(1000)` | NULL | `` | 来源 raw 文件路径。 |
+| `source_raw_file_sha256` | `CHAR(64)` | NULL | `` | 来源 raw 文件 SHA-256。 |
+| `data_start_date` | `DATE` | NULL | `` | 本次写入数据覆盖开始日期。 |
+| `data_end_date` | `DATE` | NULL | `` | 本次写入数据覆盖结束日期。 |
+| `rows_read` | `INT` | NULL | `` | 读取/准备行数。 |
+| `rows_inserted` | `INT` | NULL | `` | 插入行数。 |
+| `rows_updated` | `INT` | NULL | `` | 更新行数。 |
+| `rows_skipped` | `INT` | NULL | `` | 跳过行数。 |
+| `rows_failed` | `INT` | NULL | `` | 失败行数。 |
+| `status` | `NVARCHAR(40)` | NOT NULL | `('succeeded')` | 表写入状态，允许 `succeeded` / `failed` / `partial` / `skipped` / `blocked`。 |
+| `summary_json` | `NVARCHAR(MAX)` | NULL | `` | 表写入摘要 JSON，受 `ISJSON` check constraint 约束。 |
+| `created_at` | `DATETIME2(7)` | NOT NULL | `(sysutcdatetime())` | 数据库记录创建时间 UTC。 |
+
 ## 6. 当前已准备但尚未执行的 migration
 
-当前无已准备但未执行的 migration。后续新增结构变更从 `015_xxx.sql` 开始。
+当前无已准备但未执行的 migration。后续新增结构变更从 `016_xxx.sql` 开始。

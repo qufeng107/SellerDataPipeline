@@ -248,6 +248,8 @@ def infer_artifact_type(relative_path: str) -> str:
         return "email_send_result"
     if path.startswith("runtime/report_delivery/"):
         return "delivery_pack_file"
+    if path.startswith("runtime/automation_audit/"):
+        return "automation_audit"
     return "pipeline_artifact"
 
 

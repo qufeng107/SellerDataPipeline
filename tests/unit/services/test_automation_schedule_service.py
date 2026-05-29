@@ -102,3 +102,50 @@ def test_monthly_report_delivery_commands_pass_email_to_override() -> None:
     printable = "\n".join(command.printable() for command in commands)
     assert "--to feng@cuidena.cn" in printable
     assert "--to ops@example.com" in printable
+
+
+def test_run_records_command_callbacks(monkeypatch) -> None:
+    import subprocess
+    from datetime import datetime
+
+    service = AutomationScheduleService()
+    command = service.build_commands(
+        workflow="weekly",
+        phase="submit",
+        marketplace_id="ATVPDKIKX0DER",
+        profile_id=None,
+        reference_date=date(2026, 5, 25),
+    )[0]
+    started: list[tuple[int, str]] = []
+    finished: list[tuple[object, int | None]] = []
+
+    def fake_run(argv, check=False):
+        assert check is False
+        return subprocess.CompletedProcess(argv, 0)
+
+    def on_start(index, command, started_at):
+        assert isinstance(started_at, datetime)
+        started.append((index, command.label))
+        return {"id": index}
+
+    def on_finish(handle, exit_code, finished_at):
+        assert isinstance(finished_at, datetime)
+        finished.append((handle, exit_code))
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    result = service.run(
+        workflow="weekly",
+        phase="submit",
+        artifact_scope="weekly:scope",
+        commands=(command,),
+        execute=True,
+        command_started=on_start,
+        command_finished=on_finish,
+    )
+
+    assert result.return_codes == (0,)
+    assert len(result.command_executions) == 1
+    assert result.command_executions[0].duration_ms is not None
+    assert started == [(1, command.label)]
+    assert finished == [({"id": 1}, 0)]

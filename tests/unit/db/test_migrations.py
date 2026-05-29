@@ -68,3 +68,18 @@ def test_ads_index_migration_contains_confirmed_ads_core_indexes() -> None:
     assert "UX_amazon_ads_sp_targeting_daily_business_key" in sql_text
     assert "UX_amazon_ads_sp_search_term_daily_business_key" in sql_text
     assert "UX_amazon_ads_sp_advertised_product_daily_business_key" in sql_text
+
+
+def test_job_audit_migration_contains_lineage_tables() -> None:
+    project_root = Path(__file__).resolve().parents[3]
+    sql_text = (
+        project_root / "sql/migrations/015_create_pipeline_job_run_audit_tables.sql"
+    ).read_text(encoding="utf-8")
+
+    assert "dbo.pipeline_job_run" in sql_text
+    assert "dbo.pipeline_job_command_run" in sql_text
+    assert "dbo.pipeline_job_artifact_link" in sql_text
+    assert "dbo.pipeline_job_table_write_summary" in sql_text
+    assert "configured_trigger_type" in sql_text
+    assert "run_trigger_type" in sql_text
+    assert "FK_pipeline_job_artifact_link_artifact" in sql_text

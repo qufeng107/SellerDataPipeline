@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import subprocess
 import sys
+from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import date, timedelta
-from typing import Literal
+from datetime import UTC, date, datetime, timedelta
+from typing import Any, Literal
 
 from seller_data_pipeline.integrations.amazon import report_types as rt
 
@@ -47,6 +48,16 @@ class AutomationCommand:
 
 
 @dataclass(frozen=True)
+class AutomationCommandExecution:
+    command_index: int
+    command: AutomationCommand
+    started_at: datetime | None
+    finished_at: datetime | None
+    exit_code: int | None
+    duration_ms: int | None
+
+
+@dataclass(frozen=True)
 class AutomationRunResult:
     workflow: str
     phase: str
@@ -54,10 +65,15 @@ class AutomationRunResult:
     artifact_scope: str
     commands: tuple[AutomationCommand, ...]
     return_codes: tuple[int, ...]
+    command_executions: tuple[AutomationCommandExecution, ...] = ()
 
     @property
     def failed_count(self) -> int:
         return sum(1 for code in self.return_codes if code != 0)
+
+
+CommandStartedCallback = Callable[[int, AutomationCommand, datetime], Any]
+CommandFinishedCallback = Callable[[Any, int | None, datetime], None]
 
 
 class AutomationScheduleService:
@@ -110,6 +126,8 @@ class AutomationScheduleService:
         commands: tuple[AutomationCommand, ...],
         execute: bool,
         stop_on_error: bool = True,
+        command_started: CommandStartedCallback | None = None,
+        command_finished: CommandFinishedCallback | None = None,
     ) -> AutomationRunResult:
         if not execute:
             return AutomationRunResult(
@@ -119,11 +137,39 @@ class AutomationScheduleService:
                 artifact_scope=artifact_scope,
                 commands=commands,
                 return_codes=(),
+                command_executions=tuple(
+                    AutomationCommandExecution(
+                        command_index=index,
+                        command=command,
+                        started_at=None,
+                        finished_at=None,
+                        exit_code=None,
+                        duration_ms=None,
+                    )
+                    for index, command in enumerate(commands, start=1)
+                ),
             )
         return_codes: list[int] = []
-        for command in commands:
+        executions: list[AutomationCommandExecution] = []
+        for index, command in enumerate(commands, start=1):
+            started_at = datetime.now(tz=UTC)
+            handle = command_started(index, command, started_at) if command_started else None
             completed = subprocess.run([sys.executable, *command.argv], check=False)
+            finished_at = datetime.now(tz=UTC)
+            duration_ms = max(0, int((finished_at - started_at).total_seconds() * 1000))
             return_codes.append(completed.returncode)
+            executions.append(
+                AutomationCommandExecution(
+                    command_index=index,
+                    command=command,
+                    started_at=started_at,
+                    finished_at=finished_at,
+                    exit_code=completed.returncode,
+                    duration_ms=duration_ms,
+                )
+            )
+            if command_finished:
+                command_finished(handle, completed.returncode, finished_at)
             if completed.returncode != 0 and stop_on_error:
                 break
         return AutomationRunResult(
@@ -133,6 +179,7 @@ class AutomationScheduleService:
             artifact_scope=artifact_scope,
             commands=commands,
             return_codes=tuple(return_codes),
+            command_executions=tuple(executions),
         )
 
 
