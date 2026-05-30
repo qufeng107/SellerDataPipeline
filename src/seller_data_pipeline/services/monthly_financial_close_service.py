@@ -17,6 +17,10 @@ from seller_data_pipeline.services.calculate_profit_service import (
     SettlementProfitLine,
     SkuCostRecord,
 )
+from seller_data_pipeline.services.monthly_accountant_pack import (
+    add_accountant_pack_sheets,
+    build_accountant_pack_payload,
+)
 from seller_data_pipeline.services.report_bilingual import (
     add_bilingual_readme_sheet,
     bilingual_metric_label,
@@ -27,7 +31,7 @@ MONEY_QUANT = Decimal("0.01")
 RATIO_QUANT = Decimal("0.0001")
 ZERO = Decimal("0")
 REPORT_TYPE = "monthly_financial_close"
-REPORT_VERSION = "v1.0"
+REPORT_VERSION = "v1.1-accountant-bookkeeping-pack"
 DEFAULT_OUTPUT_ROOT = "runtime/analysis_reports/monthly_financial_close"
 REVIEW_BUCKETS = {"unknown", "unclassified"}
 REVIEW_CATEGORIES = {"unknown", "unclassified"}
@@ -257,6 +261,7 @@ class MonthlyFinancialCloseResult:
             "reconciliation_checks": [check.to_dict() for check in self.reconciliation_checks],
             "warnings": [warning.to_dict() for warning in self.warnings],
             "raw_metadata": _json_safe_mapping(self.raw_metadata),
+            "accountant_pack": build_accountant_pack_payload(self),
             "methodology_notes": {
                 "settlement_led_policy": SETTLEMENT_LED_POLICY_NOTE,
                 "sku_profit_scope": SKU_PROFIT_SCOPE_NOTE,
@@ -734,6 +739,7 @@ def build_monthly_financial_close_workbook(result: MonthlyFinancialCloseResult) 
     )
     _write_rows_sheet(workbook, "07_Warnings", [warning.to_dict() for warning in result.warnings])
     _write_rows_sheet(workbook, "08_Raw_Metadata", _metadata_rows(result))
+    add_accountant_pack_sheets(workbook, result)
     workbook.active = 0
     return workbook
 

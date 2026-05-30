@@ -1,10 +1,10 @@
 # Feature: Monthly Financial Close Report
 
-> 文档状态：Design frozen / ready for implementation  
+> 文档状态：Implemented / in production observation  
 > 负责人：AI + Feng  
-> 更新时间：2026-05-22  
-> 功能状态：Implemented / pending live Azure SQL verification  
-> 设计版本：v1.0-json-xlsx-output  
+> 更新时间：2026-05-30  
+> 功能状态：v1.1 Accountant Bookkeeping Pack implemented  
+> 设计版本：v1.1-accountant-bookkeeping-pack  
 > 相关数据接入文档：`docs/data_access/sp_api_reports_catalog.md`, `docs/data_access/amazon_ads_reports_catalog.md`, `docs/data_access/seller_central_manual_exports.md`  
 > 相关数据库 spec：`docs/database/database_current_schema_spec.md`  
 > 相关功能：`docs/features/feature_profit_calculation.md`, `docs/features/feature_sku_cost_management.md`, `docs/operations/manual_refresh_plan_workflow.md`, `docs/operations/historical_backfill_workflow.md`  
@@ -30,6 +30,8 @@ Orders / Sales & Traffic / Ads / Promotion / Coupon / FBA Reimbursements 用于�
 
 v1 不新增数据库结果表，不自动发送邮件，不生成正式 PDF；先输出文件型月结结果，供人工复核、会计沟通、股东/管理层月度回顾使用。
 
+v1.1 在既有管理口径月报基础上增加 Accountant Bookkeeping Pack（会计做账辅助包）设计，目标是让会计每月拿到 XLSX 后，能直接理解 Amazon 销售、退款、平台费、广告费、FBA 费、赔偿、内部成本、汇率、凭证附件和季度汇总之间的关系，减少人工拆账和解释成本。
+
 ---
 
 ## 2. 功能状态
@@ -39,10 +41,10 @@ v1 不新增数据库结果表，不自动发送邮件，不生成正式 PDF；�
 | 需求确认 | 已确认：先做 Monthly Financial Close Report，再做 Weekly Business Review 和 Weekly Ads Optimization Report。 |
 | 口径依赖 | 已冻结：Settlement-led Financial Profit v1.0。 |
 | 数据源可用性 | 足够支持 v1：Settlement、SKU Cost、Sales & Traffic、Orders、Ads、Promotion/Coupon、Reimbursements 均已入库并验证过。 |
-| 设计状态 | 本文冻结 v1 设计到指标、字段、公式、输出文件和 XLSX sheet 级别。 |
+| 设计状态 | v1 已冻结并实现；v1.1 增加会计做账辅助 sheet 设计，待代码实现。 |
 | 数据库变更 | v1 不新增数据库表，不新增 migration。 |
 | 代码实现 | 已实现 v1：新增 service / repo / CLI / unit tests；待真实 Azure SQL 跑 2026-03、2026-04 人工复核。 |
-| 默认输出形式 | `monthly_financial_close_{YYYY-MM}.json` + `monthly_financial_close_{YYYY-MM}.xlsx`。已由 CLI 默认生成。 |
+| 默认输出形式 | `monthly_financial_close_{YYYY-MM}.json` + `monthly_financial_close_{YYYY-MM}.xlsx`。v1 已生成 8 个核心 sheet；v1.1 设计增加 7 个会计辅助 sheet。 |
 | 不再默认输出 | 不默认输出 Markdown；不默认输出多个 CSV。 |
 | 验收样本 | 先以 `2026-03`、`2026-04` 为主，因为 Settlement 和 SKU 成本当前最完整。 |
 
@@ -86,6 +88,7 @@ v1 不新增数据库结果表，不自动发送邮件，不生成正式 PDF；�
 - 输出对账和数据完整性检查。
 - 输出人工复核 notes / warnings。
 - 输出一个结构化 JSON 和一个多 sheet XLSX。
+- v1.1 增加面向会计的 Accountant Bookkeeping Pack sheets，包括会计做账汇总、建议分录、季度汇总、汇率工作表、凭证索引、回款核对和手工调整表。
 
 ### 4.2 本功能不包含
 
@@ -95,7 +98,8 @@ v1 不新增数据库结果表，不自动发送邮件，不生成正式 PDF；�
 - 不把 Promotion/Coupon performance 报表的预算或销售额当作财务促销实扣主口径。
 - 不用 Monthly Transaction CSV 全表 `total` 合计替代 Settlement，因为其中可能包含 Transfer / disbursement 行。
 - 不自动判断所有历史 statement 是否已经存在；v1 只做 coverage / status / warnings，最终仍需人工复核。
-- 不新增结果表；连续几期稳定后再考虑落库。
+- 不新增月报结果表；连续几期稳定后再考虑月报结果落库。
+- v1.1 会计做账辅助包不替代会计判断、不直接生成税务申报表，只提供做账/申报辅助底稿。
 - 不自动发邮件；后续另设 email / PDF workflow。
 - 不默认生成 Markdown，因为股东、会计和管理层使用场景主要是 XLSX / PDF / Email。
 - 不默认生成多个 CSV；如调试需要，可后续增加 `--export-csv`。
@@ -754,6 +758,15 @@ monthly_financial_close_{YYYY-MM}.json
   "reconciliation_checks": [],
   "warnings": [],
   "source_metadata": {},
+  "accountant_pack": {
+    "bookkeeping_summary": [],
+    "suggested_journal_entries": [],
+    "quarter_rollup": [],
+    "fx_rates": [],
+    "source_document_index": [],
+    "payout_reconciliation": [],
+    "manual_adjustments": []
+  },
   "output_files": {}
 }
 ```
@@ -827,7 +840,7 @@ monthly_financial_close_{YYYY-MM}.xlsx
 
 ### 13.1 Sheet 总览
 
-默认 sheets：
+默认 v1 核心 sheets：
 
 ```text
 01_Summary
@@ -840,7 +853,19 @@ monthly_financial_close_{YYYY-MM}.xlsx
 08_Raw_Metadata
 ```
 
-Sheet 名保持短、稳定、英文，避免 Excel 兼容问题。
+v1.1 Accountant Bookkeeping Pack（会计做账辅助包）新增 sheets：
+
+```text
+09_Accounting_Summary
+10_Journal_Entries
+11_Quarter_Rollup
+12_FX_Rates
+13_Source_Doc_Index
+14_Payout_Recon
+15_Adjustments
+```
+
+Sheet 名保持短、稳定、英文，避免 Excel 兼容问题。面向会计的 sheet 必须使用双语列名，格式建议为 `English / 中文`，并在 sheet 顶部加入中文优先说明区，说明本表用途、使用方式、数据来源、会计需确认事项和限制。
 
 ### 13.2 `01_Summary`
 
@@ -1026,6 +1051,374 @@ row_counts
 output_files
 ```
 
+### 13.10 Accountant Pack 通用格式规则
+
+Accountant Bookkeeping Pack 是在月度经营利润报表基础上增加的会计做账辅助层。其目标不是替代会计软件或税务申报表，而是把 Amazon 复杂的 Settlement / Ads / SKU 成本 / 回款 / 凭证信息转换成会计更容易使用的底稿。
+
+每个会计 sheet 顶部必须有说明区，至少包含以下键值行：
+
+```text
+Sheet Purpose / 本表用途
+How to Use / 使用方式
+Main Data Sources / 主要数据来源
+Accounting Caveats / 会计注意事项
+Required Accountant Confirmation / 需要会计确认
+```
+
+说明区建议中文在前、英文在后，便于中国会计直接阅读。说明区下面再进入表格标题行。会计 sheet 的固定列名必须双语，例如：
+
+```text
+Accounting Item / 会计项目
+Suggested Account / 建议会计科目
+Amount USD / 美元金额
+FX Rate / 汇率
+Amount CNY / 人民币金额
+Source / 数据来源
+Accountant Confirmation / 会计确认
+Notes / 说明
+```
+
+通用原则：
+
+```text
+1. JSON 仍保留稳定英文 machine-readable 字段名。
+2. XLSX 会计 sheet 使用双语列名，中文含义必须足够明确。
+3. 系统只生成会计辅助底稿和建议分录，不宣称自动完成法定会计处理或税务申报。
+4. 税务/会计最终口径由公司会计确认，尤其是汇率、收入确认、成本结转、发票合规性、汇兑损益和税务调整。
+5. 所有金额必须保留原币金额；人民币金额由汇率表驱动，汇率未确认时不能假装最终入账金额已确认。
+6. 每个自动生成金额都应能回溯到 Settlement bucket/category、SKU cost、bank payout、artifact metadata 或人工调整项。
+```
+
+### 13.11 `09_Accounting_Summary`
+
+会计做账汇总表。该 sheet 是会计最先看的总览表，用来把 Amazon 的经营分类转换成会计做账语言。它帮助会计快速判断本月应确认哪些收入、费用、退款、赔偿、成本和待确认事项。
+
+Sheet 顶部说明区建议内容：
+
+```text
+Sheet Purpose / 本表用途：按会计做账视角汇总本月 Amazon 经营数据，将 Settlement、广告费、FBA 费、退款、赔偿和内部 COGS 转换为会计可理解的项目。
+How to Use / 使用方式：会计可先检查每个会计项目的 USD 金额、建议科目、汇率和 CNY 金额，再决定是否直接入账或调整科目。
+Main Data Sources / 主要数据来源：Amazon Settlement Flat File V2 / Payments、amazon_sku_cost、Ads API 辅助指标、FBA Reimbursements 辅助指标。
+Accounting Caveats / 会计注意事项：本表为做账辅助底稿，不替代正式会计判断；Estimated Operating Profit 是管理口径利润，不等同于企业所得税应纳税所得额。
+Required Accountant Confirmation / 需要会计确认：收入是否含税/不含税、汇率口径、建议科目、发票/凭证是否齐全、COGS 是否可税前扣除。
+```
+
+建议列：
+
+```text
+Line No. / 行号
+Accounting Item / 会计项目
+Suggested Account / 建议会计科目
+Statement Direction / 报表方向
+Debit or Credit / 借贷方向
+Amount USD / 美元金额
+FX Rate / 汇率
+Amount CNY / 人民币金额
+Source Bucket / 来源利润桶
+Source Category / 来源金额类别
+Source Sheet / 来源Sheet
+Source Reference / 来源引用
+Auto Generated / 是否系统生成
+Needs Accountant Review / 是否需要会计复核
+Accountant Confirmation / 会计确认
+Notes / 说明
+```
+
+建议会计项目映射：
+
+| Accounting Item / 会计项目 | Suggested Account / 建议会计科目 | Direction / 方向 | Source / 数据来源 | Notes / 说明 |
+|---|---|---|---|---|
+| Product Sales Revenue / 商品销售收入 | Main Business Revenue / 主营业务收入 | Credit / 贷方 | Settlement `product_sales`, `liquidation_revenue` | 会计确认收入是否按不含税口径入账。 |
+| Refunds and Sales Returns / 退款及销售退回 | Sales Returns / 主营业务收入-销售退回或销售折让 | Debit / 借方 | Settlement `refund_revenue` | 可作为收入冲减或单独销售退回科目，最终由会计确认。 |
+| Referral and Platform Fees / 平台佣金及服务费 | Selling Expenses - Platform Fees / 销售费用-平台服务费 | Debit / 借方 | Settlement `referral_fee`, `subscription_fee`, chargebacks | 需配合 Amazon fee invoice 或结算单。 |
+| FBA Fulfillment Fees / FBA配送履约费 | Selling Expenses - Fulfillment Fees / 销售费用-FBA履约费 | Debit / 借方 | Settlement `fba_fulfillment_fee` | Amazon 代履约费用。 |
+| FBA Storage and Inbound Fees / FBA仓储及入仓相关费用 | Selling Expenses - Storage/FBA Fees / 销售费用-FBA仓储及入仓费用 | Debit / 借方 | Settlement storage/inbound categories | 可按公司科目细分。 |
+| Advertising Fees / 广告费 | Selling Expenses - Advertising / 销售费用-广告费 | Debit / 借方 | Settlement `advertising_fee` | 财务扣费以 Settlement 为主，Ads API 仅用于投放解释。 |
+| Promotion Discounts and Fees / 促销折扣及活动费用 | Selling Expenses - Promotion / 销售费用-促销费 | Debit / 借方 | Settlement promotion buckets | Coupon/Promotion performance 只做解释，不替代实扣。 |
+| Reimbursements / 亚马逊赔偿 | Other Income or Expense Offset / 其他收益或费用冲减 | Credit or Debit / 借或贷 | Settlement reimbursement bucket | 赔偿类科目需会计确认。 |
+| Internal COGS / 内部商品成本 | Cost of Goods Sold / 主营业务成本 | Debit / 借方 | `amazon_sku_cost` × product sales units | 管理成本口径，需会计结合采购发票、库存结转确认。 |
+| Marketplace Facilitator Tax / 平台代收代缴税费 | Pass-through Tax / 代收代缴税费或不入账 | Informational / 备查 | Settlement tax categories | 通常不作为公司收入或费用，最终由会计确认。 |
+```
+
+### 13.12 `10_Journal_Entries`
+
+建议记账凭证分录表。该 sheet 用于把 `09_Accounting_Summary` 的会计项目进一步转换成可录入财务软件的建议分录。会计可以复制后调整科目、汇率、摘要和凭证附件。
+
+Sheet 顶部说明区建议内容：
+
+```text
+Sheet Purpose / 本表用途：提供月度 Amazon 业务的建议记账分录，减少会计手工拆分 Amazon 结算单的工作量。
+How to Use / 使用方式：会计逐行检查借方科目、贷方科目、原币金额、汇率、人民币金额和附件索引，确认后录入财务软件。
+Main Data Sources / 主要数据来源：09_Accounting_Summary、Amazon Settlement、SKU成本、银行/万里汇到账核对、人工调整项。
+Accounting Caveats / 会计注意事项：本表是建议分录，不是强制分录；收入、成本、费用、汇兑损益和银行到账的最终分录方式由会计决定。
+Required Accountant Confirmation / 需要会计确认：凭证日期、摘要、借贷科目、汇率、附件、是否需要拆分多张凭证。
+```
+
+建议列：
+
+```text
+Voucher Date / 凭证日期
+Voucher Group / 凭证组
+Voucher Line No. / 凭证行号
+Entry Type / 分录类型
+Summary / 摘要
+Debit Account / 借方科目
+Credit Account / 贷方科目
+Currency / 币种
+Amount Original / 原币金额
+FX Rate / 汇率
+Amount CNY / 人民币金额
+Source Sheet / 来源Sheet
+Source Line No. / 来源行号
+Source Document ID / 来源凭证ID
+Attachment Required / 是否需要附件
+Accountant Confirmation / 会计确认
+Notes / 说明
+```
+
+建议分录组：
+
+```text
+1. Revenue recognition / 确认销售收入与退款冲减
+2. Amazon fees recognition / 确认平台佣金、FBA费、广告费、促销费等 Amazon 费用
+3. COGS recognition / 确认主营业务成本，需结合库存和采购发票
+4. Reimbursement recognition / 确认赔偿收入或费用冲减
+5. Payout clearing / Amazon应收与万里汇/银行到账核对
+6. FX gain/loss / 汇兑损益，需银行结汇或会计政策确认
+7. Manual adjustments / 会计手工调整
+```
+
+### 13.13 `11_Quarter_Rollup`
+
+季度税务/做账汇总表。该 sheet 用于把月度数据按季度累计，方便中国小企业按季度申报或季度内部复核。第一版可以在单月月报中展示当季截至当前月份的可累计字段；后续季度包可自动合并三个月数据。
+
+Sheet 顶部说明区建议内容：
+
+```text
+Sheet Purpose / 本表用途：按季度汇总每月 Amazon 收入、退款、费用、成本、利润和待确认项，帮助会计做季度报税和内部对账准备。
+How to Use / 使用方式：会计可把三个月的月报数据合并复核，检查季度累计销售收入、费用、成本和调整项是否完整。
+Main Data Sources / 主要数据来源：本月月报、同季度其他月份月报、09_Accounting_Summary、15_Adjustments。
+Accounting Caveats / 会计注意事项：季度汇总是申报辅助表，不等于税务申报表；季度申报口径需结合公司其他非 Amazon 收入费用、发票、税务政策和会计账簿。
+Required Accountant Confirmation / 需要会计确认：季度所属月份是否齐全、汇率是否一致、是否存在跨月调整、非 Amazon 费用是否已纳入账簿。
+```
+
+建议列：
+
+```text
+Quarter / 季度
+Month / 月份
+Accounting Item / 会计项目
+Suggested Account / 建议会计科目
+Amount USD / 美元金额
+FX Rate / 汇率
+Amount CNY / 人民币金额
+Quarter-to-Date Amount CNY / 季度累计人民币金额
+Source Report / 来源月报
+Status / 状态
+Needs Accountant Review / 是否需要会计复核
+Notes / 说明
+```
+
+建议季度汇总项目：
+
+```text
+Product Sales Revenue / 商品销售收入
+Refunds and Sales Returns / 退款及销售退回
+Amazon Platform Fees / 亚马逊平台费
+FBA Fees / FBA费用
+Advertising Fees / 广告费
+Promotion Costs / 促销费用
+Reimbursements / 亚马逊赔偿
+Internal COGS / 内部商品成本
+Estimated Operating Profit / 估算经营利润
+Manual Adjustments / 手工调整
+Unresolved Items / 未决事项
+```
+
+### 13.14 `12_FX_Rates`
+
+汇率换算工作表。该 sheet 用于把 USD 等原币金额折算成人民币，给会计保留明确的汇率输入和确认位置。
+
+Sheet 顶部说明区建议内容：
+
+```text
+Sheet Purpose / 本表用途：记录本月用于会计入账和季度汇总的汇率口径，驱动会计辅助表中的人民币金额换算。
+How to Use / 使用方式：会计填写或确认本月 USD/CNY 汇率，系统据此计算各会计项目人民币金额；如不同项目需要不同汇率，应逐项说明。
+Main Data Sources / 主要数据来源：会计确认的记账汇率、中国人民银行/银行结汇单/公司会计政策，系统不自动替代会计判断。
+Accounting Caveats / 会计注意事项：不同税种、会计事项或实际结汇可能使用不同汇率；系统默认汇率只能作为草稿，最终以会计确认口径为准。
+Required Accountant Confirmation / 需要会计确认：汇率日期、汇率来源、适用范围、是否使用月末汇率/月平均汇率/实际结汇汇率。
+```
+
+建议列：
+
+```text
+Currency Pair / 货币对
+Period / 期间
+FX Rate Type / 汇率类型
+FX Rate / 汇率
+Rate Date / 汇率日期
+Rate Source / 汇率来源
+Applies To / 适用范围
+Accountant Confirmation / 会计确认
+Notes / 说明
+```
+
+`FX Rate Type / 汇率类型` 示例：
+
+```text
+Month-End Rate / 月末汇率
+Monthly Average Rate / 月平均汇率
+Transaction Date Rate / 交易日汇率
+Bank Settlement Rate / 银行结汇汇率
+Accountant Manual Rate / 会计手工确认汇率
+```
+
+### 13.15 `13_Source_Doc_Index`
+
+凭证附件索引表。该 sheet 用于告诉会计本月做账需要哪些附件、哪些已经由系统生成或保存、哪些仍需人工下载/上传。
+
+Sheet 顶部说明区建议内容：
+
+```text
+Sheet Purpose / 本表用途：列出会计做账和税务复核可能需要的 Amazon、银行、采购、物流和内部成本凭证，减少遗漏附件。
+How to Use / 使用方式：会计或运营逐项勾选凭证是否已提供，并用 Source Reference 查找原始文件或下载路径。
+Main Data Sources / 主要数据来源：pipeline_artifact_store raw reports、Amazon Settlement report、Amazon fee invoice、万里汇/银行流水、采购发票、物流发票、SKU成本表。
+Accounting Caveats / 会计注意事项：系统能保存 Amazon raw report，但不一定自动获取所有发票、银行流水和采购/物流凭证；缺失凭证需要人工补充。
+Required Accountant Confirmation / 需要会计确认：附件是否满足入账和税务留存要求、凭证金额是否和做账金额一致。
+```
+
+建议列：
+
+```text
+Document Type / 凭证类型
+Period / 期间
+Document Name / 文件名
+Source System / 来源系统
+Source Reference / 来源引用
+Related Amount Original / 相关原币金额
+Currency / 币种
+Related Amount CNY / 相关人民币金额
+Provided to Accountant / 是否已提供给会计
+Required for Booking / 是否做账必需
+Required for Tax Filing / 是否报税必需
+Status / 状态
+Owner / 负责人
+Notes / 说明
+```
+
+建议凭证类型：
+
+```text
+Amazon Settlement Flat File V2 / 亚马逊结算明细
+Amazon Payments Statement / 亚马逊付款报表
+Amazon Seller Fee Invoice / 亚马逊服务费发票
+Amazon Advertising Invoice or Statement / 亚马逊广告费账单
+WorldFirst Payout Statement / 万里汇到账流水
+Bank Statement / 银行流水
+Supplier Purchase Invoice / 供应商采购发票
+First-Mile Freight Invoice / 头程物流发票
+Customs or Duty Document / 清关或关税文件
+SKU Cost Sheet / SKU成本表
+Manual Adjustment Support / 手工调整依据
+```
+
+### 13.16 `14_Payout_Recon`
+
+Amazon 结算与万里汇/银行到账核对表。该 sheet 用于把 Amazon Settlement net 与实际收款账户到账金额勾稽，帮助会计判断应收、回款、手续费和汇兑差异。
+
+Sheet 顶部说明区建议内容：
+
+```text
+Sheet Purpose / 本表用途：核对 Amazon Settlement 净额与万里汇/银行实际到账，帮助会计确认应收账款、其他货币资金、银行存款和汇兑损益。
+How to Use / 使用方式：运营或会计填入实际到账流水，系统计算与 Amazon settlement net 的差异，并标记是否为手续费、汇率差、跨月未到账或待查差异。
+Main Data Sources / 主要数据来源：Amazon Settlement、Amazon Payments、WorldFirst/银行流水、12_FX_Rates。
+Accounting Caveats / 会计注意事项：Amazon settlement 日期、付款日期、万里汇到账日期和银行入账日期可能跨月；差异不一定是错误，需按会计政策处理。
+Required Accountant Confirmation / 需要会计确认：回款日期、到账账户、手续费、汇率、汇兑损益、跨月应收余额。
+```
+
+建议列：
+
+```text
+Settlement ID / 结算单ID
+Settlement Period / 结算期间
+Amazon Net Amount / 亚马逊净结算金额
+Amazon Currency / 亚马逊币种
+Expected Payout Date / 预计打款日期
+Payout Account / 到账账户
+Actual Received Amount / 实际到账金额
+Received Currency / 到账币种
+Bank or WorldFirst Fee / 银行或万里汇手续费
+FX Rate / 汇率
+Received Amount CNY / 到账人民币金额
+Difference Original / 原币差异
+Difference CNY / 人民币差异
+Difference Reason / 差异原因
+Reconciliation Status / 核对状态
+Accountant Confirmation / 会计确认
+Notes / 说明
+```
+
+`Difference Reason / 差异原因` 示例：
+
+```text
+No Difference / 无差异
+Bank or Platform Fee / 银行或平台手续费
+FX Difference / 汇兑差异
+Timing Difference / 跨月时间差
+Partial Payout / 部分到账
+Pending Payout / 尚未到账
+Needs Investigation / 需排查
+```
+
+### 13.17 `15_Adjustments`
+
+会计手工调整表。该 sheet 用于保留系统无法自动判断但会计必须处理的事项，例如采购发票差异、头程物流分摊、库存成本调整、银行手续费、汇兑损益、税务调整和非 Amazon 费用。
+
+Sheet 顶部说明区建议内容：
+
+```text
+Sheet Purpose / 本表用途：记录会计对系统月报的手工调整，保证最终入账口径与管理口径差异可追溯。
+How to Use / 使用方式：会计逐项填写调整原因、金额、科目、附件和确认状态；季度汇总时将已确认调整纳入季度 rollup。
+Main Data Sources / 主要数据来源：会计账簿、发票、银行流水、库存记录、采购付款记录、税务调整底稿。
+Accounting Caveats / 会计注意事项：系统不会自动判断所有税务和会计调整；所有手工调整必须保留原因和附件，避免后续无法追溯。
+Required Accountant Confirmation / 需要会计确认：调整金额、科目、汇率、附件、是否影响当月或跨月、是否影响季度申报。
+```
+
+建议列：
+
+```text
+Adjustment ID / 调整ID
+Adjustment Type / 调整类型
+Accounting Item / 会计项目
+Suggested Account / 建议会计科目
+Debit or Credit / 借贷方向
+Currency / 币种
+Amount Original / 原币金额
+FX Rate / 汇率
+Amount CNY / 人民币金额
+Affects Month / 影响月份
+Affects Quarter / 影响季度
+Reason / 调整原因
+Source Document ID / 来源凭证ID
+Accountant Confirmation / 会计确认
+Status / 状态
+Notes / 说明
+```
+
+`Adjustment Type / 调整类型` 示例：
+
+```text
+Purchase Invoice Adjustment / 采购发票调整
+Inventory Cost Adjustment / 库存成本调整
+First-Mile Freight Allocation / 头程物流分摊
+Bank Fee / 银行手续费
+FX Gain or Loss / 汇兑损益
+Tax Adjustment / 税务调整
+Non-Amazon Expense / 非Amazon费用
+Prior Period Adjustment / 前期调整
+Other / 其他
+```
+
 ---
 
 ## 14. 数据质量与状态规则
@@ -1182,6 +1575,7 @@ python scripts/generate_monthly_financial_close_report.py --marketplace-id ATVPD
 ```text
 scripts/generate_monthly_financial_close_report.py
 src/seller_data_pipeline/services/monthly_financial_close_service.py
+src/seller_data_pipeline/services/monthly_accountant_pack.py
 src/seller_data_pipeline/db/repositories/monthly_financial_close_repo.py
 tests/unit/services/test_monthly_financial_close_service.py
 tests/unit/db/test_monthly_financial_close_repo.py
@@ -1261,7 +1655,8 @@ status/warning 用文本字段表达，不依赖颜色表达业务含义
 - Ads / Sales & Traffic / Orders 指标公式。
 - 0 分母时 ratio 输出 null 或 `None`，不得报错。
 - JSON 输出结构包含必填字段。
-- XLSX 输出包含 8 个默认 sheet。
+- v1 XLSX 输出包含 8 个核心 sheet。
+- v1.1 Accountant Bookkeeping Pack 输出包含 7 个会计辅助 sheet，且每个会计 sheet 包含中文优先说明区和双语固定列名。
 
 ### 18.2 数据验收
 
@@ -1323,7 +1718,7 @@ v1 稳定后再考虑：
 
 1. 基于 JSON 生成 CEO 版一页 PDF 摘要。
 2. 基于 JSON 生成股东邮件正文和附件包。
-3. 生成会计版费用明细包。
+3. 实现 v1.1 Accountant Bookkeeping Pack 会计做账辅助包。
 4. 增加 `--export-csv` 调试导出。
 5. 新增 `management_report_run` / `monthly_financial_close_result` 结果表。
 6. 与 `run_manual_refresh_plan.py` 串联为月度 close workflow。
@@ -1350,12 +1745,13 @@ v1 稳定后再考虑：
 | 2026-05-21 | 初版 Monthly Financial Close Report 设计冻结，默认输出 Markdown / JSON / CSV，Excel 放 v1.1。 | 先完成指标、字段和公式级设计。 |
 | 2026-05-22 | 调整 v1 默认输出为 JSON + 单个 XLSX 多 sheet；取消默认 Markdown 和多个 CSV。 | 股东/会计不会使用 Markdown；多个 CSV 太碎；JSON 更适合作为后续 PDF/Email 的结构化源，XLSX 更适合人工复核。 |
 | 2026-05-23 | 增加 Ads API context 缺失 warning、console reconciliation 计数、SKU Profit scope note。 | 真实 2026-03 / 2026-04 复核发现 Ads campaign daily 仅覆盖 2026-05-06 起，需避免把运营解释数据缺失误读为财务利润异常；同时避免将 SKU 表误读为最终公司利润。 |
+| 2026-05-30 | 增加并实现 v1.1 Accountant Bookkeeping Pack，新增 7 个会计辅助 sheet，并要求会计 sheet 顶部中文说明和双语列名。 | 让会计每月更容易基于月报做账、季度汇总和税务申报准备，减少人工拆分 Amazon 结算单和反复解释口径。 |
 ---
 
-## 18. v1 代码实现记录
+## 18. v1 / v1.1 代码实现记录
 
-> 更新时间：2026-05-23  
-> 实现状态：本地 unit tests / compileall 通过；真实 Azure SQL 2026-03 / 2026-04 已生成并初步复核。
+> 更新时间：2026-05-30  
+> 实现状态：v1 JSON/XLSX + v1.1 Accountant Bookkeeping Pack 已实现；本地 unit tests / compileall 通过；真实 Azure SQL 2026-03 / 2026-04 已生成并初步复核。
 
 ### 18.1 新增代码路径
 
@@ -1363,6 +1759,7 @@ v1 稳定后再考虑：
 scripts/generate_monthly_financial_close_report.py
 src/seller_data_pipeline/db/repositories/monthly_financial_close_repo.py
 src/seller_data_pipeline/services/monthly_financial_close_service.py
+src/seller_data_pipeline/services/monthly_accountant_pack.py
 tests/unit/db/test_monthly_financial_close_repo.py
 tests/unit/services/test_monthly_financial_close_service.py
 ```
@@ -1390,6 +1787,8 @@ runtime/analysis_reports/monthly_financial_close/{marketplace_id}/{YYYY-MM}/mont
 - SKU COGS 已按 product-sales unit 的 posted_date 匹配 `amazon_sku_cost.effective_from/effective_to`。如果同一 SKU 月内匹配多条成本，会按件计算 COGS，并在 SKU notes 中说明展示的是 weighted average unit cost。
 - 缺 SKU 成本或成本币种不匹配会将 report status 标为 `needs_review`，不会默认为 0 成本后静默通过。
 - v1 不新增数据库表，不新增 migration，不生成 Markdown，不默认输出多个 CSV。
+- v1.1 Accountant Bookkeeping Pack 不新增数据库表；在原 JSON/XLSX 月报中新增 `accountant_pack` JSON 节点和 `09_Accounting_Summary` 至 `15_Adjustments` 七张会计辅助 sheet。
+- 会计辅助 sheet 顶部包含中文优先说明区，列名全部为 English / 中文 双语格式，并保留会计确认、汇率、凭证、附件和调整项字段。
 
 ### 18.5 本地验证
 
@@ -1401,7 +1800,7 @@ python -m compileall -q scripts src tests
 当前容器验证结果：
 
 ```text
-PYTHONPATH=src pytest tests/unit -q  -> 238 passed
+PYTHONPATH=src pytest tests/unit -q  -> 300 passed
 python -m compileall -q scripts src tests -> passed
 ```
 
@@ -1416,7 +1815,7 @@ Default presentation artifacts must be bilingual:
 
 ```text
 1. JSON keeps stable machine-readable English field names.
-2. XLSX includes `00_Readme_说明` and bilingual fixed headers/labels.
+2. XLSX includes `00_Readme_说明` and bilingual fixed headers/labels. Accountant sheets must use bilingual column names and Chinese-first usage notes at the top of each sheet.
 3. Report delivery emails are Chinese-first with English reference text.
 4. Amazon-native raw values such as campaign names, search terms, keywords, SKU/ASIN and raw IDs stay unchanged.
 ```
