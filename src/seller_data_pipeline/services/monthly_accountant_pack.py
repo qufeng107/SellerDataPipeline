@@ -121,7 +121,8 @@ ACCOUNTANT_SHEET_NOTES: dict[str, tuple[tuple[str, str], ...]] = {
     "13_Source_Doc_Index": (
         (
             "Sheet Purpose / 本表用途",
-            "列出会计做账和税务复核可能需要的 Amazon、银行、采购、物流和内部成本凭证，减少遗漏附件。",
+            "列出会计做账和税务复核可能需要的 Amazon、银行、采购、物流和内部成本凭证，"
+            "减少遗漏附件。",
         ),
         (
             "How to Use / 使用方式",
@@ -150,8 +151,8 @@ ACCOUNTANT_SHEET_NOTES: dict[str, tuple[tuple[str, str], ...]] = {
         ),
         (
             "How to Use / 使用方式",
-            "运营或会计填入实际到账流水，系统计算与 Amazon settlement net 的差异，并标记是否为手续费、"
-            "汇率差、跨月未到账或待查差异。",
+            "运营或会计填入实际到账流水，系统计算与 Amazon settlement net 的差异，"
+            "并标记是否为手续费、汇率差、跨月未到账或待查差异。",
         ),
         (
             "Main Data Sources / 主要数据来源",
@@ -159,8 +160,8 @@ ACCOUNTANT_SHEET_NOTES: dict[str, tuple[tuple[str, str], ...]] = {
         ),
         (
             "Accounting Caveats / 会计注意事项",
-            "Amazon settlement 日期、付款日期、万里汇到账日期和银行入账日期可能跨月；差异不一定是错误，"
-            "需按会计政策处理。",
+            "Amazon settlement 日期、付款日期、万里汇到账日期和银行入账日期可能跨月；"
+            "差异不一定是错误，需按会计政策处理。",
         ),
         (
             "Required Accountant Confirmation / 需要会计确认",
@@ -174,7 +175,8 @@ ACCOUNTANT_SHEET_NOTES: dict[str, tuple[tuple[str, str], ...]] = {
         ),
         (
             "How to Use / 使用方式",
-            "会计逐项填写调整原因、金额、科目、附件和确认状态；季度汇总时将已确认调整纳入季度 rollup。",
+            "会计逐项填写调整原因、金额、科目、附件和确认状态；"
+            "季度汇总时将已确认调整纳入季度 rollup。",
         ),
         (
             "Main Data Sources / 主要数据来源",
@@ -642,7 +644,10 @@ def _build_journal_entry_rows(
         "Revenue recognition / 确认销售收入与退款冲减",
         1,
         "Revenue / 收入",
-        f"Recognize Amazon product sales for {result.month} / 确认 {result.month} Amazon 商品销售收入",
+        (
+            f"Recognize Amazon product sales for {result.month} / "
+            f"确认 {result.month} Amazon 商品销售收入"
+        ),
         "Accounts Receivable - Amazon / 应收账款-Amazon",
         "Main Business Revenue / 主营业务收入",
         summary_amount(1),
@@ -936,7 +941,10 @@ def _source_doc_row(
 def _build_payout_recon_rows(result: MonthlyFinancialCloseResult) -> list[dict[str, Any]]:
     currency = result.currency or "USD"
     settlement_ids = result.raw_metadata.get("settlement_ids") or []
-    settlement_id = "; ".join(str(value) for value in settlement_ids) or "All settlements / 全部结算单"
+    settlement_id = (
+        "; ".join(str(value) for value in settlement_ids)
+        or "All settlements / 全部结算单"
+    )
     return [
         {
             "settlement_id": settlement_id,
