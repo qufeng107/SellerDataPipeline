@@ -60,6 +60,14 @@ def test_calculate_monthly_financial_close_core_metrics() -> None:
     assert result.executive_summary()["headline"].startswith("2026-03 estimated operating profit")
 
 
+    payload = result.to_dict()
+    assert payload["version"] == "v1.1-accountant-bookkeeping-pack"
+    assert "accountant_pack" in payload
+    assert payload["accountant_pack"]["bookkeeping_summary"][0]["accounting_item"].startswith(
+        "Product Sales Revenue"
+    )
+
+
 def test_missing_sku_cost_marks_needs_review() -> None:
     result = MonthlyFinancialCloseService().calculate_from_rows(
         marketplace_id="ATVPDKIKX0DER",
@@ -194,7 +202,24 @@ def test_write_report_files_creates_json_and_xlsx(tmp_path: Path) -> None:
         "06_Reconciliation_Checks",
         "07_Warnings",
         "08_Raw_Metadata",
+        "09_Accounting_Summary",
+        "10_Journal_Entries",
+        "11_Quarter_Rollup",
+        "12_FX_Rates",
+        "13_Source_Doc_Index",
+        "14_Payout_Recon",
+        "15_Adjustments",
     ]
+    accounting_sheet = workbook["09_Accounting_Summary"]
+    assert accounting_sheet["A1"].value == "Sheet Purpose / 本表用途"
+    assert accounting_sheet["B1"].value.startswith("按会计做账视角汇总")
+    assert accounting_sheet["A7"].value == "Line No. / 行号"
+    assert accounting_sheet["B7"].value == "Accounting Item / 会计项目"
+    assert accounting_sheet["H8"].value == "='12_FX_Rates'!$D$8"
+    assert accounting_sheet["I8"].value == '=IFERROR(F8*H8,"")'
+    fx_sheet = workbook["12_FX_Rates"]
+    assert fx_sheet["A1"].value == "Sheet Purpose / 本表用途"
+    assert fx_sheet["D7"].value == "FX Rate / 汇率"
 
 
 def test_run_uses_repo_and_writes_report(tmp_path: Path) -> None:

@@ -21,8 +21,8 @@ RG="rg-amazon-ops"
 #   sdp-weekly-submit-dev          -> sdp-weekly-submit
 #   sdp-weekly-collect-ingest-dev  -> sdp-weekly-collect-ingest
 #   sdp-weekly-report-delivery-dev -> sdp-weekly-report-delivery
-SRC="sdp-weekly-report-delivery-dev"
-DST="sdp-weekly-report-delivery"
+SRC="sdp-monthly-report-delivery-dev"
+DST="sdp-monthly-report-delivery"
 
 # 正式周报建议用 main；留空则沿用源 job image。
 TARGET_IMAGE="ghcr.io/qufeng107/seller-data-pipeline:main"
@@ -35,7 +35,7 @@ TARGET_TRIGGER_TYPE="Schedule"
 # weekly submit:          0 6 * * 1
 # weekly collect_ingest:  0 9 * * 1
 # weekly report_delivery: 0 10 * * 1
-CRON_EXPRESSION="0 10 * * 1"
+CRON_EXPRESSION="0 6 6 * *"
 
 # true  = 修改新 Job 的 args
 # false = 完全复制源 Job 的 args
@@ -43,7 +43,7 @@ OVERRIDE_ARGS="true"
 
 # 只在 OVERRIDE_ARGS="true" 时生效。
 # 注意 collect phase 是 collect_ingest，不是 collect-ingest。
-NEW_ARGS='python scripts/run_automation_stage.py --workflow weekly --phase report_delivery --marketplace-id ATVPDKIKX0DER --profile-id 3917953989967300 --execute --send-email --email-to feng@cuidena.cn'
+NEW_ARGS='python scripts/run_automation_stage.py --workflow monthly --phase report_delivery --marketplace-id ATVPDKIKX0DER --profile-id 3917953989967300 --execute --send-email --email-to feng@cuidena.cn'
 
 # 如果目标 job 已存在，默认停止，避免误覆盖。
 # 真要覆盖时改成 true。
