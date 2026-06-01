@@ -1,6 +1,6 @@
 # SellerDataPipeline 项目总览
 
-> 更新时间：2026-05-19  
+> 更新时间：2026-06-01  
 > 文档定位：说明项目目的、边界、阶段目标、整体架构和当前真实状态。详细进度见 `docs/project/progress_next_steps.md`；数据库真实结构见 `docs/database/database_current_schema_spec.md`。
 
 ## 1. 项目背景
@@ -111,7 +111,7 @@ tests/
 
 ## 7. 当前真实状态
 
-截至 2026-05-19，核心数据底座已经完成。已通过真实 Azure SQL execute 和第二次 execute 幂等性验证的模块包括：
+截至 2026-06-01，核心数据底座已经完成，报表层和第一层 Azure Jobs dev rollout 也已进入可验证阶段。已通过真实 Azure SQL execute 和第二次 execute 幂等性验证的模块包括：
 
 | 模块 | 状态 | 说明 |
 |---|---|---|
@@ -132,8 +132,8 @@ tests/
 | Manual operations workflow | Planned / documented | 已建立手动执行流程和数据更新周期目录。 |
 | Job cadence config table | Implemented | `012_create_ingestion_job_config.sql` 和 seed 001 已执行；seed 002 用于同步重叠窗口刷新策略。 |
 | 利润核算 | Preview implemented | 已冻结 Settlement-led Financial Profit v1.0；第一版手动利润 preview 已实现。 |
-| 周报/月报/清仓分析 | 待设计/待开发 | 依赖利润 preview 稳定输出。 |
-| Azure Container Apps Jobs | 待开发 | 手动流程稳定后再上云。 |
+| 周报/月报/广告优化报表 | Implemented / pending live verification | Monthly Financial Close v1.2、WBR v1.1、WAOR v1.1 已实现；下一步用真实周期重新生成并复核。 |
+| Azure Container Apps Jobs | Manual dev rollout in progress | GHCR dev image、sdp-smoke-dev、sdp-weekly-submit-dev 已验证；下一步 collect/ingest 与 report delivery dev jobs。 |
 
 ## 8. 下一阶段主线
 

@@ -1,9 +1,9 @@
 # Feature: Pipeline Job Run Audit Log
 
-> 文档状态：Design accepted + initial implementation ready  
+> 文档状态：Implemented; migration 015 executed and schema exported  
 > 负责人：AI + Feng  
-> 更新时间：2026-05-29  
-> 功能状态：Implementation ready; migration 015 pending Azure SQL execution  
+> 更新时间：2026-06-01  
+> 功能状态：Implemented; migration 015 已执行，repository/service/wrapper audit hooks 已接入，等待新镜像 job 产生首批审计记录  
 > 相关功能：`docs/features/feature_automation_jobs_workflow.md`, `docs/features/feature_pipeline_artifact_store.md`, `docs/features/feature_report_delivery_email.md`  
 > 相关数据库 spec：`docs/database/database_current_schema_spec.md`  
 > 相关原则：先文档后实现、先 migration 后 spec、审计元数据入库、raw/report 文件继续由 `pipeline_artifact_store` 保存
@@ -41,15 +41,15 @@ v1 不替代 Log Analytics，也不把全文 console log 大量写入数据库�
 | Dry-run preview | 支持：automation wrapper dry-run 仍可生成 run/command 审计，业务写入不执行 |
 | Schema guard | 已设计并接入 redaction guard；业务 schema guard 结果通过 command/artifact/table summary 记录 |
 | Repository/upsert | 已实现 append-only repository，不覆盖历史 run |
-| Azure SQL execute | migration 015 待执行 |
-| 幂等性验证 | 单元测试覆盖 append 写入与重复运行设计；Azure 验收待 migration 后执行 |
+| Azure SQL execute | migration 015 已执行，live schema export 已更新 |
+| 幂等性验证 | 单元测试覆盖 append 写入与重复运行设计；Azure 首批 job 写入待新镜像/dev job 验证 |
 | 单元测试 | 已新增 repo/service/automation callback/migration/artifact type 测试 |
 | 文档同步 | 本文档已更新为 implementation-ready 版 |
 
 功能整体状态：
 
 ```text
-Implementation ready; migration pending
+Implemented; migration executed; awaiting first cloud job audit rows
 ```
 
 ---
@@ -499,10 +499,10 @@ pipeline_job_artifact_link: 可选 UNIQUE(job_run_id, command_run_id, artifact_i
 
 | 变化 | 原因 | migration 文件 | 状态 |
 |---|---|---|---|
-| 新增 `pipeline_job_run` | 自动化 stage run 主审计表 | `015_create_pipeline_job_run_audit_tables.sql` | planned |
-| 新增 `pipeline_job_command_run` | 子命令级排查 | `015_create_pipeline_job_run_audit_tables.sql` | planned |
-| 新增 `pipeline_job_artifact_link` | artifact lineage | `015_create_pipeline_job_run_audit_tables.sql` | planned |
-| 新增 `pipeline_job_table_write_summary` | 目标表写入摘要 | `015_create_pipeline_job_run_audit_tables.sql` | planned |
+| 新增 `pipeline_job_run` | 自动化 stage run 主审计表 | `015_create_pipeline_job_run_audit_tables.sql` | executed |
+| 新增 `pipeline_job_command_run` | 子命令级排查 | `015_create_pipeline_job_run_audit_tables.sql` | executed |
+| 新增 `pipeline_job_artifact_link` | artifact lineage | `015_create_pipeline_job_run_audit_tables.sql` | executed |
+| 新增 `pipeline_job_table_write_summary` | 目标表写入摘要 | `015_create_pipeline_job_run_audit_tables.sql` | executed |
 
 暂不更新 `docs/database/database_current_schema_spec.md`。只有 migration 015 在 Azure SQL 成功执行并导出 live schema 后再更新。
 

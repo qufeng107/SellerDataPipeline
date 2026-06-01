@@ -1,7 +1,7 @@
 # SellerDataPipeline 当前进展与下一步计划
 
-> 更新时间：2026-05-25  
-> 当前版本：v1.75 Azure Container Apps Jobs dev submit smoke succeeded  
+> 更新时间：2026-06-01  
+> 当前版本：v1.77 report code口径升级完成：双利润月报 + WBR Saturday–Friday + WAOR negative snapshot  
 > 文档定位：记录项目真实进展、已完成里程碑、当前非阻塞问题和下一步开发顺序。本文不承载详细字段设计；功能细节见 `docs/features/`。
 
 ## 1. 当前一句话状态
@@ -16,6 +16,7 @@
 -> 数据覆盖审计 + stable cutoff
 -> 重叠窗口 rolling refresh
 -> 月度财务结算报表 / 每周经营周报 / 广告优化周报
+-> 报表口径升级代码已完成：月报双利润口径、WBR Saturday–Friday、WAOR active actions + negative snapshot
 -> Report Delivery 邮件草稿包
 -> SMTP 邮件发送已实现并通过真实邮件验收
 -> 中英文双语 Report Delivery 已实现
@@ -206,7 +207,7 @@ docs/project/requirements_deprecation_plan.md
 |---|---|
 | raw file registry 关联仍不完整，部分 `source_raw_file_id` 可能为 NULL | 后续补 raw file registry / Blob Storage 归档增强。 |
 | 任务周期已写入 `pipeline_job_config` | 新增 seed 002 用于把配置调整为重叠窗口刷新 + 周度分析；执行后需导出 live schema/行数并记录。 |
-| 利润核算口径已冻结 | 已采用 Settlement-led Financial Profit v1.0；第一版手动利润 preview 已实现，下一步做多周期复核和周报。 |
+| 利润核算口径已冻结并升级展示 | 财务/会计口径仍采用 Settlement-led Financial Profit v1.0；新增 Management P&L with report-date Ads 作为月报经营复盘口径。 |
 | SKU 成本、采购成本、头程/海运成本需要录入机制 | 已实现 xlsx 模板导出/导入脚本，目标表为 `amazon_sku_cost`。 |
 | 2026-03 起核心数据已完成第一轮补数 | Orders 历史 backfill 已逐 raw file 入库；Ads 历史 backfill 已入库；coverage audit 中 covers_stable_window 提升到 4。后续日常更新改用 `run_manual_refresh_plan.py`。 |
 | 周报脚本已实现；月报脚本已初步复核 | Monthly Financial Close Report v1 已实现 JSON + 单个 XLSX 多 sheet 输出，且 2026-03 / 2026-04 dry-run 已初步复核；Weekly Business Review v1 已实现 JSON + 单个 XLSX 多 sheet 输出，并用 2026-05-11..2026-05-17 真实数据生成 status=ok。Ads API campaign daily 目前 5 月后可用于周度加工，3/4 月 Ads context 缺失仅作为运营解释 warning。Weekly Ads Optimization Report v1 已完成代码实现，并已用 2026-05-11..2026-05-17 真实 Ads 数据执行 live dry-run，结果 status=ok、reconciliation_warnings=0。Report Delivery / Email Pack v1 已实现草稿包生成；SMTP 真实发送 v1.1 已实现，采用 Python 标准库 `smtplib` / `EmailMessage`，收件人通过 `runtime/config/report_delivery_recipients.json` 按 `report_type + audience` 配置，真实发送必须显式 `--execute`。 |
@@ -231,9 +232,41 @@ SKU 成本来自 amazon_sku_cost；
 第一版先输出人工复核文件，不立即新增利润结果表。
 ```
 
-当前已新增 historical backfill CLI，并已补齐 2026-03 起的 Orders 与核心经营数据；Ads campaign daily 目前 5 月后数据已可稳定用于周度加工。为避免日常操作继续变成零散命令，已新增 `scripts/run_manual_refresh_plan.py`，将标准定期更新固化为 `core_rolling` / `weekly_full` 两个 plan，以及 `submit` / `collect` / `ingest` / `audit` 四个 phase。Monthly Financial Close Report v1 已实现，默认输出 JSON + 单个 XLSX 多 sheet，不默认输出 Markdown 或多个 CSV；2026-03 / 2026-04 真实 dry-run 已初步复核，Ads API campaign daily 在 3/4 月缺失仅作为运营解释 warning，不影响 Settlement-led 财务利润。Weekly Business Review v1 已实现，默认输出 JSON + 单个 XLSX 多 sheet，并用 2026-05-11..2026-05-17 真实数据生成 status=ok。Weekly Ads Optimization Report v1 已完成代码实现，并已用同一周真实数据执行 live dry-run 验证通过。
+当前已新增 historical backfill CLI，并已补齐 2026-03 起的 Orders 与核心经营数据；Ads campaign daily 目前 5 月后数据已可稳定用于周度加工。为避免日常操作继续变成零散命令，已新增 `scripts/run_manual_refresh_plan.py`，将标准定期更新固化为 `core_rolling` / `weekly_full` 两个 plan，以及 `submit` / `collect` / `ingest` / `audit` 四个 phase。Monthly Financial Close Report v1.2 已完成代码实现，默认输出 JSON + 单个 XLSX 多 sheet，并新增 Settlement-led Estimated Profit、Management Estimated Profit with Report-date Ads、`02_Management_PnL` 和 `03_Ads_Timing_Recon`。Weekly Business Review v1.1 已完成代码对齐，统一周报周期为 Saturday–Friday，并将广告和货本后贡献明确标注为未扣完整 Amazon 平台费。Weekly Ads Optimization Report v1.1 已完成代码实现，action items 已区分 active campaigns 与 historical paused lessons，并接入 negative keyword snapshot / `--negative-keyword-csv` 去重。
 
 ## 9. 管理报表设计进展
+
+### 9.1 2026-06-01 报表口径升级代码完成
+
+本轮已完成设计与代码对齐，未新增数据库 migration。已确认并实现：
+
+```text
+Monthly Financial Close Report v1.2:
+  财务/会计主口径 = Settlement-led Estimated Profit
+  管理经营口径 = Management Estimated Profit with Report-date Ads
+  已新增 02_Management_PnL 与 03_Ads_Timing_Recon
+
+Weekly Business Review v1.1:
+  默认周期 = Saturday–Friday
+  默认生成 = Monday
+  Contribution After Ads 展示为广告和货本后贡献，未扣完整 Amazon 平台费
+  Settlement 仅作为 posted-date 财务参考
+
+Weekly Ads Optimization Report v1.1:
+  默认周期 = Saturday–Friday
+  Action Items 已拆分 active actions 和 historical paused lessons
+  已接入 negative keyword snapshot 与 --negative-keyword-csv，避免重复建议已否定词
+```
+
+本地验证：
+
+```text
+PYTHONPATH=src python -m pytest tests/unit -q -> 301 passed
+PYTHONPATH=src python -m compileall -q src scripts tests -> passed
+```
+
+后续不是继续改口径，而是重新生成真实周期报表，人工复核 5 月广告费跨期、WBR 贡献指标和 WAOR negative 去重效果.
+
 
 当前报表体系冻结为三类：
 
@@ -253,7 +286,7 @@ docs/features/feature_report_delivery_email.md  # 统一邮件草稿包与 SMTP 
 docs/features/feature_automation_jobs_workflow.md  # Azure Container Apps Jobs 三阶段自动化设计
 ```
 
-代码实现进展：Monthly Financial Close Report v1 已完成本地 unit tests/compileall，并根据真实 2026-03 / 2026-04 输出完成一轮小修补。Weekly Business Review v1 已完成代码实现、unit tests 和 compileall，默认输出 JSON + 单个 XLSX 多 sheet，并用 2026-05-11..2026-05-17 真实数据生成 status=ok。Weekly Ads Optimization Report v1 已完成代码实现，默认输出 JSON + 单个 XLSX 多 sheet，不调用 Ads 写接口。Report Delivery / Email Pack 与 SMTP 真实发送已完成，且第一封 WAOR 邮件已实际收到；当前已升级为中英文双语邮件和 XLSX 固定标签/说明。之后建议顺序：重新生成三类报表与 delivery pack，人工复核双语邮件正文和附件 -> 再考虑 Azure Jobs。
+代码实现进展：Monthly Financial Close Report v1.2 已完成双利润口径与 Ads Timing Reconciliation；Weekly Business Review v1.1 已完成 Saturday-Friday 周期与贡献指标口径对齐；Weekly Ads Optimization Report v1.1 已完成 active actions / historical paused lessons 拆分和 negative keyword snapshot 去重。Report Delivery / Email Pack 与 SMTP 真实发送已完成，且 WAOR 邮件已实际收到；当前已升级为中英文双语邮件和 XLSX 固定标签/说明。之后建议顺序：重新生成三类报表与 delivery pack，人工复核双语邮件正文和附件 -> 继续 Azure Jobs dev rollout。
 
 ## 10. 当前建议手动运行顺序
 

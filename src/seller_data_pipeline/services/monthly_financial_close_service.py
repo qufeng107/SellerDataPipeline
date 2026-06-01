@@ -31,7 +31,7 @@ MONEY_QUANT = Decimal("0.01")
 RATIO_QUANT = Decimal("0.0001")
 ZERO = Decimal("0")
 REPORT_TYPE = "monthly_financial_close"
-REPORT_VERSION = "v1.1-accountant-bookkeeping-pack"
+REPORT_VERSION = "v1.2-dual-profit-ads-timing"
 DEFAULT_OUTPUT_ROOT = "runtime/analysis_reports/monthly_financial_close"
 REVIEW_BUCKETS = {"unknown", "unclassified"}
 REVIEW_CATEGORIES = {"unknown", "unclassified"}
@@ -40,7 +40,12 @@ SKU_PROFIT_SCOPE_NOTE = (
     "subscription fees, coupon fees, storage fees, and other non-SKU settlement rows."
 )
 SETTLEMENT_LED_POLICY_NOTE = (
-    "Settlement is the financial source of truth; operational sources are context only."
+    "Settlement-led profit remains the accounting/close source of truth; operational sources "
+    "are used for management analysis and timing reconciliation."
+)
+MANAGEMENT_PNL_POLICY_NOTE = (
+    "Management P&L replaces settlement posted-date advertising fees with Ads API report-date "
+    "spend so month-level operating decisions are not distorted by ads invoice timing."
 )
 
 
@@ -195,6 +200,16 @@ class MonthlyFinancialSummary:
     promotion_cost: Decimal
     promotion_fee: Decimal
     reimbursement: Decimal
+    settlement_led_estimated_profit: Decimal
+    settlement_led_profit_margin: Decimal | None
+    settlement_advertising_fee: Decimal
+    settlement_advertising_fee_abs: Decimal
+    settlement_net_excluding_posted_ads: Decimal
+    ads_api_report_date_spend: Decimal
+    ads_timing_difference: Decimal
+    ads_timing_difference_pct: Decimal | None
+    management_estimated_profit_report_date_ads: Decimal
+    management_profit_margin_report_date_ads: Decimal | None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -211,6 +226,30 @@ class MonthlyFinancialSummary:
             "promotion_cost": _decimal_to_string(self.promotion_cost),
             "promotion_fee": _decimal_to_string(self.promotion_fee),
             "reimbursement": _decimal_to_string(self.reimbursement),
+            "settlement_led_estimated_profit": _decimal_to_string(
+                self.settlement_led_estimated_profit
+            ),
+            "settlement_led_profit_margin": _optional_ratio_to_string(
+                self.settlement_led_profit_margin
+            ),
+            "settlement_advertising_fee": _decimal_to_string(self.settlement_advertising_fee),
+            "settlement_advertising_fee_abs": _decimal_to_string(
+                self.settlement_advertising_fee_abs
+            ),
+            "settlement_net_excluding_posted_ads": _decimal_to_string(
+                self.settlement_net_excluding_posted_ads
+            ),
+            "ads_api_report_date_spend": _decimal_to_string(self.ads_api_report_date_spend),
+            "ads_timing_difference": _decimal_to_string(self.ads_timing_difference),
+            "ads_timing_difference_pct": _optional_ratio_to_string(
+                self.ads_timing_difference_pct
+            ),
+            "management_estimated_profit_report_date_ads": _decimal_to_string(
+                self.management_estimated_profit_report_date_ads
+            ),
+            "management_profit_margin_report_date_ads": _optional_ratio_to_string(
+                self.management_profit_margin_report_date_ads
+            ),
         }
 
 
@@ -264,6 +303,7 @@ class MonthlyFinancialCloseResult:
             "accountant_pack": build_accountant_pack_payload(self),
             "methodology_notes": {
                 "settlement_led_policy": SETTLEMENT_LED_POLICY_NOTE,
+                "management_pnl_policy": MANAGEMENT_PNL_POLICY_NOTE,
                 "sku_profit_scope": SKU_PROFIT_SCOPE_NOTE,
             },
             "output_files": dict(self.output_files),
@@ -296,24 +336,33 @@ class MonthlyFinancialCloseResult:
         )
 
     def executive_summary(self) -> dict[str, Any]:
-        profit = self.financial_summary.estimated_operating_profit
-        margin = self.financial_summary.profit_margin
+        fs = self.financial_summary
+        settlement_profit = fs.settlement_led_estimated_profit
+        management_profit = fs.management_estimated_profit_report_date_ads
+        margin = fs.management_profit_margin_report_date_ads
         headline = (
-            f"{self.month} estimated operating profit was {_format_money(profit, self.currency)}."
+            f"{self.month} management estimated profit with report-date ads was "
+            f"{_format_money(management_profit, self.currency)}; settlement-led estimated profit "
+            f"was {_format_money(settlement_profit, self.currency)}."
         )
         key_points = [
             (
                 "Settlement net amount was "
-                f"{_format_money(self.financial_summary.settlement_net_amount, self.currency)}."
+                f"{_format_money(fs.settlement_net_amount, self.currency)}."
+            ),
+            (
+                "Ads timing difference was "
+                f"{_format_money(fs.ads_timing_difference, self.currency)} "
+                "(Ads API report-date spend minus settlement posted-date advertising fee)."
             ),
             (
                 "Internal COGS was "
-                f"{_format_money(self.financial_summary.internal_cogs, self.currency)}."
+                f"{_format_money(fs.internal_cogs, self.currency)}."
             ),
             f"Report status is {self.status}.",
         ]
         if margin is not None:
-            key_points.insert(1, f"Operating profit margin was {_format_ratio(margin)}.")
+            key_points.insert(1, f"Management profit margin was {_format_ratio(margin)}.")
         reconciliation_warning_count = sum(
             1 for check in self.reconciliation_checks if check.status == "warning"
         )
@@ -562,21 +611,47 @@ class MonthlyFinancialCloseService:
             )
 
         internal_cogs = _money(internal_cogs)
-        estimated_operating_profit = _money(settlement_net_amount - internal_cogs)
+        settlement_advertising_fee = _money(bucket_totals.get("advertising_cost", ZERO))
+        settlement_advertising_fee_abs = _money(abs(settlement_advertising_fee))
+        ads_api_report_date_spend = _money(_to_decimal((ads_summary or {}).get("ads_cost")))
+        settlement_led_estimated_profit = _money(settlement_net_amount - internal_cogs)
+        settlement_net_excluding_posted_ads = _money(
+            settlement_net_amount - settlement_advertising_fee
+        )
+        ads_timing_difference = _money(ads_api_report_date_spend - settlement_advertising_fee_abs)
+        management_estimated_profit = _money(
+            settlement_net_excluding_posted_ads - ads_api_report_date_spend - internal_cogs
+        )
         financial_summary = MonthlyFinancialSummary(
             settlement_net_amount=settlement_net_amount,
             product_sales_amount=product_sales_amount,
             product_sales_units=product_sales_units,
             internal_cogs=internal_cogs,
-            estimated_operating_profit=estimated_operating_profit,
-            profit_margin=_safe_ratio(estimated_operating_profit, product_sales_amount),
-            advertising_cost=_money(bucket_totals.get("advertising_cost", ZERO)),
+            estimated_operating_profit=settlement_led_estimated_profit,
+            profit_margin=_safe_ratio(settlement_led_estimated_profit, product_sales_amount),
+            advertising_cost=settlement_advertising_fee,
             fba_fee=_money(bucket_totals.get("fba_fee", ZERO)),
             amazon_fee=_money(bucket_totals.get("amazon_fee", ZERO)),
             refund=_money(bucket_totals.get("refund", ZERO)),
             promotion_cost=_money(bucket_totals.get("promotion_cost", ZERO)),
             promotion_fee=_money(bucket_totals.get("promotion_fee", ZERO)),
             reimbursement=_money(bucket_totals.get("reimbursement", ZERO)),
+            settlement_led_estimated_profit=settlement_led_estimated_profit,
+            settlement_led_profit_margin=_safe_ratio(
+                settlement_led_estimated_profit, product_sales_amount
+            ),
+            settlement_advertising_fee=settlement_advertising_fee,
+            settlement_advertising_fee_abs=settlement_advertising_fee_abs,
+            settlement_net_excluding_posted_ads=settlement_net_excluding_posted_ads,
+            ads_api_report_date_spend=ads_api_report_date_spend,
+            ads_timing_difference=ads_timing_difference,
+            ads_timing_difference_pct=_safe_ratio(
+                ads_timing_difference, settlement_advertising_fee_abs
+            ),
+            management_estimated_profit_report_date_ads=management_estimated_profit,
+            management_profit_margin_report_date_ads=_safe_ratio(
+                management_estimated_profit, product_sales_amount
+            ),
         )
         bucket_rows = _build_bucket_rows(
             bucket_totals=bucket_totals,
@@ -712,33 +787,35 @@ def build_monthly_financial_close_workbook(result: MonthlyFinancialCloseResult) 
         scope_zh="Settlement 是财务主口径；运营数据只用于解释和交叉校验。",
     )
     _write_rows_sheet(workbook, "01_Summary", _summary_rows(result))
+    _write_rows_sheet(workbook, "02_Management_PnL", _management_pnl_rows(result))
+    _write_rows_sheet(workbook, "03_Ads_Timing_Recon", _ads_timing_reconciliation_rows(result))
     _write_rows_sheet(
         workbook,
-        "02_Settlement_Buckets",
+        "04_Settlement_Buckets",
         [row.to_dict() for row in result.settlement_bucket_breakdown],
     )
     _write_rows_sheet(
         workbook,
-        "03_Amount_Categories",
+        "05_Amount_Categories",
         [row.to_dict() for row in result.amount_category_breakdown],
     )
     _write_rows_sheet(
         workbook,
-        "04_SKU_Profit",
+        "06_SKU_Profit",
         [_flatten_sku_row(row) for row in result.sku_profitability],
     )
     _write_rows_sheet(
         workbook,
-        "05_Operational_Context",
+        "07_Operational_Context",
         [metric.to_dict() for metric in result.operational_context],
     )
     _write_rows_sheet(
         workbook,
-        "06_Reconciliation_Checks",
+        "08_Reconciliation_Checks",
         [check.to_dict() for check in result.reconciliation_checks],
     )
-    _write_rows_sheet(workbook, "07_Warnings", [warning.to_dict() for warning in result.warnings])
-    _write_rows_sheet(workbook, "08_Raw_Metadata", _metadata_rows(result))
+    _write_rows_sheet(workbook, "09_Warnings", [warning.to_dict() for warning in result.warnings])
+    _write_rows_sheet(workbook, "10_Raw_Metadata", _metadata_rows(result))
     add_accountant_pack_sheets(workbook, result)
     workbook.active = 0
     return workbook
@@ -786,17 +863,64 @@ def _summary_rows(result: MonthlyFinancialCloseResult) -> list[dict[str, Any]]:
             "SKU standard cost from amazon_sku_cost.",
         ),
         _metric_row(
+            "Settlement-led Estimated Profit",
+            fs.settlement_led_estimated_profit,
+            result.currency,
+            "Settlement net minus internal COGS; accounting/close view.",
+        ),
+        _metric_row(
+            "Management Estimated Profit with Report-date Ads",
+            fs.management_estimated_profit_report_date_ads,
+            result.currency,
+            "Settlement net excluding posted ads, less Ads API report-date spend and COGS.",
+        ),
+        _metric_row(
+            "Management Profit Margin",
+            fs.management_profit_margin_report_date_ads,
+            None,
+            "Management estimated profit / product sales.",
+        ),
+        _metric_row(
+            "Settlement-led Profit Margin",
+            fs.settlement_led_profit_margin,
+            None,
+            "Settlement-led estimated profit / product sales.",
+        ),
+        _metric_row(
+            "Ads API Report-date Spend",
+            fs.ads_api_report_date_spend,
+            result.currency,
+            "Ads API spend by report_date; management P&L ad cost.",
+        ),
+        _metric_row(
+            "Settlement Advertising Fee",
+            fs.settlement_advertising_fee,
+            result.currency,
+            "Settlement posted-date advertising bucket; accounting/close view.",
+        ),
+        _metric_row(
+            "Ads Timing Difference",
+            fs.ads_timing_difference,
+            result.currency,
+            "Ads API report-date spend minus absolute settlement advertising fee.",
+        ),
+        _metric_row(
             "Estimated Operating Profit",
             fs.estimated_operating_profit,
             result.currency,
-            "Settlement net minus internal COGS.",
+            "Legacy alias: settlement-led estimated profit.",
         ),
-        _metric_row("Profit Margin", fs.profit_margin, None, "Estimated profit / product sales."),
+        _metric_row(
+            "Profit Margin",
+            fs.profit_margin,
+            None,
+            "Legacy alias: settlement-led margin.",
+        ),
         _metric_row(
             "Advertising Cost",
             fs.advertising_cost,
             result.currency,
-            "Settlement advertising bucket.",
+            "Legacy alias: settlement advertising fee.",
         ),
         _metric_row("FBA Fee", fs.fba_fee, result.currency, "Settlement FBA bucket."),
         _metric_row("Amazon Fee", fs.amazon_fee, result.currency, "Settlement Amazon fee bucket."),
@@ -825,6 +949,106 @@ def _summary_rows(result: MonthlyFinancialCloseResult) -> list[dict[str, Any]]:
             None,
             SKU_PROFIT_SCOPE_NOTE,
         ),
+    ]
+
+
+def _management_pnl_rows(result: MonthlyFinancialCloseResult) -> list[dict[str, Any]]:
+    fs = result.financial_summary
+    return [
+        _metric_row(
+            "Settlement Net Amount",
+            fs.settlement_net_amount,
+            result.currency,
+            "Posted-date settlement net; includes posted advertising fees.",
+        ),
+        _metric_row(
+            "Add Back Settlement Advertising Fee",
+            fs.settlement_advertising_fee_abs,
+            result.currency,
+            "Absolute value of posted settlement advertising fee added back before replacement.",
+        ),
+        _metric_row(
+            "Settlement Net Excluding Posted Ads",
+            fs.settlement_net_excluding_posted_ads,
+            result.currency,
+            "Settlement net with posted-date advertising removed.",
+        ),
+        _metric_row(
+            "Less Ads API Report-date Spend",
+            -fs.ads_api_report_date_spend,
+            result.currency,
+            "Advertising cost incurred during the calendar month by Ads API report_date.",
+        ),
+        _metric_row(
+            "Less Internal COGS",
+            -fs.internal_cogs,
+            result.currency,
+            "SKU standard cost from amazon_sku_cost.",
+        ),
+        _metric_row(
+            "Management Estimated Profit with Report-date Ads",
+            fs.management_estimated_profit_report_date_ads,
+            result.currency,
+            MANAGEMENT_PNL_POLICY_NOTE,
+        ),
+        _metric_row(
+            "Management Profit Margin",
+            fs.management_profit_margin_report_date_ads,
+            None,
+            "Management estimated profit / settlement product sales.",
+        ),
+    ]
+
+
+def _ads_timing_reconciliation_rows(result: MonthlyFinancialCloseResult) -> list[dict[str, Any]]:
+    fs = result.financial_summary
+    status = _ads_timing_status(
+        ads_api_spend=fs.ads_api_report_date_spend,
+        settlement_ads_abs=fs.settlement_advertising_fee_abs,
+    )
+    return [
+        {
+            "metric": bilingual_metric_label("Settlement Advertising Fee"),
+            "value": _xlsx_value(fs.settlement_advertising_fee),
+            "currency": result.currency,
+            "source": "amazon_settlement_transaction",
+            "notes": "Posted-date accounting/close advertising fee.",
+        },
+        {
+            "metric": bilingual_metric_label("Settlement Advertising Fee Abs"),
+            "value": _xlsx_value(fs.settlement_advertising_fee_abs),
+            "currency": result.currency,
+            "source": "amazon_settlement_transaction",
+            "notes": "Absolute posted-date advertising fee used for timing comparison.",
+        },
+        {
+            "metric": bilingual_metric_label("Ads API Report-date Spend"),
+            "value": _xlsx_value(fs.ads_api_report_date_spend),
+            "currency": result.currency,
+            "source": "amazon_ads_sp_campaign_daily",
+            "notes": "Report-date spend used by management P&L.",
+        },
+        {
+            "metric": bilingual_metric_label("Ads Timing Difference"),
+            "value": _xlsx_value(fs.ads_timing_difference),
+            "currency": result.currency,
+            "source": "derived",
+            "notes": "Ads API spend minus absolute settlement advertising fee.",
+        },
+        {
+            "metric": bilingual_metric_label("Ads Timing Difference Pct"),
+            "value": _xlsx_value(fs.ads_timing_difference_pct),
+            "currency": None,
+            "source": "derived",
+            "notes": "Difference divided by absolute settlement advertising fee.",
+        },
+        {
+            "metric": bilingual_metric_label("Ads Timing Status"),
+            "value": status,
+            "currency": None,
+            "source": "derived",
+            "notes": "ok < $20 or <5%; warning $20-$100 or 5%-15%; needs_review above that.",
+        },
     ]
 
 
@@ -1403,19 +1627,7 @@ def _build_reconciliation_checks(
             ),
         )
     )
-    settlement_ads_abs = abs(financial_summary.advertising_cost)
-    ads_api_spend = _to_decimal(ads_summary.get("ads_cost"))
-    checks.append(
-        _context_diff_check(
-            "settlement_ads_fee_vs_ads_api_spend",
-            expected=settlement_ads_abs,
-            actual=ads_api_spend,
-            message=(
-                "Settlement advertising fee and Ads API report-date spend use different timing "
-                "and should not be forced to tie."
-            ),
-        )
-    )
+    checks.append(_ads_timing_reconciliation_check(financial_summary))
     reimbursement_report_amount = _to_decimal(
         fba_reimbursement_summary.get("reimbursement_report_amount")
     )
@@ -1453,6 +1665,46 @@ def _zero_review_check(name: str, amount: Decimal) -> ReconciliationCheck:
         diff=_decimal_to_string(amount),
         message="Non-zero unknown/unclassified amount should be reviewed before sharing.",
     )
+
+
+def _ads_timing_reconciliation_check(
+    financial_summary: MonthlyFinancialSummary,
+) -> ReconciliationCheck:
+    settlement_ads_abs = financial_summary.settlement_advertising_fee_abs
+    ads_api_spend = financial_summary.ads_api_report_date_spend
+    diff = financial_summary.ads_timing_difference
+    diff_pct = financial_summary.ads_timing_difference_pct
+    status = _ads_timing_status(
+        ads_api_spend=ads_api_spend,
+        settlement_ads_abs=settlement_ads_abs,
+    )
+    severity = "info" if status == "ok" else "warning" if status == "warning" else "error"
+    return ReconciliationCheck(
+        check_name="settlement_ads_fee_vs_ads_api_spend",
+        status=status,
+        severity=severity,
+        expected=_decimal_to_string(settlement_ads_abs),
+        actual=_decimal_to_string(ads_api_spend),
+        diff=_decimal_to_string(diff),
+        diff_pct=_optional_ratio_to_string(diff_pct),
+        message=(
+            "Settlement advertising fee and Ads API report-date spend use different timing. "
+            "Management P&L replaces posted-date settlement ads with report-date Ads API spend."
+        ),
+    )
+
+
+def _ads_timing_status(*, ads_api_spend: Decimal, settlement_ads_abs: Decimal) -> str:
+    diff_abs = abs(_money(ads_api_spend - settlement_ads_abs))
+    if ads_api_spend == ZERO and settlement_ads_abs == ZERO:
+        return "ok"
+    denominator = settlement_ads_abs if settlement_ads_abs != ZERO else ads_api_spend
+    diff_ratio = _safe_ratio(diff_abs, denominator)
+    if diff_abs <= Decimal("20.00") or (diff_ratio is not None and diff_ratio <= Decimal("0.05")):
+        return "ok"
+    if diff_abs <= Decimal("100.00") or (diff_ratio is not None and diff_ratio <= Decimal("0.15")):
+        return "warning"
+    return "needs_review"
 
 
 def _context_diff_check(
@@ -1568,6 +1820,13 @@ def _build_warnings(
             "settlement_led_policy",
             "info",
             SETTLEMENT_LED_POLICY_NOTE,
+        )
+    )
+    warnings.append(
+        WarningEntry(
+            "management_pnl_policy",
+            "info",
+            MANAGEMENT_PNL_POLICY_NOTE,
         )
     )
     return warnings

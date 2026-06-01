@@ -98,7 +98,7 @@ Orders 数据本身不是最终利润口径。后续利润计算必须以 Settle
 
 | 来源系统 | Report/API/文件 | 文件格式 | 当前取样状态 | 当前解析状态 | 备注 |
 |---|---|---|---|---|---|
-| SP-API Reports | `GET_FLAT_FILE_ALL_ORDERS_DATA_BY_ORDER_DATE_GENERAL` | tab-delimited flat file | 已取样 1 份，112 行 | parser 已有，ingestion 待实现 | 订单行项目级别报告，当前通过 order date 维度取样。 |
+| SP-API Reports | `GET_FLAT_FILE_ALL_ORDERS_DATA_BY_ORDER_DATE_GENERAL` | tab-delimited flat file | 已取样 1 份，112 行 | parser / ingestion / upsert 已实现并验证 | 订单行项目级别报告，当前通过 order date 维度取样。 |
 
 当前样例：
 

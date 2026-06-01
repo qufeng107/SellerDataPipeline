@@ -78,7 +78,7 @@ FBA Reimbursements 数据不是最终利润唯一口径。最终利润仍需结�
 
 | 来源系统 | Report/API/文件 | 文件格式 | 当前取样状态 | 当前解析状态 | 备注 |
 |---|---|---|---|---|---|
-| SP-API Reports | `GET_FBA_REIMBURSEMENTS_DATA` | tab-delimited flat file | 已取样 1 份，19 行 | parser 已有，ingestion 待实现 | FBA 赔偿明细。 |
+| SP-API Reports | `GET_FBA_REIMBURSEMENTS_DATA` | tab-delimited flat file | 已取样 1 份，19 行 | parser / ingestion / upsert 已实现并验证 | FBA 赔偿明细。 |
 
 当前样例：
 

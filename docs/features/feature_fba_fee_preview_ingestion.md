@@ -78,7 +78,7 @@ FBA Fee Preview 用于后续利润核算中的参考费用口径，尤其是 SKU
 
 | 来源系统 | Report/API/文件 | 文件格式 | 当前取样状态 | 当前解析状态 | 备注 |
 |---|---|---|---|---|---|
-| SP-API Reports | `GET_FBA_ESTIMATED_FBA_FEES_TXT_DATA` | tab-delimited flat file | 已取样 1 份，8 行 | parser 已有，ingestion 待实现 | SKU/ASIN 费用预估。 |
+| SP-API Reports | `GET_FBA_ESTIMATED_FBA_FEES_TXT_DATA` | tab-delimited flat file | 已取样 1 份，8 行 | parser / ingestion / upsert 已实现并验证 | SKU/ASIN 费用预估。 |
 
 当前样例：
 

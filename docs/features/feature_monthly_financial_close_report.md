@@ -2,9 +2,9 @@
 
 > 文档状态：Implemented / in production observation  
 > 负责人：AI + Feng  
-> 更新时间：2026-05-30  
-> 功能状态：v1.1 Accountant Bookkeeping Pack implemented  
-> 设计版本：v1.1-accountant-bookkeeping-pack  
+> 更新时间：2026-06-01  
+> 功能状态：Implemented / v1.2 双利润口径与 Ads Timing Reconciliation 已完成代码对齐，待真实 Azure SQL 周期复核  
+> 设计版本：v1.2-dual-profit-and-ads-timing-reconciliation  
 > 相关数据接入文档：`docs/data_access/sp_api_reports_catalog.md`, `docs/data_access/amazon_ads_reports_catalog.md`, `docs/data_access/seller_central_manual_exports.md`  
 > 相关数据库 spec：`docs/database/database_current_schema_spec.md`  
 > 相关功能：`docs/features/feature_profit_calculation.md`, `docs/features/feature_sku_cost_management.md`, `docs/operations/manual_refresh_plan_workflow.md`, `docs/operations/historical_backfill_workflow.md`  
@@ -17,20 +17,23 @@
 Monthly Financial Close Report（月度财务结算报表）是 SellerDataPipeline 第一类管理层数据加工报表，定位为小公司版 CFO / CEO 月度经营结果包。它回答一个核心问题：
 
 ```text
-这个月在 Amazon 美国站，按 Amazon 实际 Settlement 财务结算口径和内部 SKU 标准成本，公司估算赚了多少钱？
+这个月在 Amazon 美国站，按 Amazon 实际 Settlement 财务结算口径赚了多少钱；如果把广告费按 Ads API 投放发生日期重列，这个月经营上到底赚了多少钱？
 ```
 
-本功能基于已冻结的 `Settlement-led Financial Profit v1.0` 口径：
+本功能继续保留已冻结的 `Settlement-led Financial Profit v1.0` 作为财务/会计主口径，并从 v1.2 起新增管理经营口径，用于解决广告账单 posted-date 与广告实际投放 report-date 错位导致的利润误读问题：
 
 ```text
 Amazon 财务金额以 Settlement / Payments / Flat File V2 入库后的 amazon_settlement_transaction 为主。
 内部商品成本以 amazon_sku_cost 为主。
 Orders / Sales & Traffic / Ads / Promotion / Coupon / FBA Reimbursements 用于运营解释、交叉校验和辅助指标，不反向覆盖财务主口径。
+月报必须同时展示 Settlement-led estimated profit 与 Management estimated profit with report-date ads；后者只用于经营复盘，不替代会计结算口径。
 ```
 
 v1 不新增数据库结果表，不自动发送邮件，不生成正式 PDF；先输出文件型月结结果，供人工复核、会计沟通、股东/管理层月度回顾使用。
 
 v1.1 在既有管理口径月报基础上增加 Accountant Bookkeeping Pack（会计做账辅助包）设计，目标是让会计每月拿到 XLSX 后，能直接理解 Amazon 销售、退款、平台费、广告费、FBA 费、赔偿、内部成本、汇率、凭证附件和季度汇总之间的关系，减少人工拆账和解释成本。
+
+v1.2 新增双利润口径和 Ads Timing Reconciliation：月报首页必须并列展示 `settlement_led_estimated_profit` 与 `management_estimated_profit_report_date_ads`，并单独展示 Settlement posted-date advertising fee、Ads API report-date spend 和二者差异，避免 Amazon Ads 账单集中入账时误判单月真实经营利润。
 
 ---
 
@@ -39,12 +42,12 @@ v1.1 在既有管理口径月报基础上增加 Accountant Bookkeeping Pack（�
 | 项目 | 状态 |
 |---|---|
 | 需求确认 | 已确认：先做 Monthly Financial Close Report，再做 Weekly Business Review 和 Weekly Ads Optimization Report。 |
-| 口径依赖 | 已冻结：Settlement-led Financial Profit v1.0。 |
+| 口径依赖 | 财务/会计主口径仍冻结为 Settlement-led Financial Profit v1.0；v1.2 新增 report-date Ads 管理经营口径，不替代会计结算口径。 |
 | 数据源可用性 | 足够支持 v1：Settlement、SKU Cost、Sales & Traffic、Orders、Ads、Promotion/Coupon、Reimbursements 均已入库并验证过。 |
-| 设计状态 | v1 已冻结并实现；v1.1 增加会计做账辅助 sheet 设计，待代码实现。 |
+| 设计状态 | v1 已实现；v1.1 会计做账辅助包已实现；v1.2 双利润口径与广告跨期对账已完成代码对齐。 |
 | 数据库变更 | v1 不新增数据库表，不新增 migration。 |
-| 代码实现 | 已实现 v1：新增 service / repo / CLI / unit tests；待真实 Azure SQL 跑 2026-03、2026-04 人工复核。 |
-| 默认输出形式 | `monthly_financial_close_{YYYY-MM}.json` + `monthly_financial_close_{YYYY-MM}.xlsx`。v1 已生成 8 个核心 sheet；v1.1 设计增加 7 个会计辅助 sheet。 |
+| 代码实现 | 已实现 v1/v1.1/v1.2：service / repo / CLI / unit tests 已支持双利润口径、`02_Management_PnL`、`03_Ads_Timing_Recon` 和会计辅助包；待真实 Azure SQL 周期重新生成并人工复核。 |
+| 默认输出形式 | `monthly_financial_close_{YYYY-MM}.json` + `monthly_financial_close_{YYYY-MM}.xlsx`。当前代码生成 `01_Summary`、`02_Management_PnL`、`03_Ads_Timing_Recon`、核心明细 sheet 与会计辅助 sheet；`01_Summary` 已包含双利润指标。 |
 | 不再默认输出 | 不默认输出 Markdown；不默认输出多个 CSV。 |
 | 验收样本 | 先以 `2026-03`、`2026-04` 为主，因为 Settlement 和 SKU 成本当前最完整。 |
 
@@ -61,6 +64,7 @@ v1.1 在既有管理口径月报基础上增加 Accountant Bookkeeping Pack（�
 5. **能给会计使用**：输出清晰的 Amazon 侧费用结构和内部成本，不替代正式会计报表，但可作为会计解释材料。
 6. **能给股东/管理层复核**：XLSX 方便查看和归档；JSON 方便后续生成邮件、PDF 或 Dashboard。
 7. **能指导经营决策**：识别广告费率、退款率、促销成本、SKU 盈亏和数据质量风险。
+8. **能避免广告费跨期误判**：明确区分 Settlement posted-date 广告扣款与 Ads API report-date 投放花费，展示广告跨期差异。
 
 ### 3.2 小公司阶段原则
 
@@ -81,7 +85,9 @@ v1.1 在既有管理口径月报基础上增加 Accountant Bookkeeping Pack（�
 - 按自然月 `month_start..month_end` 汇总 Settlement posted date 财务数据。
 - 汇总 Amazon 侧财务净额、收入、费用、退款、赔偿、清算、广告、促销、税费透传。
 - 按 SKU 匹配内部标准成本，计算 SKU 级和总计 COGS。
-- 输出月度 estimated operating profit。
+- 输出月度 Settlement-led estimated operating profit。
+- 输出月度 Management estimated profit with report-date Ads。
+- 输出 Ads Timing Reconciliation，用于解释 Settlement 广告扣费与 Ads API 投放花费差异。
 - 输出 SKU 利润贡献、销售贡献和异常 SKU。
 - 输出费用结构分析。
 - 输出运营解释指标：Sales & Traffic、Orders、Ads API、Promotion/Coupon、FBA Reimbursements。
@@ -94,7 +100,7 @@ v1.1 在既有管理口径月报基础上增加 Accountant Bookkeeping Pack（�
 
 - 不做 FIFO、移动加权、批次库存成本。
 - 不把 Orders 金额当作财务收入主口径。
-- 不把 Ads API spend 当作最终财务广告费主口径。
+- 不把 Ads API spend 当作最终财务广告费主口径；但 Management P&L 必须使用 Ads API report-date spend 作为经营发生口径广告费。
 - 不把 Promotion/Coupon performance 报表的预算或销售额当作财务促销实扣主口径。
 - 不用 Monthly Transaction CSV 全表 `total` 合计替代 Settlement，因为其中可能包含 Transfer / disbursement 行。
 - 不自动判断所有历史 statement 是否已经存在；v1 只做 coverage / status / warnings，最终仍需人工复核。
@@ -114,6 +120,13 @@ v1.1 在既有管理口径月报基础上增加 Accountant Bookkeeping Pack（�
 Monthly Financial Close Report
 月度财务结算报表 / 月度经营利润报表
 ```
+
+v1.2 后对外解释时建议明确说成：
+
+```text
+月度财务结算 + 管理经营利润双口径报表
+Monthly financial close with management P&L reconciliation
+```.
 
 不建议只叫“营收报表”，因为本报表不仅包含 revenue，还包含费用、成本、退款、赔偿和利润。
 
@@ -316,7 +329,7 @@ Orders 仅作运营解释，不作为最终财务收入。
 
 ### 7.5 广告数据：Ads daily tables
 
-v1 月度财务报表使用 Ads 数据解释投放效率，但财务广告费主口径仍来自 Settlement bucket `advertising_cost` / category `advertising_fee`。
+v1 月度财务报表使用 Ads 数据解释投放效率；v1.2 起 Ads 数据还用于管理经营口径的广告发生额重列。财务/会计主口径仍来自 Settlement bucket `advertising_cost` / category `advertising_fee`，但管理经营口径必须使用 Ads API report-date spend 替换 Settlement posted-date advertising fee。
 
 主要读取：`amazon_ads_sp_campaign_daily`。
 
@@ -354,12 +367,12 @@ TACOS = ads_spend / ordered_product_sales
 财务广告费差异说明：
 
 ```text
-settlement_advertising_fee = ABS(SUM(amount WHERE profit_bucket='advertising_cost'))
-ads_api_spend = SUM(amazon_ads_sp_campaign_daily.cost)
-ads_spend_diff = settlement_advertising_fee - ads_api_spend
+settlement_advertising_fee_abs = ABS(SUM(amount WHERE profit_bucket='advertising_cost'))
+ads_api_report_date_spend = SUM(amazon_ads_sp_campaign_daily.cost)
+ads_timing_difference = ads_api_report_date_spend - settlement_advertising_fee_abs
 ```
 
-不要求两者完全一致，因为 Settlement 是扣费/财务 posted-date 口径，Ads API 是广告 report date/归因口径。
+不要求两者完全一致，因为 Settlement 是扣费/财务 posted-date 口径，Ads API 是广告 report-date/归因口径。月报必须把差异作为 Ads Timing Reconciliation 显示；当差异较大时，应提示可能存在广告账单跨期、账单未入账或 Ads 数据覆盖缺口。
 
 ### 7.6 Promotion / Coupon 数据
 
@@ -500,6 +513,59 @@ v1 输出规则：
 
 ---
 
+## 8.5 双利润口径与广告跨期处理
+
+从 v1.2 起，月报必须同时输出两个利润口径。
+
+### 8.5.1 Settlement-led Estimated Profit / 结算口径估算利润
+
+用途：会计做账、Amazon Payments 对账、股东/管理层理解本月实际 posted-date 财务结算结果。
+
+```text
+settlement_led_estimated_profit
+= settlement_net_amount
+- internal_cogs
+```
+
+其中 `settlement_net_amount` 已经包含本月 posted-date 内入账的 Amazon fees、FBA fees、refund、promotion、advertising、reimbursement、adjustment 等 Settlement 行。
+
+### 8.5.2 Management Estimated Profit with Report-date Ads / 广告发生口径管理估算利润
+
+用途：运营负责人判断这个自然月真实经营是否健康，避免广告账单集中 posted 到某一天导致本月/下月利润被错配。该口径不是会计结账利润，不替代 Settlement-led 口径。
+
+```text
+management_estimated_profit_report_date_ads
+= settlement_net_amount
+- internal_cogs
++ settlement_advertising_fee_abs
+- ads_api_report_date_spend
+```
+
+解释：
+
+```text
+1. 先从 settlement_net_amount 中把 posted-date 广告扣费加回来；
+2. 再用 Ads API report_date 汇总的当月实际投放花费扣除；
+3. 这样可以避免某月漏算未入账广告费，也避免下月重复承担上月广告账单。
+```
+
+### 8.5.3 Ads Timing Difference / 广告跨期差异
+
+```text
+ads_timing_difference = ads_api_report_date_spend - settlement_advertising_fee_abs
+ads_timing_difference_pct = ads_timing_difference / ads_api_report_date_spend
+```
+
+建议状态规则：
+
+| 条件 | 状态 | 处理 |
+|---|---|---|
+| `ABS(diff) < 20` 或 `ABS(diff_pct) < 5%` | ok | 只展示。 |
+| `ABS(diff) BETWEEN 20 AND 100` 或 `ABS(diff_pct) BETWEEN 5% AND 15%` | warning | 提示可能存在账单跨期或结算截止差异。 |
+| `ABS(diff) > 100` 或 `ABS(diff_pct) > 15%` | needs_review | 要求人工检查 Ads 数据覆盖、Advertising invoice、Settlement advertising lines。 |
+
+该规则只影响 review status，不自动覆盖任何财务金额。
+
 ## 9. SKU 级指标与公式
 
 ### 9.1 SKU 汇总维度
@@ -603,13 +669,15 @@ settlement_product_sales_vs_ops_sales_diff_pct = diff / ops_ordered_product_sale
 | Ads ACOS | `ads_acos` | `ads_api_spend / ads_api_sales_7d` |
 | TACOS | `tacos` | `ads_api_spend / ops_ordered_product_sales` |
 | Settlement Ads Fee | `settlement_ads_fee_abs` | `ABS(bucket_totals['advertising_cost'])` |
+| Ads Timing Difference | `ads_timing_difference` | `ads_api_spend - settlement_ads_fee_abs` |
+| Management Profit with Report-date Ads | `management_estimated_profit_report_date_ads` | `settlement_net_amount - internal_cogs + settlement_ads_fee_abs - ads_api_spend` |
 
 展示规则：
 
 ```text
-Ads API spend 是运营投放效率指标。
-Settlement Ads Fee 是财务实际扣费指标。
-两者并列展示，差异作为 reconciliation note，不互相覆盖。
+Ads API spend 是运营投放效率指标，也是 Management P&L 的广告发生额。
+Settlement Ads Fee 是财务实际扣费指标，也是 Settlement-led P&L 的广告扣费来源。
+两者并列展示，差异作为 Ads Timing Reconciliation，不互相覆盖。
 ```
 
 若 Settlement 存在 `advertising_cost`，但指定 `profile_id + month` 在
@@ -840,22 +908,20 @@ monthly_financial_close_{YYYY-MM}.xlsx
 
 ### 13.1 Sheet 总览
 
-默认 v1 核心 sheets：
+当前代码默认生成以下 workbook sheets：
 
 ```text
+00_Readme_说明
 01_Summary
-02_Settlement_Buckets
-03_Amount_Categories
-04_SKU_Profit
-05_Operational_Context
-06_Reconciliation_Checks
-07_Warnings
-08_Raw_Metadata
-```
-
-v1.1 Accountant Bookkeeping Pack（会计做账辅助包）新增 sheets：
-
-```text
+02_Management_PnL
+03_Ads_Timing_Recon
+04_Settlement_Buckets
+05_Amount_Categories
+06_SKU_Profit
+07_Operational_Context
+08_Reconciliation_Checks
+09_Warnings
+10_Raw_Metadata
 09_Accounting_Summary
 10_Journal_Entries
 11_Quarter_Rollup
@@ -865,13 +931,26 @@ v1.1 Accountant Bookkeeping Pack（会计做账辅助包）新增 sheets：
 15_Adjustments
 ```
 
+说明：v1.2 将管理经营口径 sheet 前置到 `02_Management_PnL` / `03_Ads_Timing_Recon`，方便打开月报后优先看到广告跨期影响。会计辅助包沿用既有 `09_Accounting_Summary` 至 `15_Adjustments` 命名，实际 Excel sheet 名唯一，虽存在数字前缀重复但不影响读取；后续若要统一编号，应作为兼容性变更单独处理。
+
 Sheet 名保持短、稳定、英文，避免 Excel 兼容问题。面向会计的 sheet 必须使用双语列名，格式建议为 `English / 中文`，并在 sheet 顶部加入中文优先说明区，说明本表用途、使用方式、数据来源、会计需确认事项和限制。
 
 ### 13.2 `01_Summary`
 
-给 CEO / 股东 / 会计第一眼看。
+给 CEO / 股东 / 会计第一眼看。当前代码已在 summary 中并列展示：
 
-建议列：
+```text
+Settlement-led Estimated Profit
+Management Estimated Profit with Report-date Ads
+Settlement-led Profit Margin
+Management Profit Margin
+Ads API Report-date Spend
+Settlement Advertising Fee
+Ads Timing Difference
+Estimated Operating Profit  # legacy alias，等同 settlement-led estimated profit
+```
+
+建议列保持：
 
 ```text
 metric_group
@@ -883,67 +962,88 @@ status
 notes
 ```
 
-建议包含：
+### 13.3 `02_Management_PnL`
+
+管理经营利润表。该 sheet 用于把月度 Settlement-led 财务结果调整为 report-date Ads 管理经营结果。它是 CEO/运营负责人判断本月经营是否真正赚钱的主表，但不替代会计结账口径。
+
+当前代码输出行包括：
 
 ```text
-Report Status
-Settlement Row Count
 Settlement Net Amount
-Product Sales Amount
-Product Sales Units
 Internal COGS
-Estimated Operating Profit
-Profit Margin on Product Sales
-Settlement Net Margin
-COGS Ratio
-Amazon Fee Burden
-Advertising Cost
-FBA Fees
-Refunds
-Promotion Cost
-Promotion Fee
-Reimbursements
+Settlement Advertising Fee Add-back
+Ads API Report-date Spend
+Settlement-led Estimated Profit
+Management Estimated Profit with Report-date Ads
+Product Sales Amount
+Settlement-led Profit Margin
+Management Profit Margin
 ```
 
-### 13.3 `02_Settlement_Buckets`
-
-按 `profit_bucket` 展示费用大类。
-
-建议列：
+核心公式：
 
 ```text
-profit_bucket
-amount
-absolute_amount
-currency
-pct_of_product_sales
-pct_of_settlement_net
-row_count
+management_estimated_profit_report_date_ads
+= settlement_net_amount
+- internal_cogs
++ settlement_advertising_fee_abs
+- ads_api_report_date_spend
+```
+
+### 13.4 `03_Ads_Timing_Recon`
+
+广告跨期对账表。该 sheet 专门解释 Settlement advertising fee 与 Ads API report-date spend 的差异，避免把 Amazon Ads 账单集中 posted 到某一天误读为当日或当周投放失控。
+
+建议列保持：
+
+```text
+period
+settlement_advertising_fee_abs
+ads_api_report_date_spend
+ads_timing_difference
+ads_timing_difference_pct
+status
+possible_reason
+required_action
+source_reference
 notes
 ```
 
-### 13.4 `03_Amount_Categories`
-
-按 `amount_category` 展示更细的 Amazon amount category。
-
-建议列：
+`possible_reason` 示例：
 
 ```text
-amount_category
-profit_bucket
-amount
-absolute_amount
-currency
-pct_of_product_sales
-row_count
-notes
+Normal billing cutoff difference
 ```
 
-### 13.5 `04_SKU_Profit`
+只解释，不强制一致。
 
-SKU 盈亏核心表。
+### 13.5 `04_Settlement_Buckets`
 
-建议列：
+按内部利润 bucket 汇总 Settlement 金额，例如：
+
+```text
+product_sales
+shipping_revenue
+promotion_cost
+advertising_cost
+amazon_fee
+fba_fee
+refund
+reimbursement
+other_adjustment
+```
+
+该 sheet 是财务/会计主口径解释层，用于说明 Settlement net 为什么形成当前结果。
+
+### 13.6 `05_Amount_Categories`
+
+按 Amazon settlement 原始 amount category / amount type 的归类结果汇总，用于检查 parser mapping 是否把 Amazon 原始项目正确归入内部 bucket。
+
+### 13.7 `06_SKU_Profit`
+
+SKU 级利润明细。该 sheet 仅覆盖能从 Settlement / Orders 关联到 SKU 的 product-sales 行，不等于公司最终完整利润表。必须保留 scope note，避免将 SKU 表合计误读为最终公司净利润。
+
+关键字段包括：
 
 ```text
 seller_sku
@@ -952,106 +1052,38 @@ product_sales_amount
 settlement_net_amount
 unit_standard_cost
 internal_cogs
-sku_estimated_profit_after_cogs
-sku_profit_margin
-sku_revenue_share
-sku_profit_share
-currency
+estimated_profit_after_cogs
+profit_margin
+revenue_share
 status
 notes
-scope_note
 ```
 
-`scope_note` 必须说明：SKU 利润表是 SKU 归属收入、退款、SKU 层费用与内部 COGS
-的分析视角，未分摊广告费、订阅费、coupon fee、仓储费等账号级费用或非 SKU
-Settlement 行。因此 SKU 表合计不应被解释为公司最终月度经营利润。
+### 13.8 `07_Operational_Context`
 
-### 13.6 `05_Operational_Context`
+运营解释指标。包括 Orders、Sales & Traffic、Ads、Coupon、Promotion、FBA Reimbursements 等辅助数据。该 sheet 用于解释经营变化，不反向覆盖 Settlement 财务主口径。
 
-运营解释指标，用于解释财务结果。
+### 13.9 `08_Reconciliation_Checks`
 
-建议列：
+对账检查项。用于标记 Settlement、Orders、Sales & Traffic、Ads context、SKU 成本覆盖、console reconciliation 等是否存在 warning 或 needs_review。
+
+### 13.10 `09_Warnings`
+
+数据质量和口径风险提示。示例：
 
 ```text
-metric_group
-metric_name
-value
-currency
-source
-period_basis
-notes
+missing_sku_cost
+currency_mismatch
+ads_api_context_missing
+ads_timing_needs_review
+no_settlement_rows
 ```
 
-`metric_group` 示例：
+### 13.11 `10_Raw_Metadata`
 
-```text
-sales_traffic
-orders
-ads_api
-promotion_coupon
-fba_reimbursement
-```
+记录本次生成的源表、行数、日期范围、生成时间、profile/marketplace 和 report version，便于后续追溯。
 
-### 13.7 `06_Reconciliation_Checks`
-
-对账和质量检查。
-
-建议列：
-
-```text
-check_name
-status
-severity
-expected
-actual
-diff
-diff_pct
-message
-```
-
-### 13.8 `07_Warnings`
-
-所有需要人工看的问题。
-
-建议列：
-
-```text
-warning_code
-severity
-message
-related_sku
-related_source
-```
-
-### 13.9 `08_Raw_Metadata`
-
-方便追溯。
-
-建议列：
-
-```text
-key
-value
-notes
-```
-
-建议包含：
-
-```text
-report_type
-version
-marketplace_id
-profile_id
-month
-period_start
-period_end
-generated_at
-source_tables
-row_counts
-output_files
-```
-
-### 13.10 Accountant Pack 通用格式规则
+### 13.12 Accountant Pack 通用格式规则
 
 Accountant Bookkeeping Pack 是在月度经营利润报表基础上增加的会计做账辅助层。其目标不是替代会计软件或税务申报表，而是把 Amazon 复杂的 Settlement / Ads / SKU 成本 / 回款 / 凭证信息转换成会计更容易使用的底稿。
 
@@ -1089,7 +1121,7 @@ Notes / 说明
 6. 每个自动生成金额都应能回溯到 Settlement bucket/category、SKU cost、bank payout、artifact metadata 或人工调整项。
 ```
 
-### 13.11 `09_Accounting_Summary`
+### 13.13 `09_Accounting_Summary`
 
 会计做账汇总表。该 sheet 是会计最先看的总览表，用来把 Amazon 的经营分类转换成会计做账语言。它帮助会计快速判断本月应确认哪些收入、费用、退款、赔偿、成本和待确认事项。
 
@@ -1140,7 +1172,7 @@ Notes / 说明
 | Marketplace Facilitator Tax / 平台代收代缴税费 | Pass-through Tax / 代收代缴税费或不入账 | Informational / 备查 | Settlement tax categories | 通常不作为公司收入或费用，最终由会计确认。 |
 ```
 
-### 13.12 `10_Journal_Entries`
+### 13.14 `10_Journal_Entries`
 
 建议记账凭证分录表。该 sheet 用于把 `09_Accounting_Summary` 的会计项目进一步转换成可录入财务软件的建议分录。会计可以复制后调整科目、汇率、摘要和凭证附件。
 
@@ -1188,7 +1220,7 @@ Notes / 说明
 7. Manual adjustments / 会计手工调整
 ```
 
-### 13.13 `11_Quarter_Rollup`
+### 13.15 `11_Quarter_Rollup`
 
 季度税务/做账汇总表。该 sheet 用于把月度数据按季度累计，方便中国小企业按季度申报或季度内部复核。第一版可以在单月月报中展示当季截至当前月份的可累计字段；后续季度包可自动合并三个月数据。
 
@@ -1235,7 +1267,7 @@ Manual Adjustments / 手工调整
 Unresolved Items / 未决事项
 ```
 
-### 13.14 `12_FX_Rates`
+### 13.16 `12_FX_Rates`
 
 汇率换算工作表。该 sheet 用于把 USD 等原币金额折算成人民币，给会计保留明确的汇率输入和确认位置。
 
@@ -1273,7 +1305,7 @@ Bank Settlement Rate / 银行结汇汇率
 Accountant Manual Rate / 会计手工确认汇率
 ```
 
-### 13.15 `13_Source_Doc_Index`
+### 13.17 `13_Source_Doc_Index`
 
 凭证附件索引表。该 sheet 用于告诉会计本月做账需要哪些附件、哪些已经由系统生成或保存、哪些仍需人工下载/上传。
 
@@ -1322,7 +1354,7 @@ SKU Cost Sheet / SKU成本表
 Manual Adjustment Support / 手工调整依据
 ```
 
-### 13.16 `14_Payout_Recon`
+### 13.18 `14_Payout_Recon`
 
 Amazon 结算与万里汇/银行到账核对表。该 sheet 用于把 Amazon Settlement net 与实际收款账户到账金额勾稽，帮助会计判断应收、回款、手续费和汇兑差异。
 
@@ -1370,7 +1402,7 @@ Pending Payout / 尚未到账
 Needs Investigation / 需排查
 ```
 
-### 13.17 `15_Adjustments`
+### 13.19 `15_Adjustments`
 
 会计手工调整表。该 sheet 用于保留系统无法自动判断但会计必须处理的事项，例如采购发票差异、头程物流分摊、库存成本调整、银行手续费、汇兑损益、税务调整和非 Amazon 费用。
 
@@ -1442,7 +1474,7 @@ Other / 其他
 
 ### 14.3 可以警告但不阻塞的情况
 
-- Ads API spend 与 Settlement advertising fee 不一致。
+- Ads API spend 与 Settlement advertising fee 不一致，但差异未达到 `needs_review` 阈值。
 - Sales & Traffic ordered sales 与 Settlement product sales 不一致。
 - Promotion/Coupon performance 与 Settlement promotion cost 不一致。
 - FBA Reimbursement report 与 Settlement reimbursement 不一致。
@@ -1495,9 +1527,9 @@ diff = settlement_ads_fee_abs - ads_api_spend
 diff_pct = diff / ads_api_spend
 ```
 
-只解释，不强制一致。若 `settlement_ads_fee_abs != 0` 且 Ads API campaign daily
+只解释，不强制一致。差异同时进入 `03_Ads_Timing_Recon`。若 `settlement_ads_fee_abs != 0` 且 Ads API campaign daily
 在指定月份/profile 下 `ads_row_count = 0`、`ads_api_spend = 0`，输出
-`ads_api_context_missing` warning，提示需要检查 Ads backfill/ingestion 覆盖。
+`ads_api_context_missing` warning，提示需要检查 Ads backfill/ingestion 覆盖。若差异超过 v1.2 阈值，输出 `ads_timing_needs_review`。
 
 ### 15.5 SKU cost coverage
 
@@ -1703,7 +1735,7 @@ python -m compileall -q scripts src tests
 |---|---|
 | 旧月份 statement 是否全部下载 | v1 输出 coverage / statement warning；人工确认 All Statements。 |
 | Monthly Transaction CSV 与 Settlement Flat File V2 差异 | v1 不使用 Monthly Transaction CSV 作为主源；仅作为人工对账参考。 |
-| Ads API spend 与 Settlement advertising fee 不一致 | 并列展示，不互相覆盖。 |
+| Ads API spend 与 Settlement advertising fee 不一致 | 并列展示，并通过 Management P&L + Ads Timing Recon 解释；不覆盖 Settlement-led 财务口径。 |
 | Promotion/Coupon 跨月活动如何分摊 | v1 不精确分摊，仅展示与月份重叠的活动概览；财务实扣以 Settlement 为主。 |
 | 多成本批次同月切换 | 设计上应按 posted_date 匹配；若实现第一版简化，需要强制 warning。 |
 | 成本币种与 Settlement 币种不一致 | 阻塞正式月报，要求先在 `amazon_sku_cost` 中换算成财务币种。 |
@@ -1716,9 +1748,9 @@ python -m compileall -q scripts src tests
 
 v1 稳定后再考虑：
 
-1. 基于 JSON 生成 CEO 版一页 PDF 摘要。
-2. 基于 JSON 生成股东邮件正文和附件包。
-3. 实现 v1.1 Accountant Bookkeeping Pack 会计做账辅助包。
+1. 实现 v1.2 Management P&L 与 Ads Timing Reconciliation 代码。
+2. 基于 JSON 生成 CEO 版一页 PDF 摘要。
+3. 基于 JSON 生成股东邮件正文和附件包。
 4. 增加 `--export-csv` 调试导出。
 5. 新增 `management_report_run` / `monthly_financial_close_result` 结果表。
 6. 与 `run_manual_refresh_plan.py` 串联为月度 close workflow。
@@ -1733,7 +1765,7 @@ v1 稳定后再考虑：
 
 | 后续报表 | 与本报表关系 |
 |---|---|
-| Weekly Business Review | 使用更及时的运营口径和 preview 数据，指导每周运营；不替代月度财务 close。 |
+| Weekly Business Review | 使用更及时的运营发生口径和 Ads API report-date spend，指导每周运营；不替代月度财务 close。 |
 | Weekly Ads Optimization Report | 深入广告词、campaign、targeting、search term、advertised product 维度分析，输出否词/加词/调价/观察动作清单；财务广告费对账仍回到本报表的 Settlement advertising cost。 |
 
 ---
@@ -1746,12 +1778,13 @@ v1 稳定后再考虑：
 | 2026-05-22 | 调整 v1 默认输出为 JSON + 单个 XLSX 多 sheet；取消默认 Markdown 和多个 CSV。 | 股东/会计不会使用 Markdown；多个 CSV 太碎；JSON 更适合作为后续 PDF/Email 的结构化源，XLSX 更适合人工复核。 |
 | 2026-05-23 | 增加 Ads API context 缺失 warning、console reconciliation 计数、SKU Profit scope note。 | 真实 2026-03 / 2026-04 复核发现 Ads campaign daily 仅覆盖 2026-05-06 起，需避免把运营解释数据缺失误读为财务利润异常；同时避免将 SKU 表误读为最终公司利润。 |
 | 2026-05-30 | 增加并实现 v1.1 Accountant Bookkeeping Pack，新增 7 个会计辅助 sheet，并要求会计 sheet 顶部中文说明和双语列名。 | 让会计每月更容易基于月报做账、季度汇总和税务申报准备，减少人工拆分 Amazon 结算单和反复解释口径。 |
+| 2026-06-01 | 增加并实现 v1.2 双利润口径：Settlement-led Estimated Profit + Management Estimated Profit with Report-date Ads；新增 `02_Management_PnL` 与 `03_Ads_Timing_Recon`。 | 解决广告费按账单 posted-date 集中入账导致 Amazon Finance 表面盈利但经营利润被高估的问题。 |
 ---
 
-## 18. v1 / v1.1 代码实现记录
+## 18. v1 / v1.1 / v1.2 代码实现记录
 
-> 更新时间：2026-05-30  
-> 实现状态：v1 JSON/XLSX + v1.1 Accountant Bookkeeping Pack 已实现；本地 unit tests / compileall 通过；真实 Azure SQL 2026-03 / 2026-04 已生成并初步复核。
+> 更新时间：2026-06-01  
+> 实现状态：v1 JSON/XLSX + v1.1 Accountant Bookkeeping Pack + v1.2 双利润口径/Ads Timing Reconciliation 已实现；本地 unit tests / compileall 通过；待真实 Azure SQL 周期按新口径重新生成并人工复核。
 
 ### 18.1 新增代码路径
 
@@ -1788,6 +1821,7 @@ runtime/analysis_reports/monthly_financial_close/{marketplace_id}/{YYYY-MM}/mont
 - 缺 SKU 成本或成本币种不匹配会将 report status 标为 `needs_review`，不会默认为 0 成本后静默通过。
 - v1 不新增数据库表，不新增 migration，不生成 Markdown，不默认输出多个 CSV。
 - v1.1 Accountant Bookkeeping Pack 不新增数据库表；在原 JSON/XLSX 月报中新增 `accountant_pack` JSON 节点和 `09_Accounting_Summary` 至 `15_Adjustments` 七张会计辅助 sheet。
+- v1.2 在 `MonthlyFinancialSummary` 中新增 `settlement_led_estimated_profit`、`management_estimated_profit_report_date_ads`、`settlement_advertising_fee_abs`、`ads_api_report_date_spend`、`ads_timing_difference` 等字段；XLSX 新增 `02_Management_PnL` 和 `03_Ads_Timing_Recon`。
 - 会计辅助 sheet 顶部包含中文优先说明区，列名全部为 English / 中文 双语格式，并保留会计确认、汇率、凭证、附件和调整项字段。
 
 ### 18.5 本地验证
@@ -1800,7 +1834,7 @@ python -m compileall -q scripts src tests
 当前容器验证结果：
 
 ```text
-PYTHONPATH=src pytest tests/unit -q  -> 300 passed
+PYTHONPATH=src pytest tests/unit -q  -> 301 passed
 python -m compileall -q scripts src tests -> passed
 ```
 

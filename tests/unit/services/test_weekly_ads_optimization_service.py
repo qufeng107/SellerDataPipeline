@@ -118,6 +118,48 @@ def test_calculate_core_metrics_and_actions_for_2026_05_11_style_week() -> None:
     assert result.action_items
 
 
+def test_existing_negative_snapshot_de_duplicates_search_term_actions() -> None:
+    week_start = date(2026, 5, 16)
+    result = WeeklyAdsOptimizationService().calculate_from_rows(
+        marketplace_id="ATVPDKIKX0DER",
+        profile_id="3917953989967300",
+        week_start=week_start,
+        campaign_rows=[
+            _campaign_row(
+                week_start,
+                cost=Decimal("12.00"),
+                sales=Decimal("0.00"),
+                purchases=0,
+                clicks=15,
+            )
+        ],
+        search_term_rows=[
+            _search_row(
+                report_date=week_start,
+                cost=Decimal("12.00"),
+                sales=Decimal("0.00"),
+                purchases=0,
+                clicks=15,
+                search_term="passport holder",
+            )
+        ],
+        negative_keyword_rows=[
+            {
+                "campaign_id": "C1",
+                "keyword_text": "passport holder",
+                "match_type": "negative exact",
+                "scope": "campaign",
+            }
+        ],
+    )
+
+    search_term = result.search_term_performance[0]
+    assert search_term.already_negative is True
+    assert search_term.action_label == "already_negative"
+    assert result.search_term_action_candidates == []
+    assert len(result.negative_keyword_snapshot) == 1
+
+
 def test_no_ads_data_status_requires_backfill() -> None:
     result = WeeklyAdsOptimizationService().calculate_from_rows(
         marketplace_id="ATVPDKIKX0DER",
@@ -236,10 +278,12 @@ def test_write_report_files_creates_json_and_xlsx(tmp_path: Path) -> None:
         "05_Search_Terms",
         "06_Search_Term_Actions",
         "07_Advertised_Products",
-        "08_Action_Items",
-        "09_Reconciliation_Checks",
-        "10_Warnings",
-        "11_Raw_Metadata",
+        "08_Active_Action_Items",
+        "09_Historical_Paused_Lessons",
+        "10_Reconciliation_Checks",
+        "11_Warnings",
+        "12_Negative_Snapshot",
+        "13_Raw_Metadata",
     ]
 
 

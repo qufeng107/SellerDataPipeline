@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 from decimal import Decimal
 from pathlib import Path
@@ -75,6 +76,15 @@ def main() -> None:
         help="Ads attribution stable lag days. Default: 3.",
     )
     parser.add_argument(
+        "--negative-keyword-csv",
+        action="append",
+        default=[],
+        help=(
+            "Optional Amazon Ads negative keyword CSV export. Can be provided multiple times; "
+            "used only for de-duplicating action recommendations."
+        ),
+    )
+    parser.add_argument(
         "--dry-run",
         action="store_true",
         help=(
@@ -117,6 +127,8 @@ def main() -> None:
         stable_lag_days=args.stable_lag_days,
     )
 
+    negative_keyword_rows = _load_csv_rows(args.negative_keyword_csv)
+
     with get_connection(settings=settings, autocommit=True) as connection:
         service = WeeklyAdsOptimizationService(repo=WeeklyAdsOptimizationRepo(connection))
         result = service.run(
@@ -125,6 +137,7 @@ def main() -> None:
             week_start=week_start,
             output_root=args.output_root,
             thresholds=thresholds,
+            negative_keyword_rows=negative_keyword_rows,
         )
 
     payload = result.to_dict()
@@ -141,7 +154,9 @@ def main() -> None:
     print(
         f"period={result.week_start.isoformat()}..{result.week_end.isoformat()} marketplace={marketplace_id} profile={profile_id} "
         f"ads_spend={overall.ads_spend} ads_sales_7d={overall.ads_sales_7d} purchases={overall.ads_purchases_7d} "
-        f"clicks={overall.clicks} acos={_display_ratio(overall.acos)} tacos={_display_ratio(overall.tacos)} action_items={len(result.action_items)}"
+        f"clicks={overall.clicks} acos={_display_ratio(overall.acos)} tacos={_display_ratio(overall.tacos)} "
+        f"active_action_items={len(result.action_items)} historical_lessons={len(result.historical_action_items)} "
+        f"negative_snapshot={len(result.negative_keyword_snapshot)}"
     )
     reconciliation_warnings = [
         check for check in result.reconciliation_checks if check.status == "warning"
@@ -170,6 +185,16 @@ def main() -> None:
             print(f"- [{warning.severity}] {warning.warning_code}: {warning.message}")
     if args.fail_on_review and result.status in {"needs_backfill", "no_ads_data"}:
         raise SystemExit(2)
+
+
+def _load_csv_rows(paths: list[str]) -> list[dict[str, str]]:
+    rows: list[dict[str, str]] = []
+    for path_text in paths:
+        path = Path(path_text)
+        with path.open("r", encoding="utf-8-sig", newline="") as fh:
+            reader = csv.DictReader(fh)
+            rows.extend({str(key or "").strip(): str(value or "").strip() for key, value in row.items()} for row in reader)
+    return rows
 
 
 def _display_ratio(value: Decimal | None) -> str:

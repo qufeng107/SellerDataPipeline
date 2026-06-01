@@ -89,8 +89,8 @@ GET_COUPON_PERFORMANCE_REPORT
 
 | 来源系统 | Report/API/文件 | 文件格式 | 当前取样状态 | 当前解析状态 | 备注 |
 |---|---|---|---|---|---|
-| SP-API Reports | `GET_PROMOTION_PERFORMANCE_REPORT` | JSON | 已取样 1 个 promotion，3 个 includedProducts | parser 已有，ingestion 待实现 | Deal/Promotion 活动表现。 |
-| SP-API Reports | `GET_COUPON_PERFORMANCE_REPORT` | JSON | 已取样 2 个 coupons，4 个 coupon-ASIN | parser 已有，ingestion 待实现 | Coupon 预算、领取、兑换、折扣和销售额。 |
+| SP-API Reports | `GET_PROMOTION_PERFORMANCE_REPORT` | JSON | 已取样 1 个 promotion，3 个 includedProducts | parser / ingestion / upsert 已实现并验证 | Deal/Promotion 活动表现。 |
+| SP-API Reports | `GET_COUPON_PERFORMANCE_REPORT` | JSON | 已取样 2 个 coupons，4 个 coupon-ASIN | parser / ingestion / upsert 已实现并验证 | Coupon 预算、领取、兑换、折扣和销售额。 |
 
 当前样例：
 

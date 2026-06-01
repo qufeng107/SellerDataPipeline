@@ -1,9 +1,9 @@
 # Feature: Pipeline Artifact Store
 
-> 文档状态：Implemented in code / migration pending execution  
+> 文档状态：Implemented; migration 014 executed and schema exported  
 > 负责人：AI + Feng  
-> 更新时间：2026-05-24  
-> 功能状态：v1 code implemented; SQL migration 014 must be executed before cloud automation use  
+> 更新时间：2026-06-01  
+> 功能状态：Implemented; SQL migration 014 已执行，Azure SQL artifact save/restore 已用于 dev automation  
 > 相关 migration：`sql/migrations/014_create_pipeline_artifact_store.sql`  
 > 相关功能：`feature_automation_jobs_workflow.md`  
 > 相关 ADR：`docs/adr/ADR-012-zero-paid-automation-storage-profile.md`
@@ -79,7 +79,7 @@ artifact_scope + relative_path + content_sha256 + active row
 
 相同文件重复保存不会重复插入；内容变化会形成新版本。
 
-> 注意：`docs/database/database_current_schema_spec.md` 必须等 migration 014 在 Azure SQL 执行成功，并运行 schema export 后再更新。
+> 状态：migration 014 已在 Azure SQL 执行成功，`docs/database/database_current_schema_spec.md` 已由 live schema export 更新。
 
 ---
 

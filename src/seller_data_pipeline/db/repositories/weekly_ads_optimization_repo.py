@@ -265,6 +265,24 @@ class WeeklyAdsOptimizationRepo:
         finally:
             cursor.close()
 
+    def fetch_negative_keyword_rows(
+        self,
+        *,
+        marketplace_id: str,
+        profile_id: str | None,
+        start_date: date,
+        end_date: date,
+    ) -> list[dict[str, Any]]:
+        """Return existing negative keyword snapshot rows when a table/import is available.
+
+        The current normalized schema does not yet persist Amazon Ads negative keywords,
+        so the service also supports manual CSV rows via scripts. Keeping this method
+        as a no-op preserves the repository contract without inventing a table.
+        """
+
+        _ = (marketplace_id, profile_id, start_date, end_date)
+        return []
+
     def _fetch_ads_rows(
         self,
         *,

@@ -2,8 +2,8 @@
 
 > 文档状态：Implemented / pending live verification  
 > 负责人：AI + Feng  
-> 更新时间：2026-05-23  
-> 功能状态：Implemented / pending live verification  
+> 更新时间：2026-06-01  
+> 功能状态：Implemented / v1.1 经营口径与 Saturday-Friday 周周期已完成代码对齐，待新周期 live verification  
 > 相关数据接入文档：`docs/data_access/sp_api_reports_catalog.md`, `docs/data_access/amazon_ads_reports_catalog.md`, `docs/data_access/seller_central_manual_exports.md`  
 > 相关数据库 spec：`docs/database/database_current_schema_spec.md`  
 > 相关功能：`docs/features/feature_monthly_financial_close_report.md`, `docs/features/feature_profit_calculation.md`, `docs/features/feature_sku_cost_management.md`, `docs/operations/manual_refresh_plan_workflow.md`, `docs/operations/data_refresh_policy.md`  
@@ -44,7 +44,7 @@ WBR 的特点是：
 | 数据源可用性 | 足够支持 v1：Sales & Traffic、Orders、SKU Cost、Inventory snapshot、Settlement preview 均已入库；Ads campaign daily 当前真实库只覆盖 2026-05-06 起，历史缺口应作为广告运营解释缺失 warning，不影响销售/库存/成本周报主体。 |
 | 数据刷新依赖 | 依赖 `core_rolling` 每 1-2 天刷新；建议在周报生成前执行一次 `weekly_full` 或至少 `core_rolling`。 |
 | 数据库变更 | v1 不新增数据库表，不新增 migration。 |
-| 代码实现 | 已完成 v1：`scripts/generate_weekly_business_review.py` + service/repo/unit tests。 |
+| 代码实现 | 已完成 v1/v1.1：`scripts/generate_weekly_business_review.py` + service/repo/unit tests；默认周期对齐 Saturday-Friday，贡献指标文案已标注未扣完整 Amazon 平台费。 |
 | 默认输出形式 | `weekly_business_review_{week_start}_{week_end}.json` + `weekly_business_review_{week_start}_{week_end}.xlsx`。 |
 | 不再默认输出 | 不默认输出 Markdown；不默认输出多个 CSV。 |
 | 验收样本 | 先以 2026-03 起的完整自然周为主，尤其 2026-03-23、2026-03-30、2026-04-06、2026-04-13、2026-04-20 等周。对于 3/4 月样本，Ads API context 可能 partial；5 月 6 日之后样本可验证 Ads campaign daily 加工。 |
@@ -62,7 +62,7 @@ WBR 应帮助回答：
 3. **广告是否健康**：广告花费是否可控，ACOS / ROAS / TACOS 是否合理。
 4. **SKU 贡献如何**：哪些 SKU 支撑销售，哪些 SKU 消耗预算或库存但贡献差。
 5. **库存是否有风险**：是否有缺货、低库存、滞销或清仓压力。
-6. **利润方向是否健康**：不是最终财务利润，而是估算毛利、广告后贡献和费用风险是否可接受。
+6. **利润方向是否健康**：不是最终财务利润，而是广告和货本后贡献、广告压力和费用风险是否可接受。该贡献指标必须明确未扣完整 Amazon 平台费。
 7. **下周该做什么**：列出广告、促销、价格、库存、listing、清仓等行动建议。
 
 ### 3.2 小公司阶段原则
@@ -131,26 +131,28 @@ Weekly Business Review
 
 ### 6.1 自然周定义
 
-WBR 以自然周为最小单位：
+WBR 以 7 天为最小单位。自动化默认采用 Saturday–Friday：
 
 ```text
-week_start = Monday
-week_end = Sunday
+week_start = Saturday
+week_end = Friday
 ```
 
 示例：
 
 ```text
-2026-04-06 .. 2026-04-12
+2026-05-16 .. 2026-05-22
 ```
 
-建议每周二生成上周周报：
+建议每周一生成上一完整 Saturday–Friday 周期的周报：
 
 ```text
-周一：数据可能仍有延迟；
-周二：Sales & Traffic / Orders / Ads 更稳定；
-周二上午先运行 core_rolling 或 weekly_full，再生成 WBR。
+周六/周日：作为缓冲，等待 Sales & Traffic / Orders / Ads 回填；
+周一：先运行 weekly_full 或至少 core_rolling，再生成 WBR 和广告优化周报；
+周一发送 report delivery 给运营/管理层复核。
 ```
+
+手动运行时可指定其他 7 天窗口，但 WBR、WAOR、Report Delivery 和自动化 job 必须使用同一周周期，避免周报之间无法对齐。
 
 ### 6.2 CLI 设计
 
@@ -412,8 +414,8 @@ python scripts/run_manual_refresh_plan.py --plan core_rolling --phase audit --ma
 | TACOS | `tacos` | Sales + Ads | `ads_spend / ordered_product_sales` | 全店广告压力。 |
 | Estimated COGS | `estimated_cogs` | Orders + SKU Cost | `SUM(order_units_by_sku * unit_standard_cost)` | 标准成本估算。 |
 | Gross Margin Before Ads | `gross_margin_before_ads` | Sales + COGS | `ordered_product_sales - estimated_cogs` | 不含 Amazon 平台费/广告费。 |
-| Contribution After Ads | `contribution_after_ads` | Sales + COGS + Ads | `ordered_product_sales - estimated_cogs - ads_spend` | 运营贡献估算，不是净利润。 |
-| Contribution Margin After Ads | `contribution_margin_after_ads` | derived | `contribution_after_ads / ordered_product_sales` | 用于周度趋势。 |
+| Contribution After COGS & Ads, before Amazon platform fees | `contribution_after_cogs_ads_before_amazon_fees` | Sales + COGS + Ads | `ordered_product_sales - estimated_cogs - ads_spend` | 广告和货本后贡献，未扣完整 Amazon referral/FBA/storage/other platform fees，不是净利润。 |
+| Contribution Margin After COGS & Ads, before Amazon platform fees | `contribution_margin_after_cogs_ads_before_amazon_fees` | derived | `contribution_after_cogs_ads_before_amazon_fees / ordered_product_sales` | 用于周度趋势，不得称为最终净利率。 |
 | Settlement Net Preview | `settlement_net_preview` | `amazon_settlement_transaction` | `SUM(amount)` by posted_date | posted-date 财务预览。 |
 
 ### 10.2 环比指标
@@ -782,6 +784,15 @@ WBR 报告中应明确标注：
 Settlement preview is posted-date financial context, not final weekly profit.
 ```
 
+同时，WBR 必须额外解释广告费双口径：
+
+```text
+Ads API spend = 本周广告实际投放 report_date 口径，用于经营指标和 TACOS。
+Settlement advertising fee = 本周 Seller Central posted-date 广告账单扣款，只做现金/账单提醒。
+```
+
+当某周出现大额 Settlement advertising fee，但 Ads API spend 不高时，应提示这是历史广告账单集中入账，不代表本周实际投放突然失控。
+
 ---
 
 ## 17. Alerts 与行动建议
@@ -790,7 +801,7 @@ Settlement preview is posted-date financial context, not final weekly profit.
 
 | 阈值 | 默认值 | 说明 |
 |---|---:|---|
-| `target_acos` | 30% | 清仓/低利润产品可设更低。 |
+| `target_acos` | 30% | 临时默认值；后续应由 SKU break-even ACOS / 产品毛利空间决定。 |
 | `target_tacos` | 20% | 超过说明广告压力较大。 |
 | `sales_drop_pct` | -20% | 销售额环比下降超过 20%。 |
 | `conversion_drop_pct` | -20% | 转化率环比下降超过 20%。 |
@@ -809,7 +820,7 @@ Settlement preview is posted-date financial context, not final weekly profit.
 | `high_acos` | `acos > target_acos` | 下调高 ACOS campaign/target。 |
 | `ads_spend_without_sales` | 广告花费 > 0 且广告销售为 0 | 检查投放词，必要时否定。 |
 | `ads_api_context_missing` | Ads campaign daily 在本周无数据 | 检查 Ads rolling refresh / backfill，不影响 Sales & Traffic 主体周报。 |
-| `sku_negative_contribution` | SKU contribution after ads < 0 | 检查广告、促销、价格和成本。 |
+| `sku_negative_contribution` | SKU 广告和货本后贡献 < 0 | 检查广告、促销、价格和成本；注意该指标未扣完整 Amazon 平台费。 |
 | `missing_sku_cost` | SKU 无成本 | 先补 `amazon_sku_cost`，否则不输出成本结论。 |
 | `stockout` | 可售库存为 0 且近期有销量 | 补货/关广告/避免浪费流量。 |
 | `urgent_low_stock` | 库存天数 < 14 | 调整广告预算，准备补货或清仓策略。 |
@@ -888,7 +899,7 @@ SKU Cost 是否覆盖所有本周销售 SKU。
 |---|---|---|
 | `marketplace_id` | 参数 | 原样输出。 |
 | `profile_id` | 参数 | 原样输出。 |
-| `week_start` | 参数 | 必须为 Monday。 |
+| `week_start` | 参数 | 自动化默认必须为 Saturday；手动运行可指定其他 7 天窗口，但需与 WAOR 同步。 |
 | `week_end` | derived | `week_start + 6 days`。 |
 | `report_status` | derived | 按第 18 节规则。 |
 | `ordered_product_sales` | `amazon_sales_traffic_daily.ordered_product_sales_amount` | SUM。 |
@@ -1087,18 +1098,30 @@ python -m compileall -q scripts src tests
 
 ---
 
+## 23.1 v1.1 口径更新实现记录
+
+v1.1 已把 WBR 与月报 v1.2 对齐：
+
+```text
+1. 周期统一为 Saturday–Friday，周一生成和发送。
+2. `contribution_after_ads` 重命名为 `contribution_after_cogs_ads_before_amazon_fees`，避免被误读为净利润。
+3. 保留 Ads API report-date spend 作为广告经营指标主口径。
+4. 新增 Settlement posted-date advertising fee 作为账单/现金流提醒，不参与本周经营贡献计算。
+5. 后续 v2 再引入 estimated Amazon platform fees，形成更接近真实利润的 weekly operating contribution。
+```
+
 ## 24. 当前冻结结论
 
 WBR v1 冻结为：
 
 ```text
-每周自然周经营复盘；
+每周 Saturday–Friday 经营复盘；
 主运营口径使用 Sales & Traffic；
 SKU 维度使用 Orders + SKU Cost；
 广告总览使用 Ads campaign daily；
 SKU 广告贡献使用 Ads advertised product daily；
 库存风险使用最新 Inventory snapshot；
-Settlement 只做 posted-date finance preview，不作为最终周利润；
+Settlement 只做 posted-date finance preview 和广告账单提醒，不作为最终周利润；
 不新增数据库表；
 不自动发邮件；
 默认输出 JSON + 单个 XLSX 多 sheet；

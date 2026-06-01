@@ -1,7 +1,7 @@
 # ADR-009: Settlement-led Profit Calculation Policy
 
 > 状态：Accepted  
-> 日期：2026-05-18  
+> 日期：2026-05-18；更新：2026-06-01  
 > 决策范围：利润核算口径、周报/月报财务主口径、后续利润计算脚本设计
 
 ## 1. 背景
@@ -38,6 +38,22 @@ Profit Calculation Policy v1.0 — Settlement-led Financial Profit
 8. 第一版采用 SKU 级标准成本 + 生效日期，不做 FIFO 或复杂批次库存成本。
 9. 第一版优先输出人工复核文件；利润结果表待连续几期复核稳定后再考虑 migration。
 
+### 2.1 2026-06-01 补充决策：双利润展示，不改变财务主口径
+
+Amazon Ads 广告费可能按账单阈值或结算批次集中 posted 到 Seller Central Payments，导致 Settlement posted-date 的广告费与 Ads API report-date 的实际投放发生额跨月不一致。为避免管理层误判单月经营利润，月报新增第二个管理口径：
+
+```text
+management_estimated_profit_report_date_ads
+= settlement_net_amount
+- internal_cogs
++ settlement_advertising_fee_abs
+- ads_api_report_date_spend
+```
+
+该指标只用于经营复盘和广告费跨期解释，不替代 `settlement_led_estimated_profit`，也不作为会计结账主口径。
+
+周报默认使用 Ads API report-date spend 计算广告压力和经营贡献；Settlement advertising fee 只作为 posted-date 账单/现金流提醒。
+
 ## 3. 理由
 
 ### 3.1 最不容易混乱
@@ -50,7 +66,7 @@ Settlement 是实际结算明细，天然包含多种收入、费用、退款、
 
 ### 3.3 方便会计复核
 
-Settlement 与 Amazon 实际结算更接近，会计更容易追溯。Orders、Ads、Promotion 等作为解释性口径单独展示，可以帮助说明利润变化，但不会干扰财务主结果。
+Settlement 与 Amazon 实际结算更接近，会计更容易追溯。Orders、Ads、Promotion 等作为解释性口径单独展示，可以帮助说明利润变化，但不会干扰财务主结果。管理经营口径单独展示 Ads report-date adjustment，可以解释广告费跨期，但不覆盖会计主结果。
 
 ## 4. 影响
 
@@ -72,9 +88,10 @@ amazon_sku_cost
 ```text
 Financial profit period: Settlement posted date
 Operational performance period: order/report/ad activity date
+Management P&L ads period: Ads API report_date
 ```
 
-不要把两个周期的金额混算。
+不要把两个周期的金额混算；如需管理经营口径，必须显式加回 Settlement posted-date advertising fee 再扣除 Ads API report-date spend，并与 Settlement-led 结果并列展示。
 
 ### 4.3 对数据库设计
 
@@ -93,7 +110,7 @@ profit_sku_period
 | 方案 | 否决原因 | 替代方案 |
 |---|---|---|
 | Orders-led profit | 订单口径与结算、退款、广告扣费、调整项不一致。 | Settlement-led。 |
-| Ads API spend 覆盖财务广告费 | Ads API 是投放归因口径，不一定等于当期结算实扣。 | Ads 用于运营分析，Settlement 用于利润。 |
+| Ads API spend 覆盖财务广告费 | Ads API 是投放归因口径，不一定等于当期结算实扣。 | Ads 用于运营分析；Settlement 用于财务/会计利润；月报可另列 Management P&L。 |
 | Promotion/Coupon 报表金额直接作为促销成本 | 活动报表适合效果分析，实际扣减应看结算。 | Promotion/Coupon 用于解释，Settlement 用于财务成本。 |
 | 第一版 FIFO/批次成本 | 复杂度过高，容易拖慢落地。 | SKU 标准成本 + 生效日期。 |
 | 缺成本时默认按 0 成本 | 会高估利润。 | 缺成本阻塞正式净利润，只允许 preview。 |
@@ -105,3 +122,4 @@ profit_sku_period
 3. 开发 `scripts/calculate_profit_report.py` 的 dry-run / preview。
 4. 先用真实 3月/4月或 5月上旬数据人工复核。
 5. 复核稳定后，再设计周报和可选利润结果表。
+6. 在 Monthly Financial Close Report 中实现双利润口径和 Ads Timing Reconciliation。

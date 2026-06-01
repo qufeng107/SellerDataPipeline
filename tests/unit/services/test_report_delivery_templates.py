@@ -67,7 +67,11 @@ def test_weekly_business_template_renders_core_metrics() -> None:
 
     assert "[周经营 WBR]" in draft.subject
     assert "Sales USD 602.38" in draft.subject
-    assert "扣广告后贡献利润 / Contribution after ads" in draft.body_text
+    expected_label = (
+        "广告和货本后贡献（未扣完整Amazon费用） / "
+        "Contribution after COGS & Ads (before full Amazon fees)"
+    )
+    assert expected_label in draft.body_text
     assert "17.43%" in draft.body_html
 
 
@@ -90,7 +94,7 @@ def test_weekly_ads_template_renders_action_counts() -> None:
             "tacos": "0.1743",
         },
         "search_term_action_candidates": [{"search_term": "passport holder"}],
-        "action_items": [
+        "active_action_items": [
             {
                 "priority": "high",
                 "action_type": "negative_candidate",

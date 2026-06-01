@@ -55,13 +55,16 @@ def test_calculate_monthly_financial_close_core_metrics() -> None:
     assert result.financial_summary.internal_cogs == Decimal("50.00")
     assert result.financial_summary.estimated_operating_profit == Decimal("10.00")
     assert result.financial_summary.profit_margin == Decimal("0.1000")
+    assert result.financial_summary.settlement_led_estimated_profit == Decimal("10.00")
+    assert result.financial_summary.management_estimated_profit_report_date_ads == Decimal("10.00")
+    assert result.financial_summary.ads_timing_difference == Decimal("0.00")
     assert result.sku_profitability[0].unit_standard_cost == Decimal("25.00")
     assert result.sku_profitability[0].estimated_profit_after_cogs == Decimal("15.00")
-    assert result.executive_summary()["headline"].startswith("2026-03 estimated operating profit")
+    assert result.executive_summary()["headline"].startswith("2026-03 management estimated profit")
 
 
     payload = result.to_dict()
-    assert payload["version"] == "v1.1-accountant-bookkeeping-pack"
+    assert payload["version"] == "v1.2-dual-profit-ads-timing"
     assert "accountant_pack" in payload
     assert payload["accountant_pack"]["bookkeeping_summary"][0]["accounting_item"].startswith(
         "Product Sales Revenue"
@@ -195,13 +198,15 @@ def test_write_report_files_creates_json_and_xlsx(tmp_path: Path) -> None:
     assert workbook.sheetnames == [
         "00_Readme_说明",
         "01_Summary",
-        "02_Settlement_Buckets",
-        "03_Amount_Categories",
-        "04_SKU_Profit",
-        "05_Operational_Context",
-        "06_Reconciliation_Checks",
-        "07_Warnings",
-        "08_Raw_Metadata",
+        "02_Management_PnL",
+        "03_Ads_Timing_Recon",
+        "04_Settlement_Buckets",
+        "05_Amount_Categories",
+        "06_SKU_Profit",
+        "07_Operational_Context",
+        "08_Reconciliation_Checks",
+        "09_Warnings",
+        "10_Raw_Metadata",
         "09_Accounting_Summary",
         "10_Journal_Entries",
         "11_Quarter_Rollup",

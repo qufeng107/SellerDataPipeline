@@ -44,8 +44,13 @@ METRIC_LABEL_ZH = {
     "TACOS": "TACOS总广告成本比",
     "Estimated COGS": "估算COGS",
     "Contribution after ads": "扣广告后贡献利润",
+    (
+        "Contribution after COGS & Ads (before full Amazon fees)"
+    ): "广告和货本后贡献（未扣完整Amazon费用）",
     "Search term actions": "搜索词动作数",
     "Action items": "动作候选数",
+    "Active action items": "当前启用广告动作数",
+    "Historical/paused lessons": "历史/暂停广告复盘项",
     "Alerts": "告警数量",
 }
 
@@ -165,24 +170,33 @@ class WeeklyBusinessReviewEmailTemplate:
             ("ACOS", _percent(ads_summary.get("acos"))),
             ("TACOS", _percent(ads_summary.get("tacos"))),
             ("Estimated COGS", _kpi_value(report, "estimated_cogs", currency)),
-            ("Contribution after ads", _kpi_value(report, "contribution_after_ads", currency)),
+            (
+                "Contribution after COGS & Ads (before full Amazon fees)",
+                _kpi_value(report, "contribution_after_ads", currency),
+            ),
             ("Alerts", _text(len(report.get("alerts") or []), "0")),
         ]
         headline = _text(executive.get("headline"), "Weekly business review is ready.")
         key_points = _as_text_list(executive.get("key_points"))
         intro = (
             f"Weekly Business Review for {period_key} ({marketplace_id}, profile {profile_id}) "
-            "is ready. This is an operational report; Settlement is finance context only."
+            "is ready. This is an operational report; Settlement is finance context only, "
+            "and contribution after COGS & Ads is not final net profit."
         )
         intro_zh = (
             f"{period_key} 每周经营复盘已生成，市场为 {marketplace_id}，"
-            f"广告 profile 为 {profile_id}。本报表用于运营复盘，Settlement 仅作财务参考。"
+            f"广告 profile 为 {profile_id}。"
+            "本报表用于运营复盘，Settlement 仅作财务参考；"
+            "广告和货本后贡献不等于最终净利润。"
         )
         key_points_zh = [
             f"报表状态：{status}。",
             f"本周订购销售额：{sales}。",
             f"广告花费：{_money(ads_summary.get('ads_spend'), currency)}。",
-            f"扣广告后贡献利润：{_kpi_value(report, 'contribution_after_ads', currency)}。",
+            (
+                "广告和货本后贡献（未扣完整Amazon费用）："
+                f"{_kpi_value(report, 'contribution_after_ads', currency)}。"
+            ),
             f"告警数量：{len(report.get('alerts') or [])}。",
         ]
         return _build_draft(
@@ -219,13 +233,14 @@ class WeeklyAdsOptimizationEmailTemplate:
         currency = _currency(report)
         period_key = _period_key(report)
         overall = report.get("overall_summary") or {}
-        actions = report.get("action_items") or []
+        actions = report.get("active_action_items") or report.get("action_items") or []
+        historical_actions = report.get("historical_action_items") or []
         search_actions = report.get("search_term_action_candidates") or []
         spend = _money(overall.get("ads_spend"), currency)
         acos = _percent(overall.get("acos"))
         subject = (
             f"[广告优化 Ads Optimization] Amazon US {period_key} | ACOS {acos} | "
-            f"Actions {len(actions)}"
+            f"Active Actions {len(actions)}"
         )
         rows = [
             ("Ads spend", spend),
@@ -237,7 +252,8 @@ class WeeklyAdsOptimizationEmailTemplate:
             ("ROAS", _ratio_number(overall.get("roas"))),
             ("TACOS", _percent(overall.get("tacos"))),
             ("Search term actions", _text(len(search_actions), "0")),
-            ("Action items", _text(len(actions), "0")),
+            ("Active action items", _text(len(actions), "0")),
+            ("Historical/paused lessons", _text(len(historical_actions), "0")),
         ]
         executive = report.get("executive_summary") or {}
         headline = _text(executive.get("headline"), "Weekly ads optimization report is ready.")
@@ -260,7 +276,7 @@ class WeeklyAdsOptimizationEmailTemplate:
             f"报表状态：{status}。",
             f"广告7天归因销售额：{_money(overall.get('ads_sales_7d'), currency)}。",
             f"ROAS：{_ratio_number(overall.get('roas'))}；TACOS：{_percent(overall.get('tacos'))}。",
-            f"否词候选：{negative_count}；收词候选：{harvest_count}。",
+            f"否词候选：{negative_count}；收词候选：{harvest_count}；当前启用广告动作：{len(actions)}。",
             f"非信息类警告：{_non_info_warning_count(report)}。",
         ]
         return _build_draft(
