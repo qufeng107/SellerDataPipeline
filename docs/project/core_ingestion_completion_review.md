@@ -1,11 +1,11 @@
 # Core Ingestion Completion Review
 
-> 更新时间：2026-05-18  
+> 更新时间：2026-06-01  
 > 文档定位：核心数据入库阶段的收尾检查。本文记录已经完成的真实入库闭环、已知限制和下一阶段计划。
 
 ## 1. 总结结论
 
-截至本文件更新时间，SellerDataPipeline 的核心数据入库阶段已经基本完成。
+截至本文件更新时间，SellerDataPipeline 的核心数据入库阶段已完成；报表层、邮件交付和 Azure Jobs dev rollout 已在后续迭代中推进。
 
 已完成的标准不是“只写了 parser”，而是每条核心链路都完成了：
 
@@ -57,10 +57,10 @@ dry-run
 | 限制 | 影响 | 后续处理 |
 |---|---|---|
 | raw file 归档关联仍不完整 | 多数 normalized 表可追踪 `source_raw_file_path`，但 `source_raw_file_id` 仍可能为 NULL | 后续补 raw file registry 关联。 |
-| 还没有自动下载调度 | 当前 raw data 仍依赖手动下载/收集 | 先建立 manual workflow，再上 Jobs。 |
-| 利润核算口径已冻结但未实现 | 还不能直接输出正式利润周报 | 下一阶段按 Settlement-led Financial Profit v1.0 开发手动利润 preview。 |
+| 自动下载调度仍在 dev rollout | 已建立 manual refresh plan，Azure sdp-smoke-dev 与 sdp-weekly-submit-dev 已验证 | 继续创建 collect/ingest 与 report delivery dev jobs。 |
+| 利润核算与月报已实现 | Monthly Financial Close v1.2 已支持 Settlement-led 与 Management report-date Ads 双口径 | 继续用真实周期复核并稳定会计沟通口径。 |
 | SKU 成本/头程成本仍需人工配置 | 缺少真实毛利计算关键输入 | 设计成本导入机制。 |
-| 周报和邮件发送未实现 | 仍需人工整理输出 | 先实现手动生成，再做自动邮件。 |
+| 周报和邮件发送已实现 | WBR、WAOR、Report Delivery、SMTP 发送均已实现 | 继续复核真实周期输出，并纳入 Azure Jobs。 |
 | `requirements_to_be_deprecated/` 尚未删除 | 历史 sample docs 仍有引用 | 后续迁移 sample notes 后再删除。 |
 
 ## 5. 下一阶段建议

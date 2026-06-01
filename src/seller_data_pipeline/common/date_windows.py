@@ -21,19 +21,25 @@ def recent_days_window(today: date, days: int) -> DateWindow:
 
 
 def previous_complete_week(today: date) -> DateWindow:
-    """Return last complete Monday-Sunday week before today."""
-    current_week_monday = today - timedelta(days=today.weekday())
-    start = current_week_monday - timedelta(days=7)
-    end = current_week_monday - timedelta(days=1)
+    """Return the latest complete Saturday-Friday week before today.
+
+    Weekly management reports use a Saturday-Friday period and are normally
+    generated on Monday, leaving a small buffer for late Amazon source data.
+    """
+
+    # Python weekday: Monday=0 ... Friday=4, Saturday=5, Sunday=6.
+    days_since_saturday = (today.weekday() - 5) % 7
+    current_period_start = today - timedelta(days=days_since_saturday)
+    start = current_period_start - timedelta(days=7)
+    end = current_period_start - timedelta(days=1)
     return DateWindow(start=start, end=end)
 
 
 def stable_profit_week(today: date) -> DateWindow:
-    """Return the complete Monday-Sunday week before the previous complete week."""
-    current_week_monday = today - timedelta(days=today.weekday())
-    start = current_week_monday - timedelta(days=14)
-    end = current_week_monday - timedelta(days=8)
-    return DateWindow(start=start, end=end)
+    """Return the Saturday-Friday week before the previous complete week."""
+
+    quick = previous_complete_week(today)
+    return DateWindow(start=quick.start - timedelta(days=7), end=quick.end - timedelta(days=7))
 
 
 def chunk_inclusive_date_range(

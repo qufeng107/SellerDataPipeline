@@ -1,6 +1,6 @@
 # Ingestion Job Cadence Catalog
 
-> 更新时间：2026-05-19  
+> 更新时间：2026-06-01  
 > 文档定位：记录每类数据下载、入库、刷新窗口和后续加工任务的建议周期。本文用于指导手动执行顺序和未来自动化 Jobs 调度，不替代 feature 文档。
 
 ## 1. 已冻结原则
@@ -34,7 +34,7 @@ docs/adr/ADR-010-overlapping-refresh-weekly-analysis.md
 | 类型 | 作用 | 建议频率 |
 |---|---|---|
 | Core data refresh | 滚动补数、更新最近数据、吸收回填/归因变化 | 每 1-2 天 |
-| Weekly analysis | 销售周报、广告周报、利润周报、库存周报 | 每周 |
+| Weekly analysis | WBR、广告优化周报、库存/利润方向复盘 | 每周一生成上一 Saturday–Friday 周期 |
 | Monthly/accounting analysis | 月度利润、会计口径复核 | 每月或会计需要时 |
 | Email/report delivery | 发送人工复核后的报告 | 周报/月报确认后 |
 
@@ -55,8 +55,9 @@ docs/adr/ADR-010-overlapping-refresh-weekly-analysis.md
 | Promotion/Coupon | `GET_PROMOTION_PERFORMANCE_REPORT` / `GET_COUPON_PERFORMANCE_REPORT` | `scripts/ingest_promotion_coupon_reports.py` | 活动期每 2 天；非活动期每周 | 30 天或活动期 | 2 天 | 周报/活动复盘 | 用于分析优惠券、价格折扣、会员日/Prime Day 活动表现。 |
 | Inventory Ledger | `GET_LEDGER_SUMMARY_VIEW_DATA` / `GET_LEDGER_DETAIL_VIEW_DATA` | `scripts/ingest_inventory_ledger_reports.py` | 每周；库存异常时按需 | 30 天 | 3 天 | 周报异常解释 | 不是库存余额首要来源，用于解释库存变化和审计异常。 |
 | SKU cost management | SKU universe + `amazon_sku_cost` | `scripts/export_sku_cost_template.py` / `scripts/import_sku_cost_template.py` | 进货/成本变化/复核前 | 全量 SKU 模板 | n/a | 周报/月报成本基础 | 通过 xlsx 模板导出/导入维护内部 SKU 标准成本。 |
-| Profit calculation | Settlement + `amazon_sku_cost` + auxiliary normalized tables | `scripts/calculate_profit_report.py` | 每周/月报前 | 报表周期 | 2 天 | 周报/月报 | 已冻结 Settlement-led Financial Profit v1.0；缺成本默认阻塞正式净利润。 |
-| Weekly operations report | normalized SQL tables + profit result | planned | 每周 | 上一自然周 | 2 天 | 周报 | 第一版生成后人工复核，再考虑邮件自动化。 |
+| Profit calculation | Settlement + `amazon_sku_cost` + auxiliary normalized tables | `scripts/calculate_profit_report.py` | 每周/月报前 | 报表周期 | 2 天 | 周报/月报 | 财务口径冻结为 Settlement-led；管理月报可用 Ads API report-date spend 重列广告发生额。 |
+| Weekly Business Review | normalized SQL tables + Ads report-date spend + Settlement preview | `scripts/generate_weekly_business_review.py` | 每周一 | 上一 Saturday–Friday | 2 天 | 周报 | 经营发生口径；贡献指标未扣完整 Amazon 平台费，不是净利润。 |
+| Weekly Ads Optimization Report | Ads campaign/target/search term/advertised product + negative snapshot | `scripts/generate_weekly_ads_optimization_report.py` | 每周一 | 上一 Saturday–Friday | 3 天 | 周报 | 广告操作口径；v1.1 需区分 active actions 与 historical paused lessons。 |
 | Email report delivery | generated report files | planned | 每周确认后 | n/a | n/a | 周报/月报 | 第一阶段不直接自动发送正式邮件。 |
 
 ## 4. 手动执行建议节奏
@@ -83,19 +84,35 @@ FBA Fee Preview：当前快照
 Listing snapshot：当前快照
 Data coverage audit：检查 stable cutoff
 Profit preview：上一自然周或指定周
-Weekly operations report：人工复核后生成
+Weekly Business Review：上一 Saturday–Friday，人工复核后生成
+Weekly Ads Optimization Report：上一 Saturday–Friday，输出 active action items
 ```
 
 ### 4.3 月报/会计复核前
 
 ```text
-Ads：额外刷新最近 30-45 天
+Ads：额外刷新最近 30-45 天，用于月报 Management P&L 和 Ads Timing Reconciliation
 Settlement：确认最近 60 天 discovery 完整
 FBA Reimbursements：刷新最近 60 天
 Promotion/Coupon：覆盖活动期
 SKU Cost：确认成本覆盖所有销售 SKU
 Data coverage audit：按月度窗口复核
 Profit preview：月度周期
+```
+
+## 4.4 周报与月报口径边界
+
+```text
+Weekly Business Review / Weekly Ads Optimization Report:
+  默认周期 = Saturday–Friday
+  默认生成 = Monday
+  广告费经营口径 = Ads API report_date spend
+  Settlement advertising fee = posted-date 账单/现金流提示
+
+Monthly Financial Close Report:
+  默认周期 = natural month
+  财务/会计主口径 = Settlement posted-date
+  管理经营口径 = Settlement-led profit 加回 posted-date ads fee，再扣 Ads API report-date spend
 ```
 
 ## 5. 当前数据库配置表
@@ -139,8 +156,8 @@ sql/seeds/002_update_ingestion_job_config_refresh_policy.sql
 
 Cadence catalog 只是调度建议，不等于业务指标口径：
 
-- 财务利润仍以 Settlement 为主。
-- Orders / Sales & Traffic / Ads / Promotion-Coupon 只用于运营解释和周报分析。
+- 财务/会计利润仍以 Settlement 为主。
+- Orders / Sales & Traffic / Ads / Promotion-Coupon 用于运营解释和周报分析；Ads API report-date spend 也用于月报管理经营口径。
 - 周报库存余额用 `amazon_inventory_daily`。
 - 库存变化解释用 Inventory Ledger。
 - FBA Fee Preview 是预估，最终费用以 Settlement 为准。

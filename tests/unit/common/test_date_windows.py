@@ -7,16 +7,16 @@ from seller_data_pipeline.common.date_windows import (
 )
 
 
-def test_previous_complete_week_for_monday() -> None:
+def test_previous_complete_week_uses_saturday_friday_for_monday_scheduler() -> None:
     window = previous_complete_week(date(2026, 5, 11))
-    assert window.start == date(2026, 5, 4)
-    assert window.end == date(2026, 5, 10)
+    assert window.start == date(2026, 5, 2)
+    assert window.end == date(2026, 5, 8)
 
 
-def test_stable_profit_week_for_monday() -> None:
+def test_stable_profit_week_uses_previous_saturday_friday() -> None:
     window = stable_profit_week(date(2026, 5, 11))
-    assert window.start == date(2026, 4, 27)
-    assert window.end == date(2026, 5, 3)
+    assert window.start == date(2026, 4, 25)
+    assert window.end == date(2026, 5, 1)
 
 
 def test_chunk_inclusive_date_range_splits_closed_range() -> None:

@@ -1,9 +1,9 @@
 # Feature: Inventory Ledger Ingestion
 
-> 文档状态：Implementing; 011 executed; dedicated ingestion dry-run implemented  
+> 文档状态：Implemented; 011 executed; dry-run, Azure SQL execute and idempotency verified  
 > 负责人：AI / 待定  
 > 更新时间：2026-05-17  
-> 功能状态：Implementing  
+> 功能状态：Implemented  
 > 相关数据接入文档：`docs/data_access/sp_api_reports_catalog.md`  
 > 相关数据库 spec：`docs/database/database_current_schema_spec.md`
 
@@ -36,9 +36,9 @@ GET_LEDGER_DETAIL_VIEW_DATA
 | Migration | 已执行：`011_add_inventory_ledger_business_keys.sql`，4/4 batches；live schema export `after_011_inventory_ledger_business_keys` 已生成 |
 | Dry-run preview | 已开发；本地验证 prepared_rows=357 |
 | Schema guard | 已开发；summary/detail flat-file schema guard 已接入 |
-| Repository/upsert | 已开发，待 Azure SQL execute 验证 |
-| Azure SQL execute | 待用户执行验证 |
-| 幂等性验证 | 待用户重复 execute 验证 |
+| Repository/upsert | 已完成并通过 Azure SQL execute 验证 |
+| Azure SQL execute | 已完成，summary + detail 合计 inserted=357 |
+| 幂等性验证 | 已完成，第二次 execute updated=357 |
 | 单元测试 | 已新增：mapping / dry-run / repo |
 | 文档同步 | 本设计已完成第一版 |
 
@@ -96,8 +96,8 @@ Inventory Ledger 用于补充：
 
 | 来源系统 | Report/API/文件 | 文件格式 | 当前取样状态 | 当前解析状态 | 备注 |
 |---|---|---|---|---|---|
-| SP-API Reports | `GET_LEDGER_SUMMARY_VIEW_DATA` | tab-delimited flat file | 已取样 150 行，22 个字段 | parser 已有，ingestion 待实现 | COUNTRY + DAILY 粒度库存 movement 汇总。 |
-| SP-API Reports | `GET_LEDGER_DETAIL_VIEW_DATA` | tab-delimited flat file | 已取样 207 行，16 个字段 | parser 已有，ingestion 待实现 | 事件级库存 movement 明细。 |
+| SP-API Reports | `GET_LEDGER_SUMMARY_VIEW_DATA` | tab-delimited flat file | 已取样 150 行，22 个字段 | parser / ingestion / upsert 已实现并验证 | COUNTRY + DAILY 粒度库存 movement 汇总。 |
+| SP-API Reports | `GET_LEDGER_DETAIL_VIEW_DATA` | tab-delimited flat file | 已取样 207 行，16 个字段 | parser / ingestion / upsert 已实现并验证 | 事件级库存 movement 明细。 |
 
 当前样例：
 

@@ -22,11 +22,16 @@ MONEY_QUANT = Decimal("0.01")
 RATIO_QUANT = Decimal("0.0001")
 ZERO = Decimal("0")
 REPORT_TYPE = "weekly_business_review"
-REPORT_VERSION = "v1.0"
+REPORT_VERSION = "v1.1-operational-contribution-labels"
 DEFAULT_OUTPUT_ROOT = "runtime/analysis_reports/weekly_business_review"
 WBR_SCOPE_NOTE = (
-    "Weekly Business Review is an operational report. Sales & Traffic and Orders drive "
-    "weekly business metrics; Settlement is posted-date financial context only."
+    "Weekly Business Review is an operational report using a Saturday-Friday period. "
+    "Sales & Traffic, Orders, and Ads API report-date spend drive weekly business metrics; "
+    "Settlement is posted-date financial context only."
+)
+CONTRIBUTION_SCOPE_NOTE = (
+    "Sales & Traffic ordered sales - estimated COGS - Ads API report-date spend; "
+    "before full Amazon platform fees, refunds, storage, account-level fees, and not final net profit."
 )
 SETTLEMENT_PREVIEW_NOTE = (
     "Settlement preview is posted-date financial context, not final weekly profit."
@@ -293,6 +298,9 @@ class SkuPerformanceRow:
             "ads_sales_7d": _decimal_to_string(self.ads_sales_7d),
             "ads_orders_7d": self.ads_orders_7d,
             "contribution_after_ads": _decimal_to_string(self.contribution_after_ads),
+            "contribution_after_cogs_ads_before_amazon_fees": _decimal_to_string(
+                self.contribution_after_ads
+            ),
             "sku_tacos": _optional_ratio_to_string(self.sku_tacos),
             "sku_ads_dependency_rate": _optional_ratio_to_string(self.ads_dependency_rate),
             "fulfillable_quantity": self.fulfillable_quantity,
@@ -414,8 +422,8 @@ class WeeklyBusinessReviewResult:
         contribution_text = _format_money(self.contribution_after_ads, self.currency)
         headline = (
             f"{self.week_start.isoformat()}..{self.week_end.isoformat()} "
-            f"ordered sales were {sales_text}, with contribution after ads of "
-            f"{contribution_text}."
+            f"ordered sales were {sales_text}, with contribution after COGS & Ads "
+            f"before full Amazon fees of {contribution_text}."
         )
         warnings = [warning for warning in self.warnings if warning.severity != "info"]
         needs_review = [
@@ -433,6 +441,7 @@ class WeeklyBusinessReviewResult:
                 f"Alerts: {len(self.alerts)}; non-info warnings: {len(warnings)}; "
                 f"needs-review checks: {len(needs_review)}.",
                 WBR_SCOPE_NOTE,
+                CONTRIBUTION_SCOPE_NOTE,
             ],
         }
 
@@ -461,6 +470,15 @@ class WeeklyBusinessReviewResult:
                 "summary": self.ads_summary.to_dict(),
                 "previous_summary": self.previous_ads_summary.to_dict(),
                 "campaign_summary": [row.to_dict() for row in self.campaign_summary],
+            },
+            "management_contribution": {
+                "contribution_after_cogs_ads_before_amazon_fees": _decimal_to_string(
+                    self.contribution_after_ads
+                ),
+                "contribution_margin_after_cogs_ads_before_amazon_fees": _optional_ratio_to_string(
+                    self.contribution_margin_after_ads
+                ),
+                "scope_note": CONTRIBUTION_SCOPE_NOTE,
             },
             "inventory_risk": [row.to_dict() for row in self.inventory_risk],
             "settlement_finance_preview": self.settlement_finance_preview.to_dict(),
@@ -914,10 +932,10 @@ def build_weekly_business_review_workbook(result: WeeklyBusinessReviewResult) ->
         period=f"{result.week_start.isoformat()}_{result.week_end.isoformat()}",
         status=result.status,
         scope_en=(
-            "Sales & Traffic and Orders drive weekly business metrics; "
-            "Settlement is finance context only."
+            "Sales & Traffic, Orders, and Ads API report-date spend drive weekly business metrics; "
+            "Settlement is finance context only. Contribution after COGS & Ads is not final net profit."
         ),
-        scope_zh="Sales & Traffic 和 Orders 用于周度经营指标；Settlement 仅作为财务参考。",
+        scope_zh="Sales & Traffic、Orders 和 Ads API 发生日广告费用于周度经营指标；Settlement 仅作为财务参考。广告和货本后贡献不等于最终净利润。",
     )
     _write_rows_sheet(workbook, "01_Executive_Summary", _summary_rows(result))
     _write_rows_sheet(workbook, "02_Daily_Trend", [row.to_dict() for row in result.daily_trend])
@@ -987,16 +1005,16 @@ def _summary_rows(result: WeeklyBusinessReviewResult) -> list[dict[str, Any]]:
             "Sales - estimated COGS.",
         ),
         _metric_row(
-            "Contribution After Ads",
+            "Contribution After COGS & Ads (Before Amazon Fees)",
             result.contribution_after_ads,
             result.currency,
-            "Sales - COGS - Ads spend.",
+            CONTRIBUTION_SCOPE_NOTE,
         ),
         _metric_row(
-            "Contribution Margin After Ads",
+            "Contribution Margin After COGS & Ads (Before Amazon Fees)",
             result.contribution_margin_after_ads,
             None,
-            "Contribution / sales.",
+            "Contribution / Sales & Traffic ordered sales; not final net margin.",
         ),
         _metric_row(
             "Settlement Net Preview",
@@ -1070,9 +1088,7 @@ def _metric_row(metric: str, value: Any, currency: str | None, notes: str) -> di
 
 def _flatten_sku_row(row: SkuPerformanceRow) -> dict[str, Any]:
     data = row.to_dict()
-    data["scope_note"] = (
-        "SKU contribution is before unallocated account-level expenses and is not final net profit."
-    )
+    data["scope_note"] = CONTRIBUTION_SCOPE_NOTE
     return data
 
 

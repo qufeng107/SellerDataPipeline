@@ -2,8 +2,8 @@
 
 > 文档状态：Implemented / pending live verification  
 > 负责人：AI + Feng  
-> 更新时间：2026-05-23  
-> 功能状态：Implemented v1  
+> 更新时间：2026-06-01  
+> 功能状态：Implemented / v1.1 active-action 与 negative snapshot 已完成代码对齐，待新周期 live verification  
 > 相关数据接入文档：`docs/data_access/amazon_ads_reports_catalog.md`, `docs/data_access/sp_api_reports_catalog.md`, `docs/data_access/seller_central_manual_exports.md`  
 > 相关数据库 spec：`docs/database/database_current_schema_spec.md`  
 > 相关功能：`docs/features/feature_ads_ingestion.md`, `docs/features/feature_weekly_business_review.md`, `docs/features/feature_monthly_financial_close_report.md`, `docs/features/feature_profit_calculation.md`, `docs/operations/manual_refresh_plan_workflow.md`, `docs/operations/data_refresh_policy.md`  
@@ -44,7 +44,7 @@ Weekly Ads Optimization Report：广告动作口径，回答下周广告怎么�
 | 数据源可用性 | 足够支持 v1：Sponsored Products campaign、targeting、search term、advertised product 日表已入库；2026-05-11..2026-05-17 已通过 backfill/collect/ingest 验证 Ads 数据可加工。 |
 | 数据刷新依赖 | 依赖 `core_rolling` 每 1-2 天刷新 Ads 最近 14 天；历史分析依赖 `backfill_ads_reports.py`。 |
 | 数据库变更 | v1 不新增数据库表，不新增 migration。 |
-| 代码实现 | 已完成 v1：`scripts/generate_weekly_ads_optimization_report.py`、`weekly_ads_optimization_service.py`、`weekly_ads_optimization_repo.py`、unit tests。 |
+| 代码实现 | 已完成 v1/v1.1：`scripts/generate_weekly_ads_optimization_report.py`、`weekly_ads_optimization_service.py`、`weekly_ads_optimization_repo.py`、unit tests；已支持 active action / historical paused lessons 拆分和 negative keyword snapshot 去重。 |
 | 输出形式 | v1 默认输出 `weekly_ads_optimization_{week_start}_{week_end}.json` + `weekly_ads_optimization_{week_start}_{week_end}.xlsx`；不默认输出 Markdown 或多个 CSV。 |
 | 验收样本 | 第一轮使用 `2026-05-11..2026-05-17`，该周 Ads campaign/targeting/search term/advertised product 已成功入库；必要时再用后续完整自然周复核。 |
 
@@ -110,6 +110,10 @@ WAOR 应帮助回答：
 6. 输出 advertised SKU / ASIN 广告影响。
 7. 输出广告与 Sales & Traffic 的交叉指标，例如 TACOS、广告销售占比。
 8. 输出广告与 Settlement advertising fee 的财务口径差异提示。
+9. 区分当前启用广告的可执行动作与已暂停广告的历史复盘，避免把已经停掉的 campaign 混入本周操作清单。
+10. 接入 negative keyword / negative targeting 快照，避免重复建议已经加过的否定词。
+9. 区分当前启用广告的可执行动作与已暂停广告的历史复盘，避免把已经停掉的 campaign 混入本周操作清单。
+10. 接入 negative keyword / negative targeting 快照，避免重复建议已经加过的否定词。
 9. 输出数据覆盖、稳定性、归因窗口和人工复核提醒。
 10. 生成统一 action items sheet，方便运营逐条处理。
 
@@ -313,10 +317,11 @@ v1 不默认输出 Markdown 或多个 CSV：
 | `05_Search_Terms` | Search term 全量聚合表现 | campaign + ad group + search_term |
 | `06_Search_Term_Actions` | 否词、加 exact、降价、观察等 search term 候选 | action candidate |
 | `07_Advertised_Products` | advertised SKU/ASIN 广告影响和贡献 proxy | advertised_sku + advertised_asin |
-| `08_Action_Items` | 面向运营执行的统一动作清单 | action item |
-| `09_Reconciliation_Checks` | 数据覆盖、cross-table sanity、Ads vs Sales/Settlement 检查 | check |
-| `10_Warnings` | 警告和人工复核提示 | warning |
-| `11_Raw_Metadata` | 参数、生成时间、数据源、row counts、策略版本 | metadata |
+| `08_Active_Action_Items` | 当前启用广告的统一动作清单 | action item |
+| `09_Historical_Paused_Lessons` | 已暂停/已结束广告的历史复盘项 | lesson / wasted spend |
+| `10_Reconciliation_Checks` | 数据覆盖、cross-table sanity、Ads vs Sales/Settlement 检查 | check |
+| `11_Warnings` | 警告和人工复核提示 | warning |
+| `12_Raw_Metadata` | 参数、生成时间、数据源、row counts、策略版本 | metadata |
 
 ### 6.4 CLI 设计
 
@@ -363,17 +368,17 @@ v1 不写数据库、不调用外部写接口，因此 `--dry-run` 定义为：
 
 ### 7.1 自然周定义
 
-WAOR 以自然周为最小单位：
+WAOR 以 7 天为最小单位。自动化默认采用 Saturday–Friday，与 WBR 和 Report Delivery 对齐：
 
 ```text
-week_start = Monday
-week_end = Sunday
+week_start = Saturday
+week_end = Friday
 ```
 
 示例：
 
 ```text
-2026-05-11 .. 2026-05-17
+2026-05-16 .. 2026-05-22
 ```
 
 ### 7.2 建议生成时间
@@ -381,8 +386,10 @@ week_end = Sunday
 推荐：
 
 ```text
-每周二或周三生成上一完整自然周。
+每周一生成上一完整 Saturday–Friday 周期。
 ```
+
+周一生成前应先跑 weekly_full 或至少 core_rolling，确保 Ads 最近回填已经入库。手动运行可以指定其他 7 天窗口，但 WAOR 必须和 WBR 使用同一窗口，便于一起复盘。
 
 原因：
 
@@ -465,7 +472,7 @@ Campaign 动作建议：
 
 | 动作 | 条件 |
 |---|---|
-| `scale_candidate` | `purchases_7d >= min_purchases_to_scale` 且 `acos <= target_acos` 且 `sales_7d >= min_sales_to_scale` |
+| `scale_candidate` | `purchases_7d >= min_purchases_to_scale` 且 `acos <= effective_target_acos` 且 `sales_7d >= min_sales_to_scale` |
 | `reduce_budget_or_bid_review` | `sales_7d > 0` 且 `acos > watch_acos` |
 | `waste_review` | `sales_7d = 0` 且 `spend >= no_sale_cost_threshold` |
 | `relevance_review` | `impressions >= 1000` 且 `ctr < low_ctr_threshold` |
@@ -495,7 +502,7 @@ Targeting 动作建议：
 
 | 动作 | 条件 | 说明 |
 |---|---|---|
-| `increase_bid_review` | `purchases_7d >= min_purchases_to_scale` 且 `acos <= target_acos` | 建议加价或提高预算，但需看库存与利润。 |
+| `increase_bid_review` | `purchases_7d >= min_purchases_to_scale` 且 `acos <= effective_target_acos` | 建议加价或提高预算，但需看库存与利润。 |
 | `decrease_bid_review` | `sales_7d > 0` 且 `acos > watch_acos` | 有转化但效率差，先降价而非直接否。 |
 | `pause_or_negative_review` | `purchases_7d = 0` 且 `cost >= no_sale_cost_threshold` 且 `clicks >= no_order_click_threshold` | 需人工确认相关性。 |
 | `listing_check` | `clicks >= no_order_click_threshold` 且 `ctr` 正常但 `purchases_7d = 0` | 可能是价格、主图、review、listing 问题。 |
@@ -532,13 +539,13 @@ Search Term 动作建议：
 
 | 动作 | 条件 | 输出位置 |
 |---|---|---|
-| `negative_candidate` | `sales_7d = 0` 且 `purchases_7d = 0` 且 `cost >= no_sale_cost_threshold` | `06_Search_Term_Actions` / `08_Action_Items` |
-| `negative_candidate_clicks` | `purchases_7d = 0` 且 `clicks >= no_order_click_threshold` | `06_Search_Term_Actions` / `08_Action_Items` |
-| `harvest_to_exact_candidate` | `purchases_7d >= min_purchases_to_scale` 且 `acos <= target_acos` 且 `search_term` 与 `keyword` 不完全一致 | `06_Search_Term_Actions` / `08_Action_Items` |
-| `increase_bid_candidate` | `purchases_7d >= min_purchases_to_scale` 且 `acos <= target_acos` 且 `match_type = exact` | `06_Search_Term_Actions` / `08_Action_Items` |
-| `reduce_bid_candidate` | `sales_7d > 0` 且 `acos > watch_acos` | `06_Search_Term_Actions` / `08_Action_Items` |
-| `relevance_review` | `impressions >= 1000` 且 `ctr < low_ctr_threshold` | `06_Search_Term_Actions` / `08_Action_Items` |
-| `conversion_review` | `clicks >= no_order_click_threshold` 且 `purchases_7d = 0` | `06_Search_Term_Actions` / `08_Action_Items` |
+| `negative_candidate` | `sales_7d = 0` 且 `purchases_7d = 0` 且 `cost >= no_sale_cost_threshold`，且未被 negative snapshot 覆盖 | `06_Search_Term_Actions` / `08_Active_Action_Items` |
+| `negative_candidate_clicks` | `purchases_7d = 0` 且 `clicks >= no_order_click_threshold`，且未被 negative snapshot 覆盖 | `06_Search_Term_Actions` / `08_Active_Action_Items` |
+| `harvest_to_exact_candidate` | `purchases_7d >= min_purchases_to_scale` 且 `acos <= effective_target_acos` 且 `search_term` 与 `keyword` 不完全一致，且未被 negative snapshot 覆盖 | `06_Search_Term_Actions` / `08_Active_Action_Items` |
+| `increase_bid_candidate` | `purchases_7d >= min_purchases_to_scale` 且 `acos <= effective_target_acos` 且 `match_type = exact` | `06_Search_Term_Actions` / `08_Active_Action_Items` |
+| `reduce_bid_candidate` | `sales_7d > 0` 且 `acos > watch_acos` | `06_Search_Term_Actions` / `08_Active_Action_Items` |
+| `relevance_review` | `impressions >= 1000` 且 `ctr < low_ctr_threshold` | `06_Search_Term_Actions` / `08_Active_Action_Items` |
+| `conversion_review` | `clicks >= no_order_click_threshold` 且 `purchases_7d = 0` | `06_Search_Term_Actions` / `08_Active_Action_Items` |
 | `keep_monitoring` | 数据不足或表现中性 | `05_Search_Terms` |
 
 排序规则：
@@ -661,6 +668,53 @@ increase_bid_candidate 不等于立即提价。
 是否已在后台否定过。
 ```
 
+### 9.4 Active actions 与历史复盘分离
+
+WAOR v1.1 起，动作清单必须分为两类：
+
+```text
+Active Campaign Action Items = 当前 enabled / delivering / out of budget 的 campaign、ad group、target、search term，作为本周优先执行清单。
+Historical / Paused Campaign Lessons = 已 paused / archived / ended 的对象，仅作为复盘，不要求本周操作。
+```
+
+原因：广告优化执行者通常只想处理当前仍在花钱的广告；已暂停 campaign 的历史亏损词如果混进 Action Items，会干扰执行优先级。
+
+### 9.5 Negative keyword snapshot 去重
+
+WAOR v1.1 起，应读取或导入 negative keyword / negative targeting 快照，包括：
+
+```text
+Campaign negative keywords
+Ad group negative keywords
+Campaign negative product targeting / if available
+Ad group negative product targeting / if available
+```
+
+第一阶段可以支持 Amazon Ads 手动导出的 CSV；后续再接 Ads API 只读快照。
+
+Search term action 输出必须增加：
+
+```text
+already_negative = true/false
+negative_scope = campaign/ad_group/none
+negative_match_type = negative_exact/negative_phrase/none
+recommended_action = already_done / add_negative_exact / add_negative_phrase / reduce_bid / harvest_to_exact / observe
+```
+
+如果 `already_negative = true`，则不再重复建议添加否定词，只在备注中说明该动作已完成。
+
+### 9.6 Target ACOS 与 break-even ACOS
+
+`target_acos = 30%` 只能作为临时默认值。长期应按 SKU 或产品的广告前利润空间决定：
+
+```text
+break_even_acos = pre_ad_unit_profit / selling_price
+pre_ad_unit_profit = selling_price - unit_cogs - estimated_amazon_platform_fees - expected_promotion_or_refund_reserve
+effective_target_acos = MIN(config_target_acos, sku_break_even_acos * safety_ratio)
+```
+
+在 SKU 成本和平台费估算未完全接入前，报表可先展示默认阈值，并在 notes 中标记 `target_acos_is_default=true`。
+
 ---
 
 ## 10. JSON 结构设计
@@ -683,6 +737,10 @@ increase_bid_candidate 不等于立即提价。
   "thresholds": {
     "target_acos": "0.30",
     "watch_acos": "0.40",
+    "target_acos_is_default": true,
+    "effective_target_acos_policy": "min(config_target_acos, sku_break_even_acos * safety_ratio) when available",
+    "target_acos_is_default": true,
+    "effective_target_acos_policy": "min(config_target_acos, sku_break_even_acos * safety_ratio) when available",
     "target_tacos": "0.20",
     "no_sale_cost_threshold": "10.00",
     "no_order_click_threshold": 12,
@@ -701,6 +759,16 @@ increase_bid_candidate 不等于立即提价。
   "search_term_performance": [],
   "search_term_action_candidates": [],
   "advertised_product_performance": [],
+  "negative_keyword_snapshot": {
+    "campaign_negative_keywords": [],
+    "ad_group_negative_keywords": [],
+    "coverage_status": "missing|partial|ok"
+  },
+  "negative_keyword_snapshot": {
+    "campaign_negative_keywords": [],
+    "ad_group_negative_keywords": [],
+    "coverage_status": "missing|partial|ok"
+  },
   "action_items": [],
   "reconciliation_checks": [],
   "warnings": [],
@@ -906,9 +974,9 @@ action_label
 action_reason
 ```
 
-### 11.8 `08_Action_Items`
+### 11.8 `08_Active_Action_Items`
 
-统一动作清单，供人工逐条处理：
+当前启用广告动作清单，供人工逐条处理：
 
 ```text
 priority
@@ -927,7 +995,38 @@ do_not_auto_apply
 
 `do_not_auto_apply` 在 v1 固定为 true。
 
-### 11.9 `09_Reconciliation_Checks`
+字段应增加：
+
+```text
+entity_status
+already_negative
+negative_scope
+negative_match_type
+```
+
+### 11.9 `09_Historical_Paused_Lessons`
+
+本 sheet 用于复盘已 paused / archived / ended 的 campaign、ad group、target 或 search term。它帮助理解历史浪费来自哪里，但默认不作为本周操作清单。
+
+建议列：
+
+```text
+entity_type
+campaign_name
+ad_group_name
+keyword_or_search_term
+match_type
+status
+spend
+sales_7d
+purchases_7d
+acos
+lesson_type
+recommended_future_guardrail
+notes
+```
+
+### 11.10 `10_Reconciliation_Checks`
 
 字段：
 
@@ -942,7 +1041,7 @@ diff_pct
 message
 ```
 
-### 11.10 `10_Warnings`
+### 11.11 `11_Warnings`
 
 字段：
 
@@ -955,7 +1054,7 @@ related_entity_id
 related_source
 ```
 
-### 11.11 `11_Raw_Metadata`
+### 11.12 `12_Raw_Metadata`
 
 字段：
 
@@ -1048,7 +1147,7 @@ diff = settlement_advertising_fee_abs - ads_api_spend
 输出说明：
 
 ```text
-该差异不用于修正 Ads API spend，只用于财务口径提醒。
+该差异不用于修正 Ads API spend，只用于财务口径提醒。若 Settlement advertising fee 本周大幅高于 Ads API spend，应提示可能是历史广告账单集中 posted，不代表本周投放突然失控。若 Settlement advertising fee 本周大幅高于 Ads API spend，应提示可能是历史广告账单集中 posted，不代表本周投放突然失控。
 ```
 
 ---
@@ -1198,13 +1297,16 @@ runtime/analysis_reports/weekly_ads_optimization/3917953989967300/2026-05-11_202
 
 ## 15. 后续版本规划
 
-### v1.1 Negative keyword 去重
+### v1.1 Active action 与 Negative keyword 去重（已实现）
 
-接入 Amazon Ads negative keyword / negative targeting 列表，避免重复建议已否定的 search term。
+- Action Items 已拆分为 `08_Active_Action_Items` 和 `09_Historical_Paused_Lessons`。
+- 已支持 Amazon Ads negative keyword / negative targeting 数据或手动 CSV 快照，避免重复建议已否定的 search term。
+- Search term actions 已增加 `already_negative`、`negative_scope`、`negative_match_type`、`recommended_action` 字段。
+- CLI 已支持 `--negative-keyword-csv`，可重复传入多个 Amazon Ads negative keyword 导出文件。
 
-### v1.2 Bid / Budget 当前值
+### v1.2 Bid / Budget 当前值与 break-even ACOS
 
-接入 campaign budget、keyword bid、target bid，用于给出更具体的 bid adjustment suggestion。
+接入 campaign budget、keyword bid、target bid，并引入 SKU break-even ACOS / effective target ACOS，用于给出更具体的 bid adjustment suggestion。
 
 ### v1.3 自动生成 Ads Console 操作清单
 
@@ -1227,9 +1329,9 @@ Reason
 
 ---
 
-## 16. v1 实现结果
+## 16. v1 / v1.1 实现结果
 
-本轮已完成 WAOR v1 代码实现：
+本轮已完成 WAOR v1/v1.1 代码实现：
 
 ```text
 scripts/generate_weekly_ads_optimization_report.py
@@ -1243,7 +1345,7 @@ tests/unit/db/test_weekly_ads_optimization_repo.py
 
 ```text
 默认输出 weekly_ads_optimization_{week_start}_{week_end}.json + weekly_ads_optimization_{week_start}_{week_end}.xlsx；
-XLSX 使用 11 个 sheet 承载总览、daily trend、campaign、targeting、search term、动作清单、对账和 metadata；
+XLSX 使用 12 个 sheet 承载总览、daily trend、campaign、targeting、search term、active 动作清单、历史复盘、对账和 metadata；
 不新增数据库表，不新增 migration，不调用 Ads 写接口；
 单元测试 fixture 使用 2026-05-11 起自然周；
 本地验证：PYTHONPATH=src pytest tests/unit -q 通过，python -m compileall -q scripts src tests 通过；
@@ -1270,7 +1372,9 @@ Settlement = financial advertising-fee context only.
 2. 高花费无销售 search term；
 3. 低 ACOS 有订单 search term；
 4. 需要降价/暂停/观察的 keyword/campaign；
-5. 下周可执行的人工动作清单。
+5. 下周可执行的人工动作清单；
+6. 当前启用广告的 action 与历史暂停广告复盘分开展示；
+7. 已存在否定词不重复建议。
 ```
 
 v1 默认输出 JSON + 单个 XLSX 多 sheet，不默认输出 Markdown 或多个 CSV。实现时不新增数据库表，不新增 migration，不调用任何 Ads 写接口。

@@ -13,7 +13,7 @@
 | 已执行 migration | `001_create_core_tables.sql` 29/29 batches；`002_create_indexes.sql` 54/54 batches；`003_add_listing_snapshot_business_key_hash.sql` 3/3 batches；`004_add_inventory_daily_business_key_hash.sql` 3/3 batches；`005_add_sales_traffic_business_key_hashes.sql` 5/5 batches；`006_add_settlement_transaction_business_key.sql` 4/4 batches；`007_add_order_item_business_key.sql` 4/4 batches；`008_add_fba_reimbursement_business_key.sql` 4/4 batches；`009_add_fba_fee_preview_business_key.sql` 4/4 batches；`010_add_promotion_coupon_business_keys.sql` 8/8 batches；`011_add_inventory_ledger_business_keys.sql` 4/4 batches；`012_create_ingestion_job_config.sql` 4/4 batches；`001_seed_ingestion_job_config_core_jobs.sql` 1/1 batch；`013_create_report_email_recipient_config.sql` 3/3 batches；`003_seed_report_email_recipient_config_initial.sql` 2/2 batches；`014_create_pipeline_artifact_store.sql` 5/5 batches；`015_create_pipeline_job_run_audit_tables.sql` 17/17 batches |
 | 用户表数量 | 35 |
 | 已真实入库验证 | Amazon Ads 4 张 SP 日表，首次 inserted=200、重复执行 inserted=0/updated=200；Listing 快照表首次 inserted=6、重复执行 inserted=0/updated=6；Inventory 快照表首次 inserted=5、重复执行 inserted=0/updated=5；Sales & Traffic 首次 inserted=7、重复执行 inserted=0/updated=7；Settlement 首次 inserted=4911、重复执行 inserted=0/updated=4911；Orders 首次 inserted=112、重复执行 inserted=0/updated=112；FBA Reimbursements 首次 inserted=19、重复执行 inserted=0/updated=19；FBA Fee Preview 首次 inserted=8、重复执行 inserted=0/updated=8；Promotion/Coupon 首次 inserted=10、重复执行 inserted=0/updated=10；Inventory Ledger 首次 inserted=357、重复执行 inserted=0/updated=357 |
-| 当前限制 | `amazon_sync_run_log` 尚无 rows_inserted / rows_updated 字段；normalized 表当前 `source_raw_file_id` 仍可能为 NULL；`pipeline_job_config` 已创建并 seed 13 条任务配置，其中利润、周报、邮件任务仍是 disabled placeholder，待功能实现后再启用；`report_email_recipient_config` 已创建并 seed 3 条全局收件人路由；`pipeline_job_run` / `pipeline_job_command_run` / `pipeline_job_artifact_link` / `pipeline_job_table_write_summary` 已创建，等待新镜像 job 首次写入审计记录 |
+| 当前限制 | `amazon_sync_run_log` 尚无 rows_inserted / rows_updated 字段；normalized 表当前 `source_raw_file_id` 仍可能为 NULL；`pipeline_job_config` 已创建并 seed 13 条任务配置，其中利润、周报、邮件任务仍可能按 automation rollout 需要保持 disabled placeholder，报表/邮件功能代码已实现，启用由后续 job rollout 控制；`report_email_recipient_config` 已创建并 seed 3 条全局收件人路由；`pipeline_job_run` / `pipeline_job_command_run` / `pipeline_job_artifact_link` / `pipeline_job_table_write_summary` 已创建，等待新镜像 job 首次写入审计记录 |
 
 ## 1.1 最新执行记录
 
@@ -1339,7 +1339,7 @@ python scripts/export_database_schema_spec.py --output-prefix after_NNN_xxx --in
 - 表用途：记录数据下载、入库、加工、报表和邮件任务的默认参数、执行周期、回看窗口和执行阶段。
 - 当前索引：`UX_pipeline_job_config_job_key`(job_key, unique)；`IX_pipeline_job_config_enabled_phase`(enabled, execution_phase, job_group, manual_run_order)；`IX_pipeline_job_config_marketplace_domain`(marketplace_id, data_domain, job_group)
 - 当前行数：`13`
-- 当前说明：第一批 seed 包含 10 个核心 ingestion 任务，以及 Profit、Weekly Report、Email 三个 placeholder；placeholder 当前 `enabled=0`，待对应功能实现后再启用。
+- 当前说明：第一批 seed 包含 10 个核心 ingestion 任务，以及 Profit、Weekly Report、Email 三个 placeholder；placeholder 当前 `enabled=0`，报表/邮件功能代码已实现，是否启用仍由后续 automation rollout 控制。
 
 | 字段 | 类型 | 可空 | 默认值 | 字段说明 |
 |---|---|---|---|---|

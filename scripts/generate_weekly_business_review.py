@@ -139,7 +139,7 @@ def main() -> None:
     print(
         "period={start}..{end} marketplace={marketplace} profile={profile} "
         "sales={sales} units={units} sessions={sessions} ads_spend={ads_spend} "
-        "estimated_cogs={cogs} contribution_after_ads={contribution}".format(
+        "estimated_cogs={cogs} contribution_after_cogs_ads_before_amazon_fees={contribution}".format(
             start=result.week_start.isoformat(),
             end=result.week_end.isoformat(),
             marketplace=marketplace_id,

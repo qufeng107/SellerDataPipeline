@@ -28,7 +28,7 @@ Orders、Sales & Traffic、Ads、Promotion/Coupon 用于运营解释和归因分
 | 项目 | 状态 |
 |---|---|
 | 需求确认 | 已确认 |
-| 口径冻结 | 已冻结：Settlement-led Financial Profit v1.0 |
+| 口径冻结 | 财务/会计口径已冻结：Settlement-led Financial Profit v1.0；管理经营口径新增 report-date Ads adjustment |
 | 数据源取样 | 已完成，核心 ingestion 已入库 |
 | Parser | 不适用，读取 normalized SQL |
 | Dry-run preview | 已实现：`scripts/calculate_profit_report.py` |
@@ -94,7 +94,7 @@ Profit Calculation Policy v1.0 — Settlement-led Financial Profit
 | 财务金额主来源 | `amazon_settlement_transaction` |
 | 销量/SKU/订单结构 | `amazon_order_item` 辅助解释 |
 | 流量/转化率 | `amazon_sales_traffic_daily` / `amazon_sales_traffic_asin_daily` 辅助解释 |
-| 广告表现 | Ads daily tables 辅助分析；利润表广告费优先 Settlement 实扣 |
+| 广告表现 | Ads daily tables 辅助分析；财务利润广告费优先 Settlement 实扣；管理经营利润可用 Ads API report-date spend 重列广告发生额 |
 | 促销效果 | Promotion/Coupon tables 辅助分析；利润表促销成本优先 Settlement 实扣 |
 | 成本来源 | `amazon_sku_cost` 手工维护/会计输入 |
 | 时间口径 | 财务利润按 Settlement posted date / posted datetime；运营分析按各自 report/order 日期 |
@@ -246,7 +246,7 @@ profit_bucket
 | `revenue` | 商品销售收入、配送收入等正向收入。 |
 | `amazon_fee` | Referral fee、commission、closing fee 等平台费用。 |
 | `fba_fee` | FBA fulfillment / shipping / storage 等费用。 |
-| `advertising` | Amazon 广告实扣费用。 |
+| `advertising` / `advertising_cost` | Amazon 广告实扣费用，财务/会计口径按 Settlement posted-date；管理经营口径可加回后用 Ads API report-date spend 替换。 |
 | `promotion` | Coupon、promotion、deal 等实际扣减。 |
 | `refund` | 退款、退货相关扣减或返还。 |
 | `reimbursement` | FBA 赔偿等正向调整。 |
@@ -267,7 +267,7 @@ profit_bucket 是利润计算的第一版分类辅助，不是不可变会计科
 | 财务利润 | Settlement `posted_date_raw` / `posted_date_time_raw` 解析后的 posted date | 主口径。 |
 | 订单销量 | Orders purchase date / order date | 运营分析口径。 |
 | 流量转化 | Sales & Traffic report date | 运营分析口径。 |
-| 广告表现 | Ads report_date | 广告归因分析口径。 |
+| 广告表现 | Ads report_date | 广告归因分析口径；周报和月报 Management P&L 的广告发生额来源。 |
 | 促销效果 | Promotion/Coupon activity date / report period | 活动分析口径。 |
 
 报表必须明确提示：
@@ -387,7 +387,7 @@ python -m compileall -q scripts src tests
 1. Settlement 收入/费用/退款/广告/促销/赔偿汇总。
 2. SKU 成本按 `effective_from/effective_to` 正确匹配。
 3. 缺少 SKU 成本时默认阻塞正式净利润。
-4. Ads API spend 与 Settlement advertising 不一致时只提示差异，不覆盖财务利润。
+4. Ads API spend 与 Settlement advertising 不一致时，财务利润不覆盖；管理经营利润可以用 report-date Ads adjustment 另行展示。
 5. Orders 数量与 Settlement 数量不一致时只提示差异，不覆盖财务利润。
 6. 同一周期重复生成文件不修改数据库。
 
@@ -409,6 +409,7 @@ python -m compileall -q scripts src tests
 | 日期 | 进展 | 证据/命令 | 备注 |
 |---|---|---|---|
 | 2026-05-18 | 冻结利润核算口径为 Settlement-led Financial Profit v1.0。 | 本文档 + ADR-009。 | 暂不新增 migration。 |
+| 2026-06-01 | 新增管理经营口径：在 Settlement-led 基础上加回 posted-date 广告扣费并扣除 Ads API report-date spend。 | 本文档 + ADR-009 + Monthly Financial Close v1.2。 | 先更新文档，不新增 migration。 |
 | 2026-05-18 | 实现第一版利润 preview。 | `scripts/calculate_profit_report.py`。 | 只输出本地文件，不落库。 |
 | 2026-05-19 | 冻结重叠窗口刷新 + 周度最小分析产物。 | ADR-010 + data_refresh_policy。 | 数据可高频刷新，分析不做日报。 |
 

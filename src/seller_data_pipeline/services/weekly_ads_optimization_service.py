@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from collections import defaultdict
 from collections.abc import Iterable, Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, date, datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from pathlib import Path
@@ -23,7 +23,7 @@ MONEY_QUANT = Decimal("0.01")
 RATIO_QUANT = Decimal("0.0001")
 ZERO = Decimal("0")
 REPORT_TYPE = "weekly_ads_optimization"
-REPORT_VERSION = "v1.0"
+REPORT_VERSION = "v1.1-active-negative-snapshot"
 DEFAULT_OUTPUT_ROOT = "runtime/analysis_reports/weekly_ads_optimization"
 WAOR_SCOPE_NOTE = (
     "Weekly Ads Optimization Report is an operational ads action report. Ads API campaign "
@@ -34,6 +34,8 @@ DO_NOT_AUTO_APPLY_NOTE = (
     "Candidate only. Do not auto-apply; manually review relevance, inventory, current bids, "
     "budgets and existing negative keywords in Amazon Ads Console."
 )
+ACTIVE_CAMPAIGN_STATUSES = {"enabled", "delivering", "out_of_budget"}
+INACTIVE_CAMPAIGN_STATUSES = {"paused", "archived", "ended", "campaign_paused", "deleted"}
 
 
 @dataclass(frozen=True)
@@ -243,6 +245,12 @@ class AdsEntityPerformanceRow:
     action_priority: str = "low"
     action_reason: str = "Data volume or performance is not strong enough for a firm action."
     manual_review_note: str = DO_NOT_AUTO_APPLY_NOTE
+    already_negative: bool = False
+    negative_scope: str | None = None
+    negative_match_type: str | None = None
+    recommended_action: str | None = None
+    is_active_campaign: bool = True
+    action_bucket: str = "active"
 
     def to_campaign_dict(self) -> dict[str, Any]:
         return {
@@ -271,6 +279,9 @@ class AdsEntityPerformanceRow:
         return {
             "campaign_id": self.campaign_id,
             "campaign_name": self.campaign_name,
+            "campaign_status": self.campaign_status,
+            "is_active_campaign": self.is_active_campaign,
+            "action_bucket": self.action_bucket,
             "ad_group_id": self.ad_group_id,
             "ad_group_name": self.ad_group_name,
             "keyword_id": self.keyword_id,
@@ -299,6 +310,9 @@ class AdsEntityPerformanceRow:
         return {
             "campaign_id": self.campaign_id,
             "campaign_name": self.campaign_name,
+            "campaign_status": self.campaign_status,
+            "is_active_campaign": self.is_active_campaign,
+            "action_bucket": self.action_bucket,
             "ad_group_id": self.ad_group_id,
             "ad_group_name": self.ad_group_name,
             "keyword_id": self.keyword_id,
@@ -321,6 +335,10 @@ class AdsEntityPerformanceRow:
             "potential_sales_efficiency": _optional_decimal_to_string(
                 self.potential_sales_efficiency
             ),
+            "already_negative": self.already_negative,
+            "negative_scope": self.negative_scope,
+            "negative_match_type": self.negative_match_type,
+            "recommended_action": self.recommended_action,
             "action_label": self.action_label,
             "action_reason": self.action_reason,
         }
@@ -330,6 +348,13 @@ class AdsEntityPerformanceRow:
             "action_type": self.action_label,
             "priority": self.action_priority,
             "campaign_name": self.campaign_name,
+            "campaign_status": self.campaign_status,
+            "is_active_campaign": self.is_active_campaign,
+            "action_bucket": self.action_bucket,
+            "already_negative": self.already_negative,
+            "negative_scope": self.negative_scope,
+            "negative_match_type": self.negative_match_type,
+            "recommended_action": self.recommended_action,
             "ad_group_name": self.ad_group_name,
             "keyword": self.keyword,
             "match_type": self.match_type,
@@ -367,6 +392,31 @@ class AdsEntityPerformanceRow:
 
 
 @dataclass(frozen=True)
+class NegativeKeywordSnapshotRow:
+    scope: str
+    campaign_id: str | None
+    campaign_name: str | None
+    ad_group_id: str | None
+    ad_group_name: str | None
+    keyword_text: str
+    match_type: str | None
+    state: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "scope": self.scope,
+            "campaign_id": self.campaign_id,
+            "campaign_name": self.campaign_name,
+            "ad_group_id": self.ad_group_id,
+            "ad_group_name": self.ad_group_name,
+            "keyword_text": self.keyword_text,
+            "match_type": self.match_type,
+            "state": self.state,
+            "normalized_keyword_text": _normalize_keyword_text(self.keyword_text),
+        }
+
+
+@dataclass(frozen=True)
 class ActionItem:
     priority: str
     action_type: str
@@ -380,6 +430,12 @@ class ActionItem:
     suggested_manual_action: str
     manual_review_note: str = DO_NOT_AUTO_APPLY_NOTE
     do_not_auto_apply: bool = True
+    action_bucket: str = "active"
+    campaign_status: str | None = None
+    already_negative: bool = False
+    negative_scope: str | None = None
+    negative_match_type: str | None = None
+    recommended_action: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -395,6 +451,12 @@ class ActionItem:
             "suggested_manual_action": self.suggested_manual_action,
             "manual_review_note": self.manual_review_note,
             "do_not_auto_apply": self.do_not_auto_apply,
+            "action_bucket": self.action_bucket,
+            "campaign_status": self.campaign_status,
+            "already_negative": self.already_negative,
+            "negative_scope": self.negative_scope,
+            "negative_match_type": self.negative_match_type,
+            "recommended_action": self.recommended_action,
         }
 
 
@@ -416,22 +478,27 @@ class WeeklyAdsOptimizationResult:
     search_term_action_candidates: list[AdsEntityPerformanceRow]
     advertised_product_performance: list[AdsEntityPerformanceRow]
     action_items: list[ActionItem]
-    reconciliation_checks: list[ReconciliationCheck]
-    warnings: list[WarningEntry]
-    raw_metadata: dict[str, Any]
+    historical_action_items: list[ActionItem] = field(default_factory=list)
+    negative_keyword_snapshot: list[NegativeKeywordSnapshotRow] = field(default_factory=list)
+    reconciliation_checks: list[ReconciliationCheck] = field(default_factory=list)
+    warnings: list[WarningEntry] = field(default_factory=list)
+    raw_metadata: dict[str, Any] = field(default_factory=dict)
     output_files: dict[str, str] = field(default_factory=dict)
 
     def executive_summary(self) -> dict[str, Any]:
         action_count = len(self.action_items)
+        historical_action_count = len(self.historical_action_items)
         non_info_warnings = [warning for warning in self.warnings if warning.severity != "info"]
         headline = (
             f"{self.week_start.isoformat()}..{self.week_end.isoformat()} ads spend was "
             f"{_format_money(self.overall_summary.ads_spend, self.currency)}, with ACOS "
-            f"{_format_ratio(self.overall_summary.acos)} and {action_count} action candidates."
+            f"{_format_ratio(self.overall_summary.acos)} and {action_count} active action candidates "
+            f"({historical_action_count} historical/paused lessons)."
         )
         negative_count = sum(
             1 for row in self.search_term_action_candidates if "negative" in row.action_label
         )
+        already_negative_count = sum(1 for row in self.search_term_performance if row.already_negative)
         harvest_count = sum(
             1
             for row in self.search_term_action_candidates
@@ -444,12 +511,14 @@ class WeeklyAdsOptimizationResult:
                 f"Ads sales 7d: {_format_money(self.overall_summary.ads_sales_7d, self.currency)}.",
                 f"ROAS: {_format_decimal(self.overall_summary.roas)}; TACOS: "
                 f"{_format_ratio(self.overall_summary.tacos)}.",
-                f"Negative candidates: {negative_count}; harvest candidates: {harvest_count}.",
+                f"Negative candidates: {negative_count}; already-negative search terms skipped: {already_negative_count}; harvest candidates: {harvest_count}.",
+                f"Active action items: {action_count}; historical/paused lessons: {historical_action_count}.",
                 f"Non-info warnings: {len(non_info_warnings)}.",
                 WAOR_SCOPE_NOTE,
             ],
             "recommended_next_steps": [
-                "Review 08_Action_Items before changing Ads Console settings.",
+                "Review 08_Active_Action_Items before changing Ads Console settings.",
+                "Use 09_Historical_Paused_Lessons for context only unless a campaign is re-enabled.",
                 "Prioritize high-priority negative candidates and high-efficiency exact harvests.",
                 "Do not force Ads API spend to equal Settlement advertising fee.",
             ],
@@ -486,6 +555,9 @@ class WeeklyAdsOptimizationResult:
                 row.to_advertised_product_dict() for row in self.advertised_product_performance
             ],
             "action_items": [row.to_dict() for row in self.action_items],
+            "active_action_items": [row.to_dict() for row in self.action_items],
+            "historical_action_items": [row.to_dict() for row in self.historical_action_items],
+            "negative_keyword_snapshot": [row.to_dict() for row in self.negative_keyword_snapshot],
             "reconciliation_checks": [check.to_dict() for check in self.reconciliation_checks],
             "warnings": [warning.to_dict() for warning in self.warnings],
             "raw_metadata": _json_safe_mapping(self.raw_metadata),
@@ -510,6 +582,8 @@ class WeeklyAdsOptimizationResult:
             search_term_action_candidates=self.search_term_action_candidates,
             advertised_product_performance=self.advertised_product_performance,
             action_items=self.action_items,
+            historical_action_items=self.historical_action_items,
+            negative_keyword_snapshot=self.negative_keyword_snapshot,
             reconciliation_checks=self.reconciliation_checks,
             warnings=self.warnings,
             raw_metadata=self.raw_metadata,
@@ -577,6 +651,15 @@ class WeeklyAdsOptimizationDataRepo(Protocol):
         end_date: date,
     ) -> dict[str, Any]: ...
 
+    def fetch_negative_keyword_rows(
+        self,
+        *,
+        marketplace_id: str,
+        profile_id: str | None,
+        start_date: date,
+        end_date: date,
+    ) -> list[dict[str, Any]]: ...
+
 
 class WeeklyAdsOptimizationService:
     def __init__(self, repo: WeeklyAdsOptimizationDataRepo | None = None) -> None:
@@ -590,6 +673,7 @@ class WeeklyAdsOptimizationService:
         week_start: date,
         output_root: str | Path = DEFAULT_OUTPUT_ROOT,
         thresholds: WeeklyAdsOptimizationThresholds | None = None,
+        negative_keyword_rows: Sequence[Mapping[str, Any]] | None = None,
     ) -> WeeklyAdsOptimizationResult:
         if self.repo is None:
             raise RuntimeError("repo is required for run(); use calculate_from_rows() in tests")
@@ -634,6 +718,21 @@ class WeeklyAdsOptimizationService:
             start_date=week_start,
             end_date=week_end,
         )
+        fetch_negative_rows = getattr(self.repo, "fetch_negative_keyword_rows", None)
+        repo_negative_keyword_rows = (
+            fetch_negative_rows(
+                marketplace_id=marketplace_id,
+                profile_id=profile_id,
+                start_date=week_start,
+                end_date=week_end,
+            )
+            if callable(fetch_negative_rows)
+            else []
+        )
+        negative_keyword_rows = [
+            *list(repo_negative_keyword_rows or []),
+            *list(negative_keyword_rows or []),
+        ]
         result = self.calculate_from_rows(
             marketplace_id=marketplace_id,
             profile_id=profile_id,
@@ -646,6 +745,7 @@ class WeeklyAdsOptimizationService:
             sales_traffic_rows=sales_rows,
             sku_cost_rows=cost_rows,
             settlement_advertising_summary=settlement_summary,
+            negative_keyword_rows=negative_keyword_rows,
             thresholds=thresholds,
         )
         return self.write_report_files(result=result, output_root=output_root)
@@ -664,6 +764,7 @@ class WeeklyAdsOptimizationService:
         sales_traffic_rows: Sequence[Mapping[str, Any]] | None = None,
         sku_cost_rows: Sequence[Mapping[str, Any]] | None = None,
         settlement_advertising_summary: Mapping[str, Any] | None = None,
+        negative_keyword_rows: Sequence[Mapping[str, Any]] | None = None,
         thresholds: WeeklyAdsOptimizationThresholds | None = None,
         generated_at_utc: datetime | None = None,
     ) -> WeeklyAdsOptimizationResult:
@@ -678,6 +779,7 @@ class WeeklyAdsOptimizationService:
         sales_rows = list(sales_traffic_rows or [])
         costs = list(sku_cost_rows or [])
         settlement = dict(settlement_advertising_summary or {})
+        negative_rows = list(negative_keyword_rows or [])
 
         sales_context = _aggregate_sales_context(sales_rows)
         settlement_fee = _money(_to_decimal(settlement.get("settlement_advertising_fee")))
@@ -701,15 +803,20 @@ class WeeklyAdsOptimizationService:
             total_spend=overall.ads_spend,
             total_sales=overall.ads_sales_7d,
         )
+        campaign_status_index = _campaign_status_index(campaign_performance)
+        negative_keyword_snapshot = _build_negative_keyword_snapshot(negative_rows)
         targeting_performance = _build_targeting_performance(
             targets,
             thresholds=thresholds,
             avg_cpc=avg_cpc,
+            campaign_status_index=campaign_status_index,
         )
         search_term_performance = _build_search_term_performance(
             searches,
             thresholds=thresholds,
             avg_cpc=avg_cpc,
+            campaign_status_index=campaign_status_index,
+            negative_keyword_snapshot=negative_keyword_snapshot,
         )
         search_term_action_candidates = _search_term_action_candidates(search_term_performance)
         cost_index = _build_cost_index(costs)
@@ -738,7 +845,7 @@ class WeeklyAdsOptimizationService:
             overall=overall,
         )
         warnings = _build_warnings(checks=checks, overall=overall)
-        action_items = _build_action_items(
+        action_items, historical_action_items = _build_action_items(
             campaign_performance=campaign_performance,
             targeting_performance=targeting_performance,
             search_term_candidates=search_term_action_candidates,
@@ -761,6 +868,7 @@ class WeeklyAdsOptimizationService:
             advertised_product_rows=products,
             sales_rows=sales_rows,
             sku_cost_rows=costs,
+            negative_keyword_rows=negative_rows,
             settlement=settlement,
             thresholds=thresholds,
         )
@@ -781,6 +889,8 @@ class WeeklyAdsOptimizationService:
             search_term_action_candidates=search_term_action_candidates,
             advertised_product_performance=advertised_product_performance,
             action_items=action_items,
+            historical_action_items=historical_action_items,
+            negative_keyword_snapshot=negative_keyword_snapshot,
             reconciliation_checks=checks,
             warnings=warnings,
             raw_metadata=raw_metadata,
@@ -867,16 +977,26 @@ def build_weekly_ads_optimization_workbook(result: WeeklyAdsOptimizationResult) 
     )
     _write_rows_sheet(
         workbook,
-        "08_Action_Items",
+        "08_Active_Action_Items",
         [add_action_translation_columns(row.to_dict()) for row in result.action_items],
     )
     _write_rows_sheet(
         workbook,
-        "09_Reconciliation_Checks",
+        "09_Historical_Paused_Lessons",
+        [add_action_translation_columns(row.to_dict()) for row in result.historical_action_items],
+    )
+    _write_rows_sheet(
+        workbook,
+        "10_Reconciliation_Checks",
         [row.to_dict() for row in result.reconciliation_checks],
     )
-    _write_rows_sheet(workbook, "10_Warnings", [row.to_dict() for row in result.warnings])
-    _write_rows_sheet(workbook, "11_Raw_Metadata", _metadata_rows(result))
+    _write_rows_sheet(workbook, "11_Warnings", [row.to_dict() for row in result.warnings])
+    _write_rows_sheet(
+        workbook,
+        "12_Negative_Snapshot",
+        [row.to_dict() for row in result.negative_keyword_snapshot],
+    )
+    _write_rows_sheet(workbook, "13_Raw_Metadata", _metadata_rows(result))
     return workbook
 
 
@@ -923,7 +1043,21 @@ def _summary_rows(result: WeeklyAdsOptimizationResult) -> list[dict[str, Any]]:
             "Settlement posted-date context only.",
         ),
         _metric_row("actions", "campaign_count", overall.campaign_count, "count", ""),
-        _metric_row("actions", "action_item_count", len(result.action_items), "count", ""),
+        _metric_row("actions", "active_action_item_count", len(result.action_items), "count", ""),
+        _metric_row(
+            "actions",
+            "historical_paused_lesson_count",
+            len(result.historical_action_items),
+            "count",
+            "Actionable context from inactive/paused campaigns; not primary execution list.",
+        ),
+        _metric_row(
+            "actions",
+            "negative_snapshot_count",
+            len(result.negative_keyword_snapshot),
+            "count",
+            "Existing negative keywords loaded for de-duplication.",
+        ),
         _metric_row("actions", "negative_candidate_count", negative_count, "count", ""),
         _metric_row("actions", "harvest_candidate_count", harvest_count, "count", ""),
         _metric_row(
@@ -1078,12 +1212,15 @@ def _build_campaign_performance(
     for key, bucket in buckets.items():
         metrics = _metrics_from_bucket(bucket)
         action = _campaign_action(metrics=metrics, thresholds=thresholds)
+        campaign_status = _empty_to_none(bucket.get("campaign_status"))
         output.append(
             AdsEntityPerformanceRow(
                 entity_type="campaign",
                 campaign_id=key[0],
                 campaign_name=key[1],
-                campaign_status=_empty_to_none(bucket.get("campaign_status")),
+                campaign_status=campaign_status,
+                is_active_campaign=_is_active_campaign_status(campaign_status),
+                action_bucket=_action_bucket_for_status(campaign_status),
                 spend=metrics["spend"],
                 sales_7d=metrics["sales"],
                 purchases_7d=int(metrics["purchases"]),
@@ -1105,11 +1242,161 @@ def _build_campaign_performance(
     return sorted(output, key=lambda row: row.spend, reverse=True)
 
 
+def _campaign_status_index(rows: Sequence[AdsEntityPerformanceRow]) -> dict[str, str | None]:
+    index: dict[str, str | None] = {}
+    for row in rows:
+        status = row.campaign_status
+        if row.campaign_id:
+            index[f"id:{row.campaign_id}"] = status
+        if row.campaign_name:
+            index[f"name:{row.campaign_name}"] = status
+    return index
+
+
+def _campaign_status_for(
+    index: Mapping[str, str | None],
+    campaign_id: str | None,
+    campaign_name: str | None,
+) -> str | None:
+    if campaign_id and f"id:{campaign_id}" in index:
+        return index[f"id:{campaign_id}"]
+    if campaign_name and f"name:{campaign_name}" in index:
+        return index[f"name:{campaign_name}"]
+    return None
+
+
+def _is_active_campaign_status(status: str | None) -> bool:
+    normalized = _normalize_status(status)
+    if normalized in INACTIVE_CAMPAIGN_STATUSES:
+        return False
+    if normalized in ACTIVE_CAMPAIGN_STATUSES:
+        return True
+    return True
+
+
+def _action_bucket_for_status(status: str | None) -> str:
+    return "active" if _is_active_campaign_status(status) else "historical_or_paused"
+
+
+def _normalize_status(status: str | None) -> str:
+    return str(status or "").strip().lower().replace(" ", "_").replace("-", "_")
+
+
+def _build_negative_keyword_snapshot(
+    rows: Sequence[Mapping[str, Any]],
+) -> list[NegativeKeywordSnapshotRow]:
+    output: list[NegativeKeywordSnapshotRow] = []
+    for row in rows:
+        state = _empty_to_none(
+            row.get("state") or row.get("status") or row.get("negative_keyword_status")
+        )
+        if _normalize_status(state) in {"archived", "deleted"}:
+            continue
+        keyword_text = _first_non_empty(
+            [
+                _empty_to_none(row.get("keyword_text")),
+                _empty_to_none(row.get("negative_keyword_text")),
+                _empty_to_none(row.get("negative_keyword")),
+                _empty_to_none(row.get("keyword")),
+                _empty_to_none(row.get("search_term")),
+            ]
+        )
+        if not keyword_text:
+            continue
+        scope = _empty_to_none(row.get("scope") or row.get("negative_scope"))
+        if not scope:
+            scope = "ad_group" if _empty_to_none(row.get("ad_group_id") or row.get("ad_group_name")) else "campaign"
+        output.append(
+            NegativeKeywordSnapshotRow(
+                scope=str(scope).strip().lower().replace(" ", "_"),
+                campaign_id=_empty_to_none(row.get("campaign_id")),
+                campaign_name=_empty_to_none(row.get("campaign_name")),
+                ad_group_id=_empty_to_none(row.get("ad_group_id")),
+                ad_group_name=_empty_to_none(row.get("ad_group_name")),
+                keyword_text=str(keyword_text).strip(),
+                match_type=_empty_to_none(row.get("match_type") or row.get("negative_match_type")),
+                state=state,
+            )
+        )
+    return output
+
+
+def _apply_negative_snapshot(
+    row: AdsEntityPerformanceRow,
+    snapshot: Sequence[NegativeKeywordSnapshotRow],
+) -> AdsEntityPerformanceRow:
+    match = _matching_negative_keyword(row, snapshot)
+    if match is None:
+        return replace(row, recommended_action=row.recommended_action or row.action_label)
+    action_label = row.action_label
+    action_priority = row.action_priority
+    action_reason = row.action_reason
+    recommended_action = row.action_label
+    if "negative" in row.action_label:
+        action_label = "already_negative"
+        action_priority = "low"
+        action_reason = (
+            "Search term is already covered by existing negative keyword snapshot; "
+            "do not recommend duplicate negative action."
+        )
+        recommended_action = "already_done"
+    return replace(
+        row,
+        already_negative=True,
+        negative_scope=match.scope,
+        negative_match_type=match.match_type,
+        action_label=action_label,
+        action_priority=action_priority,
+        action_reason=action_reason,
+        recommended_action=recommended_action,
+    )
+
+
+def _matching_negative_keyword(
+    row: AdsEntityPerformanceRow,
+    snapshot: Sequence[NegativeKeywordSnapshotRow],
+) -> NegativeKeywordSnapshotRow | None:
+    search = _normalize_keyword_text(row.search_term)
+    if not search:
+        return None
+    for negative in snapshot:
+        if not _negative_scope_matches(row, negative):
+            continue
+        negative_text = _normalize_keyword_text(negative.keyword_text)
+        if not negative_text:
+            continue
+        match_type = str(negative.match_type or "").lower()
+        if "phrase" in match_type:
+            if negative_text in search:
+                return negative
+        elif search == negative_text:
+            return negative
+    return None
+
+
+def _negative_scope_matches(row: AdsEntityPerformanceRow, negative: NegativeKeywordSnapshotRow) -> bool:
+    if negative.campaign_id and row.campaign_id and negative.campaign_id != row.campaign_id:
+        return False
+    if negative.campaign_name and row.campaign_name and negative.campaign_name != row.campaign_name:
+        return False
+    if negative.scope in {"ad_group", "adgroup", "ad_group_negative"}:
+        if negative.ad_group_id and row.ad_group_id and negative.ad_group_id != row.ad_group_id:
+            return False
+        if negative.ad_group_name and row.ad_group_name and negative.ad_group_name != row.ad_group_name:
+            return False
+    return True
+
+
+def _normalize_keyword_text(value: str | None) -> str:
+    return " ".join(str(value or "").strip().lower().split())
+
+
 def _build_targeting_performance(
     rows: Sequence[Mapping[str, Any]],
     *,
     thresholds: WeeklyAdsOptimizationThresholds,
     avg_cpc: Decimal,
+    campaign_status_index: Mapping[str, str | None],
 ) -> list[AdsEntityPerformanceRow]:
     buckets = _aggregate_ads_rows(
         rows,
@@ -1129,11 +1416,16 @@ def _build_targeting_performance(
         metrics = _metrics_from_bucket(bucket)
         action = _targeting_action(metrics=metrics, thresholds=thresholds, avg_cpc=avg_cpc)
         keyword_text = _empty_to_none(key[5]) or _empty_to_none(key[7])
+        campaign_status = _campaign_status_for(campaign_status_index, key[0], key[1])
+        is_active = _is_active_campaign_status(campaign_status)
         output.append(
             AdsEntityPerformanceRow(
                 entity_type="targeting",
                 campaign_id=key[0],
                 campaign_name=key[1],
+                campaign_status=campaign_status,
+                is_active_campaign=is_active,
+                action_bucket=_action_bucket_for_status(campaign_status),
                 ad_group_id=key[2],
                 ad_group_name=key[3],
                 keyword_id=key[4],
@@ -1165,6 +1457,8 @@ def _build_search_term_performance(
     *,
     thresholds: WeeklyAdsOptimizationThresholds,
     avg_cpc: Decimal,
+    campaign_status_index: Mapping[str, str | None],
+    negative_keyword_snapshot: Sequence[NegativeKeywordSnapshotRow],
 ) -> list[AdsEntityPerformanceRow]:
     buckets = _aggregate_ads_rows(
         rows,
@@ -1193,43 +1487,52 @@ def _build_search_term_performance(
         )
         sales = metrics["sales"]
         spend = metrics["spend"]
-        output.append(
-            AdsEntityPerformanceRow(
-                entity_type="search_term",
-                campaign_id=key[0],
-                campaign_name=key[1],
-                ad_group_id=key[2],
-                ad_group_name=key[3],
-                keyword_id=key[4],
-                keyword=key[5],
-                match_type=key[6],
-                targeting=key[7],
-                search_term=key[8],
-                spend=spend,
-                sales_7d=sales,
-                purchases_7d=int(metrics["purchases"]),
-                units_7d=int(metrics["units"]),
-                impressions=int(metrics["impressions"]),
-                clicks=int(metrics["clicks"]),
-                ctr=metrics["ctr"],
-                cpc=metrics["cpc"],
-                cvr=metrics["cvr"],
-                acos=metrics["acos"],
-                roas=metrics["roas"],
-                waste_cost=spend if sales == ZERO else ZERO,
-                potential_sales_efficiency=_money(sales - spend),
-                action_label=action["label"],
-                action_priority=action["priority"],
-                action_reason=action["reason"],
-            )
+        campaign_status = _campaign_status_for(campaign_status_index, key[0], key[1])
+        is_active = _is_active_campaign_status(campaign_status)
+        row = AdsEntityPerformanceRow(
+            entity_type="search_term",
+            campaign_id=key[0],
+            campaign_name=key[1],
+            campaign_status=campaign_status,
+            is_active_campaign=is_active,
+            action_bucket=_action_bucket_for_status(campaign_status),
+            ad_group_id=key[2],
+            ad_group_name=key[3],
+            keyword_id=key[4],
+            keyword=key[5],
+            match_type=key[6],
+            targeting=key[7],
+            search_term=key[8],
+            spend=spend,
+            sales_7d=sales,
+            purchases_7d=int(metrics["purchases"]),
+            units_7d=int(metrics["units"]),
+            impressions=int(metrics["impressions"]),
+            clicks=int(metrics["clicks"]),
+            ctr=metrics["ctr"],
+            cpc=metrics["cpc"],
+            cvr=metrics["cvr"],
+            acos=metrics["acos"],
+            roas=metrics["roas"],
+            waste_cost=spend if sales == ZERO else ZERO,
+            potential_sales_efficiency=_money(sales - spend),
+            action_label=action["label"],
+            action_priority=action["priority"],
+            action_reason=action["reason"],
         )
+        output.append(_apply_negative_snapshot(row, negative_keyword_snapshot))
     return sorted(output, key=lambda row: row.spend, reverse=True)
 
 
 def _search_term_action_candidates(
     rows: Sequence[AdsEntityPerformanceRow],
 ) -> list[AdsEntityPerformanceRow]:
-    actionable = [row for row in rows if row.action_label != "keep_monitoring"]
+    actionable = [
+        row
+        for row in rows
+        if row.action_label not in {"keep_monitoring", "keep_observing", "already_negative"}
+        and not row.already_negative
+    ]
     priority_rank = {"high": 0, "medium": 1, "low": 2}
     return sorted(
         actionable,
@@ -1587,10 +1890,20 @@ def _build_action_items(
     targeting_performance: Sequence[AdsEntityPerformanceRow],
     search_term_candidates: Sequence[AdsEntityPerformanceRow],
     advertised_product_performance: Sequence[AdsEntityPerformanceRow],
-) -> list[ActionItem]:
-    rows: list[ActionItem] = []
+) -> tuple[list[ActionItem], list[ActionItem]]:
+    active_rows: list[ActionItem] = []
+    historical_rows: list[ActionItem] = []
+
+    def append_item(item: ActionItem) -> None:
+        if item.action_bucket == "historical_or_paused":
+            historical_rows.append(item)
+        else:
+            active_rows.append(item)
+
     for row in search_term_candidates:
-        rows.append(
+        if row.already_negative:
+            continue
+        append_item(
             _action_item_from_entity(
                 row,
                 entity_type="search_term",
@@ -1600,7 +1913,7 @@ def _build_action_items(
         )
     for row in campaign_performance:
         if row.action_label != "keep_observing":
-            rows.append(
+            append_item(
                 _action_item_from_entity(
                     row,
                     entity_type="campaign",
@@ -1610,7 +1923,7 @@ def _build_action_items(
             )
     for row in targeting_performance:
         if row.action_label not in {"keep_observing", "low_relevance_check"}:
-            rows.append(
+            append_item(
                 _action_item_from_entity(
                     row,
                     entity_type="targeting",
@@ -1620,7 +1933,7 @@ def _build_action_items(
             )
     for row in advertised_product_performance:
         if row.action_label in {"sku_ads_efficiency_review", "sku_ads_scale_candidate"}:
-            rows.append(
+            append_item(
                 _action_item_from_entity(
                     row,
                     entity_type="advertised_product",
@@ -1629,7 +1942,8 @@ def _build_action_items(
                 )
             )
     priority_rank = {"high": 0, "medium": 1, "low": 2}
-    return sorted(rows, key=lambda row: priority_rank.get(row.priority, 9))[:200]
+    sort_key = lambda row: priority_rank.get(row.priority, 9)
+    return sorted(active_rows, key=sort_key)[:200], sorted(historical_rows, key=sort_key)[:200]
 
 
 def _action_item_from_entity(
@@ -1654,6 +1968,12 @@ def _action_item_from_entity(
         metric_summary=metric_summary,
         reason=row.action_reason,
         suggested_manual_action=_suggested_manual_action(row.action_label),
+        action_bucket=row.action_bucket,
+        campaign_status=row.campaign_status,
+        already_negative=row.already_negative,
+        negative_scope=row.negative_scope,
+        negative_match_type=row.negative_match_type,
+        recommended_action=row.recommended_action or row.action_label,
     )
 
 
@@ -1931,6 +2251,7 @@ def _build_raw_metadata(
     advertised_product_rows: Sequence[Mapping[str, Any]],
     sales_rows: Sequence[Mapping[str, Any]],
     sku_cost_rows: Sequence[Mapping[str, Any]],
+    negative_keyword_rows: Sequence[Mapping[str, Any]],
     settlement: Mapping[str, Any],
     thresholds: WeeklyAdsOptimizationThresholds,
 ) -> dict[str, Any]:
@@ -1945,7 +2266,8 @@ def _build_raw_metadata(
         "source_tables": (
             "amazon_ads_sp_campaign_daily, amazon_ads_sp_targeting_daily, "
             "amazon_ads_sp_search_term_daily, amazon_ads_sp_advertised_product_daily, "
-            "amazon_sales_traffic_daily, amazon_sku_cost, amazon_settlement_transaction"
+            "amazon_sales_traffic_daily, amazon_sku_cost, amazon_settlement_transaction, "
+            "optional_negative_keyword_snapshot"
         ),
         "ads_campaign_row_count": len(campaign_rows),
         "ads_targeting_row_count": len(targeting_rows),
@@ -1953,6 +2275,7 @@ def _build_raw_metadata(
         "ads_advertised_product_row_count": len(advertised_product_rows),
         "sales_traffic_row_count": len(sales_rows),
         "sku_cost_row_count": len(sku_cost_rows),
+        "negative_keyword_snapshot_row_count": len(negative_keyword_rows),
         "settlement_row_count": settlement.get("settlement_row_count"),
         "thresholds": thresholds.to_dict(),
         "note": WAOR_SCOPE_NOTE,
@@ -1984,6 +2307,7 @@ def _suggested_manual_action(action_label: str) -> str:
         "sku_ads_scale_candidate": "Review SKU stock and margins before scaling ads.",
         "sku_ads_efficiency_review": "Review SKU ad efficiency and listing conversion.",
         "sku_ads_waste_review": "Review whether this SKU should continue receiving ad spend.",
+        "already_negative": "Already covered by existing negative keyword snapshot; no duplicate action needed.",
     }
     return suggestions.get(action_label, "Keep monitoring; no immediate manual change suggested.")
 

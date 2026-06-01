@@ -81,7 +81,7 @@ Settlement 是后续利润核算、费用归类、广告费用入账、Coupon/De
 
 | 来源系统 | Report/API/文件 | 文件格式 | 当前取样状态 | 当前解析状态 | 备注 |
 |---|---|---|---|---|---|
-| SP-API Reports | `GET_V2_SETTLEMENT_REPORT_DATA_FLAT_FILE_V2` | tab-delimited flat file | 已取样 8 份，4911 行 | parser 已有，ingestion 待实现 | Amazon 自动生成 settlement report，通常通过 discovery 下载。 |
+| SP-API Reports | `GET_V2_SETTLEMENT_REPORT_DATA_FLAT_FILE_V2` | tab-delimited flat file | 已取样 8 份，4911 行 | parser / ingestion / upsert 已实现并验证 | Amazon 自动生成 settlement report，通常通过 discovery 下载。 |
 
 当前聚合样例：
 
