@@ -138,8 +138,12 @@ METRIC_ZH: dict[str, str] = {
     "Gross Margin Before Ads": "广告前毛利",
     "Contribution After Ads": "扣广告后贡献利润",
     "Contribution Margin After Ads": "扣广告后贡献利润率",
-    "Contribution After COGS & Ads (Before Amazon Fees)": "广告和货本后贡献（未扣完整Amazon费用）",
-    "Contribution Margin After COGS & Ads (Before Amazon Fees)": "广告和货本后贡献率（未扣完整Amazon费用）",
+    (
+        "Contribution After COGS & Ads (Before Amazon Fees)"
+    ): "广告和货本后贡献（未扣完整Amazon费用）",
+    (
+        "Contribution Margin After COGS & Ads (Before Amazon Fees)"
+    ): "广告和货本后贡献率（未扣完整Amazon费用）",
     "Settlement Net Preview": "Settlement净额预览",
     "Alert Count": "告警数量",
     "ads_spend": "广告花费",

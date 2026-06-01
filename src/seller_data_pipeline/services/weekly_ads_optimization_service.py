@@ -492,13 +492,16 @@ class WeeklyAdsOptimizationResult:
         headline = (
             f"{self.week_start.isoformat()}..{self.week_end.isoformat()} ads spend was "
             f"{_format_money(self.overall_summary.ads_spend, self.currency)}, with ACOS "
-            f"{_format_ratio(self.overall_summary.acos)} and {action_count} active action candidates "
+            f"{_format_ratio(self.overall_summary.acos)} and "
+            f"{action_count} active action candidates "
             f"({historical_action_count} historical/paused lessons)."
         )
         negative_count = sum(
             1 for row in self.search_term_action_candidates if "negative" in row.action_label
         )
-        already_negative_count = sum(1 for row in self.search_term_performance if row.already_negative)
+        already_negative_count = sum(
+            1 for row in self.search_term_performance if row.already_negative
+        )
         harvest_count = sum(
             1
             for row in self.search_term_action_candidates
@@ -511,14 +514,24 @@ class WeeklyAdsOptimizationResult:
                 f"Ads sales 7d: {_format_money(self.overall_summary.ads_sales_7d, self.currency)}.",
                 f"ROAS: {_format_decimal(self.overall_summary.roas)}; TACOS: "
                 f"{_format_ratio(self.overall_summary.tacos)}.",
-                f"Negative candidates: {negative_count}; already-negative search terms skipped: {already_negative_count}; harvest candidates: {harvest_count}.",
-                f"Active action items: {action_count}; historical/paused lessons: {historical_action_count}.",
+                (
+                    f"Negative candidates: {negative_count}; "
+                    f"already-negative search terms skipped: {already_negative_count}; "
+                    f"harvest candidates: {harvest_count}."
+                ),
+                (
+                    f"Active action items: {action_count}; "
+                    f"historical/paused lessons: {historical_action_count}."
+                ),
                 f"Non-info warnings: {len(non_info_warnings)}.",
                 WAOR_SCOPE_NOTE,
             ],
             "recommended_next_steps": [
                 "Review 08_Active_Action_Items before changing Ads Console settings.",
-                "Use 09_Historical_Paused_Lessons for context only unless a campaign is re-enabled.",
+                (
+                    "Use 09_Historical_Paused_Lessons for context only "
+                    "unless a campaign is re-enabled."
+                ),
                 "Prioritize high-priority negative candidates and high-efficiency exact harvests.",
                 "Do not force Ads API spend to equal Settlement advertising fee.",
             ],
@@ -1305,7 +1318,10 @@ def _build_negative_keyword_snapshot(
             continue
         scope = _empty_to_none(row.get("scope") or row.get("negative_scope"))
         if not scope:
-            scope = "ad_group" if _empty_to_none(row.get("ad_group_id") or row.get("ad_group_name")) else "campaign"
+            has_ad_group = _empty_to_none(
+                row.get("ad_group_id") or row.get("ad_group_name")
+            )
+            scope = "ad_group" if has_ad_group else "campaign"
         output.append(
             NegativeKeywordSnapshotRow(
                 scope=str(scope).strip().lower().replace(" ", "_"),
@@ -1374,7 +1390,10 @@ def _matching_negative_keyword(
     return None
 
 
-def _negative_scope_matches(row: AdsEntityPerformanceRow, negative: NegativeKeywordSnapshotRow) -> bool:
+def _negative_scope_matches(
+    row: AdsEntityPerformanceRow,
+    negative: NegativeKeywordSnapshotRow,
+) -> bool:
     if negative.campaign_id and row.campaign_id and negative.campaign_id != row.campaign_id:
         return False
     if negative.campaign_name and row.campaign_name and negative.campaign_name != row.campaign_name:
@@ -1382,7 +1401,11 @@ def _negative_scope_matches(row: AdsEntityPerformanceRow, negative: NegativeKeyw
     if negative.scope in {"ad_group", "adgroup", "ad_group_negative"}:
         if negative.ad_group_id and row.ad_group_id and negative.ad_group_id != row.ad_group_id:
             return False
-        if negative.ad_group_name and row.ad_group_name and negative.ad_group_name != row.ad_group_name:
+        if (
+            negative.ad_group_name
+            and row.ad_group_name
+            and negative.ad_group_name != row.ad_group_name
+        ):
             return False
     return True
 
@@ -1942,8 +1965,13 @@ def _build_action_items(
                 )
             )
     priority_rank = {"high": 0, "medium": 1, "low": 2}
-    sort_key = lambda row: priority_rank.get(row.priority, 9)
-    return sorted(active_rows, key=sort_key)[:200], sorted(historical_rows, key=sort_key)[:200]
+    def sort_key(row: ActionItem) -> int:
+        return priority_rank.get(row.priority, 9)
+
+    return (
+        sorted(active_rows, key=sort_key)[:200],
+        sorted(historical_rows, key=sort_key)[:200],
+    )
 
 
 def _action_item_from_entity(
@@ -2307,7 +2335,10 @@ def _suggested_manual_action(action_label: str) -> str:
         "sku_ads_scale_candidate": "Review SKU stock and margins before scaling ads.",
         "sku_ads_efficiency_review": "Review SKU ad efficiency and listing conversion.",
         "sku_ads_waste_review": "Review whether this SKU should continue receiving ad spend.",
-        "already_negative": "Already covered by existing negative keyword snapshot; no duplicate action needed.",
+        "already_negative": (
+            "Already covered by existing negative keyword snapshot; "
+            "no duplicate action needed."
+        ),
     }
     return suggestions.get(action_label, "Keep monitoring; no immediate manual change suggested.")
 

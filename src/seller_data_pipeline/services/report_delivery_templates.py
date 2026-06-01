@@ -44,7 +44,9 @@ METRIC_LABEL_ZH = {
     "TACOS": "TACOS总广告成本比",
     "Estimated COGS": "估算COGS",
     "Contribution after ads": "扣广告后贡献利润",
-    "Contribution after COGS & Ads (before full Amazon fees)": "广告和货本后贡献（未扣完整Amazon费用）",
+    (
+        "Contribution after COGS & Ads (before full Amazon fees)"
+    ): "广告和货本后贡献（未扣完整Amazon费用）",
     "Search term actions": "搜索词动作数",
     "Action items": "动作候选数",
     "Active action items": "当前启用广告动作数",
@@ -168,7 +170,10 @@ class WeeklyBusinessReviewEmailTemplate:
             ("ACOS", _percent(ads_summary.get("acos"))),
             ("TACOS", _percent(ads_summary.get("tacos"))),
             ("Estimated COGS", _kpi_value(report, "estimated_cogs", currency)),
-            ("Contribution after COGS & Ads (before full Amazon fees)", _kpi_value(report, "contribution_after_ads", currency)),
+            (
+                "Contribution after COGS & Ads (before full Amazon fees)",
+                _kpi_value(report, "contribution_after_ads", currency),
+            ),
             ("Alerts", _text(len(report.get("alerts") or []), "0")),
         ]
         headline = _text(executive.get("headline"), "Weekly business review is ready.")
@@ -180,13 +185,18 @@ class WeeklyBusinessReviewEmailTemplate:
         )
         intro_zh = (
             f"{period_key} 每周经营复盘已生成，市场为 {marketplace_id}，"
-            f"广告 profile 为 {profile_id}。本报表用于运营复盘，Settlement 仅作财务参考；广告和货本后贡献不等于最终净利润。"
+            f"广告 profile 为 {profile_id}。"
+            "本报表用于运营复盘，Settlement 仅作财务参考；"
+            "广告和货本后贡献不等于最终净利润。"
         )
         key_points_zh = [
             f"报表状态：{status}。",
             f"本周订购销售额：{sales}。",
             f"广告花费：{_money(ads_summary.get('ads_spend'), currency)}。",
-            f"广告和货本后贡献（未扣完整Amazon费用）：{_kpi_value(report, 'contribution_after_ads', currency)}。",
+            (
+                "广告和货本后贡献（未扣完整Amazon费用）："
+                f"{_kpi_value(report, 'contribution_after_ads', currency)}。"
+            ),
             f"告警数量：{len(report.get('alerts') or [])}。",
         ]
         return _build_draft(

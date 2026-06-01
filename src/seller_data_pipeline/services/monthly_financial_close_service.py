@@ -910,7 +910,12 @@ def _summary_rows(result: MonthlyFinancialCloseResult) -> list[dict[str, Any]]:
             result.currency,
             "Legacy alias: settlement-led estimated profit.",
         ),
-        _metric_row("Profit Margin", fs.profit_margin, None, "Legacy alias: settlement-led margin."),
+        _metric_row(
+            "Profit Margin",
+            fs.profit_margin,
+            None,
+            "Legacy alias: settlement-led margin.",
+        ),
         _metric_row(
             "Advertising Cost",
             fs.advertising_cost,

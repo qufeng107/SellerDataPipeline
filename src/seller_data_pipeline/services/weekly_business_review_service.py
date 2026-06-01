@@ -31,7 +31,8 @@ WBR_SCOPE_NOTE = (
 )
 CONTRIBUTION_SCOPE_NOTE = (
     "Sales & Traffic ordered sales - estimated COGS - Ads API report-date spend; "
-    "before full Amazon platform fees, refunds, storage, account-level fees, and not final net profit."
+    "before full Amazon platform fees, refunds, storage, account-level fees, "
+    "and not final net profit."
 )
 SETTLEMENT_PREVIEW_NOTE = (
     "Settlement preview is posted-date financial context, not final weekly profit."
@@ -933,9 +934,13 @@ def build_weekly_business_review_workbook(result: WeeklyBusinessReviewResult) ->
         status=result.status,
         scope_en=(
             "Sales & Traffic, Orders, and Ads API report-date spend drive weekly business metrics; "
-            "Settlement is finance context only. Contribution after COGS & Ads is not final net profit."
+            "Settlement is finance context only. Contribution after COGS & Ads "
+            "is not final net profit."
         ),
-        scope_zh="Sales & Traffic、Orders 和 Ads API 发生日广告费用于周度经营指标；Settlement 仅作为财务参考。广告和货本后贡献不等于最终净利润。",
+        scope_zh=(
+            "Sales & Traffic、Orders 和 Ads API 发生日广告费用于周度经营指标；"
+            "Settlement 仅作为财务参考。广告和货本后贡献不等于最终净利润。"
+        ),
     )
     _write_rows_sheet(workbook, "01_Executive_Summary", _summary_rows(result))
     _write_rows_sheet(workbook, "02_Daily_Trend", [row.to_dict() for row in result.daily_trend])
