@@ -254,7 +254,7 @@ def build_settlement_merge_sql(*, table_spec: SettlementTargetTableSpec) -> str:
     validate_settlement_table_spec(table_spec)
     columns = table_spec.table_columns
     source_select = ", ".join(f"? AS {_quote_identifier(column)}" for column in columns)
-    update_columns = [column for column in columns if column not in {"business_key_hash"}]
+    update_columns = list(columns)
     update_set = ",\n        ".join(
         f"target.{_quote_identifier(column)} = source.{_quote_identifier(column)}"
         for column in update_columns
@@ -262,16 +262,33 @@ def build_settlement_merge_sql(*, table_spec: SettlementTargetTableSpec) -> str:
     update_set = update_set + ",\n        target.[updated_at] = SYSUTCDATETIME()"
     insert_columns = ", ".join(_quote_identifier(column) for column in columns)
     insert_values = ", ".join(f"source.{_quote_identifier(column)}" for column in columns)
+    natural_key_predicate = _build_settlement_natural_key_predicate()
     return (
         f"MERGE dbo.{_quote_identifier(table_spec.target_table)} WITH (HOLDLOCK) AS target\n"
         f"USING (SELECT {source_select}) AS source\n"
-        "ON target.[business_key_hash] = source.[business_key_hash]\n"
+        "ON (\n"
+        "    target.[business_key_hash] = source.[business_key_hash]\n"
+        f"    OR ({natural_key_predicate})\n"
+        ")\n"
         "WHEN MATCHED THEN\n"
         f"    UPDATE SET {update_set}\n"
         "WHEN NOT MATCHED THEN\n"
         f"    INSERT ({insert_columns})\n"
         f"    VALUES ({insert_values})\n"
         "OUTPUT $action AS merge_action;"
+    )
+
+
+def _build_settlement_natural_key_predicate() -> str:
+    key_columns = (
+        "marketplace_id",
+        "source_report_id",
+        "source_row_index",
+        "source_row_hash",
+    )
+    return " AND ".join(
+        f"target.{_quote_identifier(column)} = source.{_quote_identifier(column)}"
+        for column in key_columns
     )
 
 

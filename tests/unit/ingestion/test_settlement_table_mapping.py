@@ -41,3 +41,25 @@ def test_map_settlement_record_to_table_row_is_db_ready() -> None:
     assert row["source_row_index"] == 2
     assert row["business_key_hash"]
     assert isinstance(row["raw_data"], str)
+
+
+def test_settlement_business_key_is_stable_across_raw_file_paths() -> None:
+    parser = SettlementReportParser()
+    record_a = parser.parse_bytes(
+        content=SETTLEMENT_CONTENT.encode("cp1252"),
+        marketplace_id="ATVPDKIKX0DER",
+        source_report_id="settlement-report-1",
+        source_raw_file_path="reports/raw/2026-05-14/settlement-report-1.txt",
+    )[1]
+    record_b = parser.parse_bytes(
+        content=SETTLEMENT_CONTENT.encode("cp1252"),
+        marketplace_id="ATVPDKIKX0DER",
+        source_report_id="settlement-report-1",
+        source_raw_file_path="reports/raw/2026-05-15/settlement-report-1.txt",
+    )[1]
+
+    row_a = map_settlement_record_to_table_row(record_a, source_row_index=2)
+    row_b = map_settlement_record_to_table_row(record_b, source_row_index=2)
+
+    assert row_a["source_raw_file_path"] != row_b["source_raw_file_path"]
+    assert row_a["business_key_hash"] == row_b["business_key_hash"]
