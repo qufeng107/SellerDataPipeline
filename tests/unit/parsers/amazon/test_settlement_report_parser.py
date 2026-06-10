@@ -221,3 +221,48 @@ def test_settlement_summary_metadata_is_forward_filled_to_transaction_rows() -> 
     assert transaction.amount_category == "fba_fulfillment_fee"
     assert transaction.profit_bucket == "fba_fee"
     assert transaction.raw_data["currency"] == ""
+
+
+def test_classifies_advertiser_refund_as_advertising_cost() -> None:
+    content = (
+        HEADER
+        + "\n"
+        + _row(
+            [
+                "123",
+                "2026-05-01T00:00:00Z",
+                "2026-05-31T00:00:00Z",
+                "2026-06-01T00:00:00Z",
+                "0.00",
+                "USD",
+                "ServiceFee",
+                "",
+                "",
+                "",
+                "",
+                "Amazon.com",
+                "Refund for Advertiser",
+                "TransactionTotalAmount",
+                "500.08",
+                "",
+                "2026-05-30",
+                "2026-05-30 10:00:00 UTC",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+            ]
+        )
+        + "\n"
+    )
+
+    record = SettlementReportParser().parse_text(
+        text=content,
+        marketplace_id="ATVPDKIKX0DER",
+        source_report_id="settlement-report-1",
+    )[0]
+
+    assert record.amount_category == "advertising_refund"
+    assert record.profit_bucket == "advertising_cost"

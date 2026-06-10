@@ -250,6 +250,9 @@ def classify_settlement_amount(
     if amount_kind == "costofadvertising":
         return SettlementAmountClassification("advertising_fee", "advertising_cost")
 
+    if amount_kind == "refundforadvertiser":
+        return SettlementAmountClassification("advertising_refund", "advertising_cost")
+
     if amount_kind in {
         "couponperformancebasedfee",
         "couponparticipationfee",

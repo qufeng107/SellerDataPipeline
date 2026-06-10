@@ -37,10 +37,12 @@ class SettlementTargetTableSpec:
 SETTLEMENT_TARGET_TABLE_SPEC = SettlementTargetTableSpec(
     report_type=SETTLEMENT_V2_REPORT_TYPE,
     target_table=SETTLEMENT_TARGET_TABLE,
+    # Raw paths can change when the same Amazon settlement report is collected on
+    # different runs. Keep the business key tied to the report identity and row
+    # content so repeated downloads upsert the same transaction row.
     business_key_fields=(
         "marketplace_id",
         "source_report_id",
-        "source_raw_file_path",
         "source_row_index",
         "source_row_hash",
     ),
