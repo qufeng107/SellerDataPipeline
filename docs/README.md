@@ -1,6 +1,6 @@
 # SellerDataPipeline 文档总索引
 
-> 更新时间：2026-05-24  
+> 更新时间：2026-08-08  
 > 文档定位：本目录是 SellerDataPipeline 的正式文档入口。未来新需求、新设计、新数据库变更和开发进度都应优先维护在 `docs/` 下。`requirements_to_be_deprecated/` 中历史文档只作为迁移来源或兼容参考，暂不直接删除。
 
 ## 1. 文档体系目标
@@ -49,6 +49,7 @@ docs/
     FEATURE_TEMPLATE.md           # 单功能设计文档标准模板
     feature_azure_sql_foundation.md
     feature_ads_ingestion.md
+    feature_schema_guard_resilience.md
     feature_listing_snapshot_ingestion.md
     feature_profit_calculation.md
     feature_sku_cost_management.md
@@ -75,6 +76,7 @@ docs/
     ADR-009-settlement-led-profit-policy.md
     ADR-011-azure-container-apps-jobs-automation.md
     ADR-012-zero-paid-automation-storage-profile.md
+    ADR-013-schema-guard-compatibility-policy.md
 ```
 
 ## 3. 文档职责边界
@@ -111,6 +113,7 @@ docs/
 10. [`database/database_current_schema_spec.md`](database/database_current_schema_spec.md)
 11. [`features/README.md`](features/README.md)
 12. 已实现功能：[`features/feature_azure_sql_foundation.md`](features/feature_azure_sql_foundation.md)、[`features/feature_ads_ingestion.md`](features/feature_ads_ingestion.md)
+13. 当前优先设计：[`features/feature_schema_guard_resilience.md`](features/feature_schema_guard_resilience.md)；ADR-013 已冻结 additive drift non-blocking / required contract fail-closed 原则，代码实现待下一迭代
 13. 已实现功能：[`features/feature_listing_snapshot_ingestion.md`](features/feature_listing_snapshot_ingestion.md)；对应 003 migration 已执行，Listing dry-run / repository / CLI / execute / 幂等性已完成
 14. 已实现功能：[`features/feature_inventory_ingestion.md`](features/feature_inventory_ingestion.md)；对应 004 migration 已执行，Inventory dry-run / repository / CLI / execute / 幂等性已完成
 15. 已实现功能：[`features/feature_sales_traffic_ingestion.md`](features/feature_sales_traffic_ingestion.md)，005 migration、专用 ingestion、真实 execute 和幂等性验证均已完成

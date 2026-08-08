@@ -9,7 +9,17 @@ from seller_data_pipeline.sampling.ads_report_sampling_plan import get_ads_sampl
 from seller_data_pipeline.sampling.report_analyzer import FieldAnalysis, ReportAnalysis
 
 EMPTY_JSON_MARKER_FIELDS = {"[]", "rows[]", "data[]", "reports[]", "records[]", "results[]"}
-REVIEW_SEVERITY_STATUSES = {"missing_fields", "new_fields", "schema_drift", "unmapped_fields"}
+
+# Only incompatible changes should block normalized ingestion. Additive/unknown fields remain
+# observable through schema-validation events but are intentionally non-blocking.
+BLOCKING_SCHEMA_STATUSES = frozenset(
+    {
+        "missing_fields",
+        "schema_drift",
+        "validation_failed",
+        "empty_report_unexpected",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -55,7 +65,14 @@ class SchemaValidationResult:
 
     @property
     def requires_review(self) -> bool:
-        return self.status in REVIEW_SEVERITY_STATUSES or self.severity in {"warning", "error"}
+        """Return whether ingestion must stop for manual review.
+
+        Warnings are deliberately not equivalent to blocking conditions. In particular,
+        additive schema drift (``new_fields``) and unmapped extra fields are safe to
+        observe while continuing to parse/write the fields the pipeline already knows.
+        """
+
+        return self.status in BLOCKING_SCHEMA_STATUSES or self.severity == "error"
 
     def to_dict(self) -> dict[str, object]:
         return asdict(self)
@@ -129,37 +146,55 @@ def validate_report_schema(
     expected_fields = expected_schema.normalized_expected_fields()
     required_fields = expected_schema.normalized_required_fields()
     missing_fields = tuple(sorted(required_fields - observed_fields))
+    optional_missing_fields = tuple(sorted((expected_fields - required_fields) - observed_fields))
     new_fields = tuple(sorted(observed_fields - expected_fields))
     if expected_schema.allow_extra_fields:
         new_fields = ()
 
     if analysis.row_count == 0:
         status = "empty_report" if expected_schema.allow_empty_report else "empty_report_unexpected"
-        severity = "info" if expected_schema.allow_empty_report else "warning"
+        severity = "info" if expected_schema.allow_empty_report else "error"
         message = (
             "Downloaded report is empty. Keep the raw file and do not infer table columns from "
             "this sample alone."
         )
     elif missing_fields and new_fields:
         status = "schema_drift"
-        severity = "warning"
-        message = "Observed report fields have both missing expected fields and new fields."
+        severity = "error"
+        message = (
+            "Observed report is missing required fields and also contains new fields; "
+            "the required data contract is not satisfied."
+        )
     elif missing_fields:
         status = "missing_fields"
-        severity = "warning"
-        message = "Observed report is missing one or more expected fields."
+        severity = "error"
+        message = "Observed report is missing one or more required fields."
     elif new_fields:
         status = "new_fields"
         severity = "warning"
-        message = "Observed report contains fields that are not in the expected schema."
+        message = (
+            "Observed report contains fields that are not in the expected schema; "
+            "the required data contract is still satisfied."
+        )
+        if optional_missing_fields:
+            message += " Some known optional fields are absent."
     elif fail_on_unmapped_fields and unmapped_fields:
         status = "unmapped_fields"
         severity = "warning"
-        message = "Observed report fields match expected schema but include unmapped fields."
+        message = (
+            "Observed report fields satisfy the required schema but include unmapped fields; "
+            "ingestion may continue while the drift is recorded."
+        )
     else:
         status = "ok"
         severity = "info"
-        message = "Observed report fields match the expected schema."
+        if optional_missing_fields:
+            message = (
+                "Observed report satisfies the required schema; some known optional fields "
+                "are absent."
+            )
+        else:
+            message = "Observed report fields match the expected schema."
 
     return SchemaValidationResult(
         source_system=analysis.source_system,

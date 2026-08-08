@@ -1,11 +1,12 @@
 # Feature: Sales & Traffic Report Ingestion
 
-> 文档状态：Implemented; execute and idempotency verified  
+> 文档状态：Implemented v1.1; Azure verification pending  
 > 负责人：AI / 待定  
-> 更新时间：2026-05-17  
+> 更新时间：2026-08-08  
 > 功能状态：Implemented  
 > 相关数据接入文档：`docs/data_access/sp_api_reports_catalog.md`  
-> 相关数据库 spec：`docs/database/database_current_schema_spec.md`
+> 相关数据库 spec：`docs/database/database_current_schema_spec.md`  
+> 相关 ADR：`docs/adr/ADR-013-schema-guard-compatibility-policy.md`
 
 ---
 
@@ -31,7 +32,7 @@ salesAndTrafficByAsin -> dbo.amazon_sales_traffic_asin_daily
 | 目标表 | 已存在于 `001_create_core_tables.sql` |
 | Parser | 已实现 |
 | Dry-run preview | 已实现并通过 |
-| Schema guard | 已实现并通过 |
+| Schema guard | v1.1 robustness 已实现：additive drift non-blocking，6 个 required raw path fail closed；Azure 重跑待验证 |
 | Repository/upsert | 已实现并通过 |
 | 005 migration | 已在 Azure SQL 执行成功，5/5 batches；live schema export 已完成 |
 | Azure SQL execute | 已完成，sync_run_id=7，inserted=7 updated=0 |
@@ -368,14 +369,39 @@ Dry-run: prepared_rows=7 requires_review=False
 |---|---|---|---|
 | 缺少 `reportSpecification` | 阻断 | yes | yes |
 | 缺少 `salesAndTrafficByDate` | 阻断第一版入库 | yes | yes |
-| 缺少 `salesAndTrafficByAsin` | 允许作为 warning 或阻断，需实现时确认；当前样例有 1 行 | maybe | yes |
+| 缺少 `salesAndTrafficByAsin` | 默认 warning；不应让核心 date-level Sales & Traffic 全部停写；如 ASIN 表业务要求变化再单独收紧 | no | yes |
 | `dateGranularity` 非 `DAY` | `requires_review=True` | yes | yes |
-| 出现新增 JSON path | `requires_review=True`，先人工确认是否要结构化 | yes for first version | yes |
+| 出现新增 JSON path | 记录 `new_fields` warning；继续按原 mapping 入库，未知字段保留在 raw data | no | yes |
 | decimal/int 解析失败 | 阻断 execute | yes | yes |
 | currencyCode 不一致 | warning 或 review；第一版建议 review | yes for first version | yes |
 | JSON 解析失败 | 阻断 dry-run/execute | yes | yes if possible |
 
-第一版 expected schema 应覆盖当前 94 个 observed JSON path。
+第一版 expected schema 曾覆盖当前 94 个 observed JSON path。2026-08-08 起，本功能按 `feature_schema_guard_resilience.md` / ADR-013 修订为“向后兼容数据契约”：`expected_fields` 仅用于已知字段目录和 drift 观测，`required_fields` 只保留安全入库所需的最小核心契约；**新增 JSON path 不再阻断**。
+
+### 12.1 2026-08-08 schema guard robustness v1.1 实现
+
+2026-08-03 真实自动化运行观察到 24 个新增 JSON path，`missing_fields=[]`，但旧策略仍返回 `requires_review=True` 并阻断写库。该行为已确认属于 false-positive blocking。v1.1 已按以下规则实现：
+
+| 场景 | 新行为 | 是否阻塞 |
+|---|---|---|
+| 仅出现新增 JSON path | `status=new_fields`, warning, `requires_review=False` | no |
+| 已知非关键字段缺失 | warning/info | no |
+| required field 缺失 | `requires_review=True` | yes |
+| `dateGranularity != DAY` | semantic incompatibility | yes |
+| 核心 decimal/int/JSON 解析失败 | error | yes |
+
+v1.1 required raw contract 已实现为：
+
+```text
+reportSpecification.reportType
+reportSpecification.reportOptions.dateGranularity
+salesAndTrafficByDate[].date
+salesAndTrafficByDate[].salesByDate.orderedProductSales.amount
+salesAndTrafficByDate[].salesByDate.unitsOrdered
+salesAndTrafficByDate[].trafficByDate.sessions
+```
+
+ASIN section 的身份字段后续采用 row-level/conditional validation；不再把所有 observed path 全部视为 required。Amazon 新增的 shipped/refund/B2B/feedback 字段暂不新增 SQL column，继续由 raw file / `raw_data` 保留。
 
 ## 13. 审计与可追溯性
 
@@ -453,7 +479,7 @@ python scripts/ingest_sales_traffic_report.py --marketplace-id ATVPDKIKX0DER --e
 
 ## 17. 当前限制与后续优化
 
-1. 当前样例只有 6 个日期维度行和 1 个 ASIN 维度行，字段覆盖可能不完整。
+1. 2026-08-03 已观察到 Amazon 在该 report 中新增 24 个字段；v1.1 已按 ADR-013 改为 non-blocking warning，并由单元测试覆盖完整 24-path 回归。
 2. 当前样例 ASIN 维度疑似 Parent 粒度；后续需要确认 CHILD 粒度是否会出现 `childAsin`。
 3. 第一版只支持 `dateGranularity=DAY`；WEEK/MONTH 应另行设计。
 4. 当前不直接和订单、结算、广告、库存合并；这些进入后续分析功能。
@@ -464,3 +490,15 @@ python scripts/ingest_sales_traffic_report.py --marketplace-id ATVPDKIKX0DER --e
 | 日期 | 方案 | 处理 | 原因 |
 |---|---|---|---|
 | 2026-05-17 | 直接做通用 `ingest_sp_api_reports.py` 同时支持 Listing / Inventory / Sales | 暂缓 | 按渐进式抽象规则，继续使用专用入口，等多条 SP-API ingestion 链路稳定后再抽象。 |
+
+
+## 19. v1.1 Schema Guard 实现验证记录
+
+| 日期 | 验证项 | 结果 |
+|---|---|---|
+| 2026-08-08 | 2026-08-03 24 个 additive JSON path 回归 | `status=new_fields`, `requires_review=False`, `prepared_rows=2` |
+| 2026-08-08 | required `salesAndTrafficByDate[].date` 缺失 | `requires_review=True`, `prepared_rows=0` |
+| 2026-08-08 | validation event | 仍记录 `new_fields_json`，non-blocking drift 的 `requires_review=False` |
+| 2026-08-08 | 全量测试 | `313 passed`; `compileall` success |
+
+Azure 生产/手动 Job 验收尚未执行；本地代码阶段完成后不得把该项写成已云端恢复。

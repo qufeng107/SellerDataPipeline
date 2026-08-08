@@ -1,11 +1,12 @@
 # Feature: FBA Inventory Snapshot Ingestion
 
-> 文档状态：Implemented  
+> 文档状态：Implemented v1.1; Azure verification pending  
 > 负责人：AI / 待定  
-> 更新时间：2026-05-17  
+> 更新时间：2026-08-08  
 > 功能状态：Implemented  
 > 相关数据接入文档：`docs/data_access/sp_api_reports_catalog.md`  
-> 相关数据库 spec：`docs/database/database_current_schema_spec.md`
+> 相关数据库 spec：`docs/database/database_current_schema_spec.md`  
+> 相关 ADR：`docs/adr/ADR-013-schema-guard-compatibility-policy.md`
 
 ---
 
@@ -23,7 +24,7 @@
 | 数据源取样 | 已完成 |
 | Parser | 已实现，复用 `FbaInventoryParser` |
 | Dry-run preview | 已实现并用真实 raw file 验证 |
-| Schema guard | 已实现，当前真实样例 `ok` |
+| Schema guard | v1.1 robustness 已实现：additive drift non-blocking，required raw contract=`sku` + `afn-fulfillable-quantity`；Azure 重跑待验证 |
 | Repository/upsert | 已实现并通过用户本地 Azure SQL execute 验证 |
 | 004 migration | 已执行成功，3/3 batches |
 | Azure SQL execute | 已完成，首次 inserted=5、updated=0 |
@@ -284,13 +285,33 @@ Dry-run: prepared_rows=5 requires_review=False
 | 场景 | 处理方式 | 是否阻塞入库 | 是否记录 validation event |
 |---|---|---|---|
 | 缺少必需字段，例如 `sku` | `requires_review=True` | yes | yes |
-| 出现新增字段 | `requires_review=True`，先人工确认是否需要结构化 | yes for first version | yes |
+| 出现新增字段 | 记录 `new_fields` warning；继续按原 mapping 入库，未知字段保留在 raw data | no | yes |
 | 空文件但有 header | 允许 dry-run，execute 写 0 行；状态可为 warning | no | yes |
 | 数字解析失败 | 记录错误并阻断 execute | yes | yes |
 | boolean 解析失败 | 记录错误并阻断 execute | yes | yes |
 | 编码或 delimiter 识别失败 | 阻断 dry-run/execute | yes | yes if possible |
 
-第一版 expected schema 应覆盖当前 22 个 observed source fields。
+第一版 expected schema 曾覆盖当前 22 个 observed source fields。2026-08-08 起按 `feature_schema_guard_resilience.md` / ADR-013 修订：`expected_fields` 用于 drift 观测，`required_fields` 只保留最小核心契约；新增字段不再阻断。
+
+### 11.1 2026-08-08 schema guard robustness v1.1 实现
+
+2026-08-03 真实自动化运行新增：
+
+```text
+afn-fc-transfer-quantity
+afn-onhand-buyable-quantity
+```
+
+同时 `missing_fields=[]`。旧策略仍返回 `requires_review=True` 并阻断库存快照，导致后续报告持续看到 2026-06-22 的 stale inventory snapshot。该行为已确认属于 false-positive blocking。
+
+v1.1 required raw contract 已实现为：
+
+```text
+sku
+afn-fulfillable-quantity
+```
+
+其他已知字段继续尽量解析和写入；单个非关键字段整体缺失不应停止全部 inventory snapshot。关键整数/布尔/编码解析失败仍阻断。
 
 ## 12. 审计与可追溯性
 
@@ -360,7 +381,7 @@ python scripts/ingest_inventory_snapshot.py --marketplace-id ATVPDKIKX0DER --exe
 
 ## 16. 当前限制与后续优化
 
-1. 当前样例只有 5 行，字段覆盖范围有限；后续不同市场或不同账号可能出现新增字段。
+1. 2026-08-03 已观察到 Amazon 新增 `afn-fc-transfer-quantity`、`afn-onhand-buyable-quantity`；v1.1 已按 ADR-013 作为 non-blocking additive drift，并保留于 raw data / validation event。
 2. 当前不区分多仓库/FC 维度；该 report 是 SKU/FNSKU 聚合库存快照，不是仓库事件明细。
 3. 当前不计算库存周转、缺货天数、清仓速度；这些应进入独立分析功能。
 4. 当前不写 `amazon_raw_report_file` 外键；后续应补充 raw registry。
@@ -384,7 +405,10 @@ python scripts/ingest_inventory_snapshot.py --marketplace-id ATVPDKIKX0DER --exe
 | 2026-05-17 | Inventory first execute | `sync_run_id=5 attempted=5 inserted=5 updated=0 written=5 skipped=0` | 首次真实写库成功。 |
 | 2026-05-17 | Inventory idempotency execute | `sync_run_id=6 attempted=5 inserted=0 updated=5 written=5 skipped=0` | 重复执行未重复插入，幂等性通过。 |
 | 2026-05-17 | Unit tests | `135 passed` | 新增 Inventory mapping/dry-run/repository/orchestration 测试。 |
+| 2026-08-08 | v1.1 additive drift 回归 | 新增两个 2026-08-03 字段后 `status=new_fields`, `requires_review=False`, `prepared_rows=1` | 未新增 SQL column，raw data 完整保留。 |
+| 2026-08-08 | v1.1 minimal contract 回归 | 只有 `sku` + `afn-fulfillable-quantity` 仍可正常解析；缺 `sku` 则阻断 | optional columns 不再导致全量停写。 |
+| 2026-08-08 | Full tests / compileall | `313 passed`; compileall success | Azure Job 验收待部署新镜像后执行。 |
 
 ## 19. 后续维护说明
 
-Inventory 当前首版入库闭环已完成。后续如果 `GET_FBA_MYI_UNSUPPRESSED_INVENTORY_DATA` 出现新增字段或字段缺失，应按 schema guard 结果先更新本文档，再决定是否新增 migration。不要回改 `001/002/003/004`。
+Inventory 当前首版入库闭环已完成。后续 `GET_FBA_MYI_UNSUPPRESSED_INVENTORY_DATA` 出现**新增字段**时，按 ADR-013 记录 drift 但不中断现有字段入库；只有 required contract 缺失或语义/解析错误才阻断。只有新字段有明确结构化业务价值时才另开 feature/migration；不要回改 `001/002/003/004`。

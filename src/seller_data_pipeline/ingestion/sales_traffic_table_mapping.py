@@ -18,7 +18,14 @@ SALES_TRAFFIC_DAILY_TARGET_TABLE = "amazon_sales_traffic_daily"
 SALES_TRAFFIC_ASIN_TARGET_TABLE = "amazon_sales_traffic_asin_daily"
 
 SALES_TRAFFIC_EXPECTED_FIELDS: tuple[str, ...] = tuple(sorted(SALES_AND_TRAFFIC_MAPPED_FIELDS))
-SALES_TRAFFIC_REQUIRED_FIELDS: tuple[str, ...] = SALES_TRAFFIC_EXPECTED_FIELDS
+SALES_TRAFFIC_REQUIRED_FIELDS: tuple[str, ...] = (
+    "reportSpecification.reportType",
+    "reportSpecification.reportOptions.dateGranularity",
+    "salesAndTrafficByDate[].date",
+    "salesAndTrafficByDate[].salesByDate.orderedProductSales.amount",
+    "salesAndTrafficByDate[].salesByDate.unitsOrdered",
+    "salesAndTrafficByDate[].trafficByDate.sessions",
+)
 
 
 @dataclass(frozen=True)

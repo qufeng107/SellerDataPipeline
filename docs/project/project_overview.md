@@ -1,6 +1,6 @@
 # SellerDataPipeline 项目总览
 
-> 更新时间：2026-06-01  
+> 更新时间：2026-08-08  
 > 文档定位：说明项目目的、边界、阶段目标、整体架构和当前真实状态。详细进度见 `docs/project/progress_next_steps.md`；数据库真实结构见 `docs/database/database_current_schema_spec.md`。
 
 ## 1. 项目背景
@@ -36,7 +36,7 @@ Amazon raw data
 - 使用 `src/ + scripts/ + tests/` 结构。
 - 使用 Azure SQL 作为结构化数据仓库。
 - 使用本地 raw file 和后续 Blob Storage 保存原始报表。
-- 使用 schema guard 检查字段漂移，避免 Amazon 报表字段变化后静默写错库。
+- 使用 schema guard 检查字段漂移：additive new fields 保持可观测但不中断生产，required contract 缺失或关键语义/解析变化才阻断，避免静默写错库。
 - 使用 repository 层统一数据库 upsert，不在业务代码里到处拼 SQL。
 - 使用 dry-run preview 支持入库前人工检查。
 - 后续使用 Azure Container Apps Jobs 做定时任务，而不是让 GitHub Actions 充当长期业务调度器。

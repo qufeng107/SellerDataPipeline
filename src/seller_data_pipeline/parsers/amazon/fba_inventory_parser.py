@@ -16,28 +16,9 @@ from seller_data_pipeline.sampling.raw_report_files import (
 
 FBA_INVENTORY_REQUIRED_FIELDS = {
     "sku",
-    "fnsku",
-    "asin",
-    "product-name",
-    "condition",
-    "your-price",
-    "mfn-listing-exists",
-    "mfn-fulfillable-quantity",
-    "afn-listing-exists",
-    "afn-warehouse-quantity",
     "afn-fulfillable-quantity",
-    "afn-unsellable-quantity",
-    "afn-reserved-quantity",
-    "afn-total-quantity",
-    "per-unit-volume",
-    "afn-inbound-working-quantity",
-    "afn-inbound-shipped-quantity",
-    "afn-inbound-receiving-quantity",
-    "afn-researching-quantity",
-    "afn-reserved-future-supply",
-    "afn-future-supply-buyable",
-    "store",
 }
+
 
 
 @dataclass(frozen=True)
@@ -128,13 +109,16 @@ class FbaInventoryParser:
 
         effective_snapshot_date = snapshot_date or datetime.now(UTC).date()
         records: list[FbaInventorySnapshotRecord] = []
-        for raw_row in reader:
+        for row_number, raw_row in enumerate(reader, start=2):
             row = {str(key): (value or "").strip() for key, value in raw_row.items() if key}
+            seller_sku = _empty_to_none(row.get("sku"))
+            if seller_sku is None:
+                raise ValueError(f"Missing required FBA inventory sku at row {row_number}")
             records.append(
                 FbaInventorySnapshotRecord(
                     marketplace_id=marketplace_id,
                     snapshot_date=effective_snapshot_date.isoformat(),
-                    seller_sku=row["sku"],
+                    seller_sku=seller_sku,
                     fnsku=_empty_to_none(row.get("fnsku")),
                     asin=_empty_to_none(row.get("asin")),
                     product_name=_empty_to_none(row.get("product-name")),
