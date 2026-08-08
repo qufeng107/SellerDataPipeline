@@ -1,7 +1,7 @@
 # SellerDataPipeline 当前进展与下一步计划
 
 > 更新时间：2026-08-08  
-> 当前版本：v1.84 settlement normal ingestion batch upsert implemented locally on top of v1.83; Azure verification pending  
+> 当前版本：v1.85 Settlement typed OPENJSON set-based upsert implemented locally; v1.84 Azure performance test superseded  
 > 文档定位：记录项目真实进展、已完成里程碑、当前非阻塞问题和下一步开发顺序。本文不承载详细字段设计；功能细节见 `docs/features/`。
 
 ## 1. 当前一句话状态
@@ -173,6 +173,25 @@ v1.84 已在 v1.83 基础上实现，二者职责正交：v1.83 决定 Monthly �
 
 Azure 下一步：构建 v1.84 main image，更新 monthly jobs；直接重跑 `2026-06 collect_ingest`（不重新 submit），同时验收 v1.83 chunk completeness 与 v1.84 Settlement batch upsert；随后重新生成 6 月月报并恢复 7 月。
 
+
+
+## 1.0.6 2026-08-08 Settlement JSON set-based upsert v1.85
+
+v1.84 Azure 真实 recovery 结果：v1.83 Monthly chunk completeness 已验证通过，但 Settlement staging 暴露性能回退：`1815` rows 需 `37` 个 50-row / ~1950-parameter INSERT，约 20 分钟仅完成 25/37；另有 `2106` rows 因 duplicate business key 回退逐行 MERGE。
+
+v1.85 本地改为：
+
+- 相同 business key + 相同 immutable source identity 在 Python 按 input order last-write-wins 折叠。
+- 相同 hash 但 source identity 不同 -> financial integrity conflict，fail closed / rollback。
+- 每批最多 500 unique keys 序列化为单个 JSON parameter。
+- Azure SQL 用 typed `OPENJSON(CAST(? AS NVARCHAR(MAX))) WITH (...)` 直接作为 MERGE source。
+- 取消 temp staging multi-parameter INSERT 和 duplicate per-row fallback。
+- `business_key_hash` immutable、`WITH (HOLDLOCK)`、audit transaction contract 不变。
+- 旧 sequential audit count 语义保持：`updated_rows = valid_input_rows - inserted_rows`。
+- 3921 unique-row 回归目标为 8 个 JSON MERGE round trips。
+- 不新增 migration / live schema。
+
+Azure 下一步：停止当前 v1.84 长跑 execution；main build v1.85 后仅重跑 2026-06 collect_ingest（不重新 submit），验收 Settlement runtime 和 `commands=9 failed=0`，再生成并发送 6 月 Financial Close。
 
 ## 1.1 2026-05-25 Azure Jobs handoff status
 

@@ -1,8 +1,8 @@
 # Settlement Normal Ingestion Batch Upsert
 
-> 文档状态：Implemented locally / Azure verification pending  
+> 文档状态：Superseded by v1.85 after Azure performance test  
 > 更新时间：2026-08-08  
-> 迭代版本：v1.84  
+> 迭代版本：v1.84（生产性能验收未通过，后续由 v1.85 替代）  
 > 相关功能：`feature_settlement_ingestion.md`、`feature_monthly_chunk_completeness_recovery.md`、`feature_settlement_repair_scalability.md`
 
 ## 1. 背景
@@ -180,3 +180,18 @@ Markdown internal links
 ```
 
 当前环境未安装 Ruff CLI；CI blocking Safety lint 仍由 GitHub Actions 执行（E4/E7/E9/F/B）。
+
+## 8. Azure 生产结果与替代决定
+
+v1.84 在 2026-06 recovery 中确认 v1.83 chunk completeness 正常，但 Settlement staging 性能未达到目标：
+
+```text
+staging rows=1815
+batch_size=50
+batches=37
+duplicate_fallback_rows=2106
+22:34:05 -> start staging
+22:54:35 -> only batch 25/37
+```
+
+因此 multi-row VALUES + ~1950 parameters/batch 在当前 Azure SQL 环境仍过慢，而且 duplicate fallback 继续保留大量逐行 MERGE。该实现不再作为最终方案；v1.85 改为 exact-duplicate collapse + typed OPENJSON bounded batches + set-based MERGE。详见 `feature_settlement_ingestion_json_upsert.md`。

@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from collections import Counter
 from dataclasses import dataclass
 from decimal import Decimal
+import json
 import logging
 from typing import Any
 
@@ -15,9 +15,48 @@ from seller_data_pipeline.ingestion.settlement_table_mapping import (
 
 logger = logging.getLogger(__name__)
 
-_SQL_SERVER_SAFE_PARAMETER_BUDGET = 2000
-_DEFAULT_SETTLEMENT_STAGE_BATCH_SIZE = 50
-_SETTLEMENT_STAGE_TABLE = "#settlement_upsert_stage"
+_SETTLEMENT_JSON_SQL_TYPES: dict[str, str] = {
+    "marketplace_id": "NVARCHAR(50)",
+    "settlement_id": "NVARCHAR(200)",
+    "settlement_start_date_raw": "NVARCHAR(100)",
+    "settlement_end_date_raw": "NVARCHAR(100)",
+    "deposit_date_raw": "NVARCHAR(100)",
+    "total_amount": "DECIMAL(18,4)",
+    "currency": "NVARCHAR(10)",
+    "is_settlement_summary": "BIT",
+    "transaction_type": "NVARCHAR(120)",
+    "order_id": "NVARCHAR(200)",
+    "merchant_order_id": "NVARCHAR(200)",
+    "adjustment_id": "NVARCHAR(200)",
+    "shipment_id": "NVARCHAR(200)",
+    "marketplace_name": "NVARCHAR(200)",
+    "amount_type": "NVARCHAR(120)",
+    "amount_description": "NVARCHAR(300)",
+    "amount": "DECIMAL(18,4)",
+    "amount_category": "NVARCHAR(120)",
+    "profit_bucket": "NVARCHAR(120)",
+    "fulfillment_id": "NVARCHAR(100)",
+    "posted_date_raw": "NVARCHAR(100)",
+    "posted_date_time_raw": "NVARCHAR(100)",
+    "order_item_code": "NVARCHAR(200)",
+    "merchant_order_item_id": "NVARCHAR(200)",
+    "merchant_adjustment_item_id": "NVARCHAR(200)",
+    "seller_sku": "NVARCHAR(200)",
+    "quantity_purchased": "INT",
+    "promotion_id": "NVARCHAR(500)",
+    "source_system": "NVARCHAR(50)",
+    "source_report_type": "NVARCHAR(120)",
+    "source_report_id": "NVARCHAR(120)",
+    "source_report_request_id": "BIGINT",
+    "source_raw_file_id": "BIGINT",
+    "source_raw_file_path": "NVARCHAR(1000)",
+    "source_run_id": "BIGINT",
+    "source_row_hash": "NVARCHAR(100)",
+    "raw_data": "NVARCHAR(MAX)",
+    "source_row_index": "INT",
+    "business_key_hash": "NVARCHAR(100)",
+}
+_DEFAULT_SETTLEMENT_JSON_BATCH_SIZE = 500
 
 _SYNC_RUN_LOG_COLUMNS = (
     "workflow_name",
@@ -175,18 +214,20 @@ class SettlementRepo:
         rows: list[dict[str, Any]],
         source_run_id: int | None = None,
         table_spec: SettlementTargetTableSpec = SETTLEMENT_TARGET_TABLE_SPEC,
-        stage_batch_size: int = _DEFAULT_SETTLEMENT_STAGE_BATCH_SIZE,
+        json_batch_size: int = _DEFAULT_SETTLEMENT_JSON_BATCH_SIZE,
     ) -> SettlementUpsertTableResult:
-        """Upsert Settlement rows with bounded staging + set-based MERGE.
+        """Upsert Settlement rows with bounded set-based JSON MERGE batches.
 
-        Rows whose business key appears more than once in the same input stay on
-        the legacy single-row MERGE path. SQL Server MERGE rejects multiple source
-        rows matching the same target row; the fallback preserves the old
-        sequential semantics while the normal unique-key path removes thousands
-        of Azure SQL round trips.
+        Duplicate business keys are collapsed in input order with last-write-wins
+        semantics, matching the final target state of the legacy sequential MERGE.
+        A duplicate hash that maps to a different immutable source identity is
+        treated as a financial-integrity conflict and fails closed.
         """
         validate_settlement_table_spec(table_spec)
-        columns = table_spec.table_columns
+        validate_settlement_json_sql_types(table_spec=table_spec)
+        if json_batch_size < 1:
+            raise ValueError("json_batch_size must be >= 1")
+
         valid_payloads: list[dict[str, Any]] = []
         skipped = 0
         for row in rows:
@@ -197,98 +238,81 @@ class SettlementRepo:
             payload["source_run_id"] = source_run_id
             valid_payloads.append(payload)
 
-        key_counts = Counter(str(row["business_key_hash"]) for row in valid_payloads)
-        staged_payloads = [
-            row for row in valid_payloads if key_counts[str(row["business_key_hash"])] == 1
-        ]
-        fallback_payloads = [
-            row for row in valid_payloads if key_counts[str(row["business_key_hash"])] > 1
-        ]
+        if not valid_payloads:
+            return SettlementUpsertTableResult(
+                table_name=table_spec.target_table,
+                report_type=table_spec.report_type,
+                attempted_rows=len(rows),
+                inserted_rows=0,
+                updated_rows=0,
+                skipped_rows=skipped,
+            )
 
-        inserted = 0
-        updated = 0
+        collapsed_payloads, collapsed_duplicate_rows = collapse_settlement_payloads_by_business_key(
+            valid_payloads
+        )
+        batch_count = (len(collapsed_payloads) + json_batch_size - 1) // json_batch_size
+        logger.info(
+            "Settlement JSON set-based upsert input_rows=%s unique_business_keys=%s "
+            "collapsed_duplicate_rows=%s batch_size=%s batches=%s",
+            len(valid_payloads),
+            len(collapsed_payloads),
+            collapsed_duplicate_rows,
+            json_batch_size,
+            batch_count,
+        )
+
         cursor = self.connection.cursor()
-
-        if staged_payloads:
-            effective_batch_size = _settlement_stage_batch_size(
-                requested_batch_size=stage_batch_size,
-                column_count=len(columns),
-            )
-            batch_count = (len(staged_payloads) + effective_batch_size - 1) // effective_batch_size
+        merge_sql = build_settlement_json_merge_sql(table_spec=table_spec)
+        inserted = 0
+        merged_unique_rows = 0
+        for batch_number, start in enumerate(
+            range(0, len(collapsed_payloads), json_batch_size),
+            start=1,
+        ):
+            batch = collapsed_payloads[start : start + json_batch_size]
+            source_json = build_settlement_json_payload(rows=batch, table_spec=table_spec)
             logger.info(
-                "Settlement batch upsert staging rows=%s batch_size=%s batches=%s "
-                "duplicate_fallback_rows=%s",
-                len(staged_payloads),
-                effective_batch_size,
+                "Settlement JSON MERGE batch=%s/%s rows=%s json_bytes=%s",
+                batch_number,
                 batch_count,
-                len(fallback_payloads),
+                len(batch),
+                len(source_json.encode("utf-8")),
             )
-            cursor.execute(build_settlement_stage_create_sql(table_spec=table_spec))
-            for batch_number, start in enumerate(
-                range(0, len(staged_payloads), effective_batch_size),
-                start=1,
-            ):
-                batch = staged_payloads[start : start + effective_batch_size]
-                sql = build_settlement_stage_insert_sql(
-                    table_spec=table_spec,
-                    row_count=len(batch),
-                )
-                params = tuple(
-                    _db_value(payload.get(column))
-                    for payload in batch
-                    for column in columns
-                )
-                cursor.execute(sql, params)
-                if batch_number == batch_count or batch_number % 25 == 0:
-                    logger.info(
-                        "Settlement batch upsert staged batch=%s/%s rows_staged=%s/%s",
-                        batch_number,
-                        batch_count,
-                        min(batch_number * effective_batch_size, len(staged_payloads)),
-                        len(staged_payloads),
-                    )
-
-            cursor.execute(build_settlement_staged_merge_sql(table_spec=table_spec))
+            cursor.execute(merge_sql, (source_json,))
             action_rows = list(cursor.fetchall())
-            if len(action_rows) != len(staged_payloads):
+            if len(action_rows) != len(batch):
                 raise RuntimeError(
-                    "Settlement staged MERGE action count mismatch: "
-                    f"expected={len(staged_payloads)} actual={len(action_rows)}"
+                    "Settlement JSON MERGE action count mismatch: "
+                    f"batch={batch_number}/{batch_count} "
+                    f"expected={len(batch)} actual={len(action_rows)}"
                 )
             for action_row in action_rows:
                 action = _read_merge_action(action_row)
                 if action == "INSERT":
                     inserted += 1
-                elif action == "UPDATE":
-                    updated += 1
-                else:
+                elif action != "UPDATE":
                     raise RuntimeError(
-                        f"Settlement staged MERGE returned unexpected action: {action!r}"
+                        f"Settlement JSON MERGE returned unexpected action: {action!r}"
                     )
-            cursor.execute(build_settlement_stage_drop_sql())
+            merged_unique_rows += len(batch)
 
-        if fallback_payloads:
-            logger.warning(
-                "Settlement batch upsert found %s row(s) with duplicate business keys; "
-                "using sequential MERGE fallback for safety.",
-                len(fallback_payloads),
+        if merged_unique_rows != len(collapsed_payloads):
+            raise RuntimeError(
+                "Settlement JSON MERGE unique-row count mismatch: "
+                f"expected={len(collapsed_payloads)} actual={merged_unique_rows}"
             )
-            single_row_sql = build_settlement_merge_sql(table_spec=table_spec)
-            for payload in fallback_payloads:
-                params = tuple(_db_value(payload.get(column)) for column in columns)
-                cursor.execute(single_row_sql, params)
-                action = _read_merge_action(cursor.fetchone())
-                if action == "INSERT":
-                    inserted += 1
-                else:
-                    updated += 1
 
+        # Preserve legacy sequential audit semantics. For a duplicate key with k
+        # input rows, a missing target would have produced one INSERT followed by
+        # k-1 UPDATEs; an existing target would have produced k UPDATEs.
+        updated = len(valid_payloads) - inserted
         logger.info(
-            "Settlement batch upsert completed attempted=%s staged=%s duplicate_fallback=%s "
-            "inserted=%s updated=%s skipped=%s",
+            "Settlement JSON set-based upsert completed attempted=%s unique_business_keys=%s "
+            "collapsed_duplicate_rows=%s inserted=%s updated=%s skipped=%s",
             len(rows),
-            len(staged_payloads),
-            len(fallback_payloads),
+            len(collapsed_payloads),
+            collapsed_duplicate_rows,
             inserted,
             updated,
             skipped,
@@ -426,7 +450,7 @@ class NullSettlementRepo:
         rows: list[dict[str, Any]],
         source_run_id: int | None = None,
         table_spec: SettlementTargetTableSpec = SETTLEMENT_TARGET_TABLE_SPEC,
-        stage_batch_size: int = _DEFAULT_SETTLEMENT_STAGE_BATCH_SIZE,
+        json_batch_size: int = _DEFAULT_SETTLEMENT_JSON_BATCH_SIZE,
     ) -> SettlementUpsertTableResult:  # noqa: ARG002
         return SettlementUpsertTableResult(
             table_name=table_spec.target_table,
@@ -454,65 +478,88 @@ def validate_settlement_table_spec(table_spec: SettlementTargetTableSpec) -> Non
             )
 
 
-def _settlement_stage_batch_size(*, requested_batch_size: int, column_count: int) -> int:
-    if requested_batch_size < 1:
-        raise ValueError("stage_batch_size must be >= 1")
-    if column_count < 1:
-        raise ValueError("Settlement staging requires at least one mapped column")
-    max_rows = _SQL_SERVER_SAFE_PARAMETER_BUDGET // column_count
-    if max_rows < 1:
-        raise ValueError("Settlement row has too many columns for SQL Server parameter budget")
-    return min(requested_batch_size, max_rows)
+def validate_settlement_json_sql_types(*, table_spec: SettlementTargetTableSpec) -> None:
+    expected = set(table_spec.table_columns)
+    configured = set(_SETTLEMENT_JSON_SQL_TYPES)
+    if configured != expected:
+        missing = sorted(expected - configured)
+        extra = sorted(configured - expected)
+        raise ValueError(
+            "Settlement JSON SQL type mapping is out of sync with table mapping: "
+            f"missing={missing} extra={extra}"
+        )
 
 
-def build_settlement_stage_create_sql(*, table_spec: SettlementTargetTableSpec) -> str:
-    validate_settlement_table_spec(table_spec)
-    columns = ", ".join(_quote_identifier(column) for column in table_spec.table_columns)
-    return (
-        f"SELECT TOP (0) {columns}\n"
-        f"INTO {_SETTLEMENT_STAGE_TABLE}\n"
-        f"FROM dbo.{_quote_identifier(table_spec.target_table)};"
-    )
+def collapse_settlement_payloads_by_business_key(
+    rows: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], int]:
+    """Collapse exact duplicate business keys using deterministic last-write-wins.
+
+    A business-key hash is derived from the immutable source identity. If the
+    same hash appears with a different identity, do not assume it is safe: fail
+    closed so the transaction can roll back and the data can be investigated.
+    """
+    by_key: dict[str, dict[str, Any]] = {}
+    identities: dict[str, tuple[Any, Any, Any, Any]] = {}
+    for payload in rows:
+        key = str(payload["business_key_hash"])
+        identity = (
+            payload.get("marketplace_id"),
+            payload.get("source_report_id"),
+            payload.get("source_row_index"),
+            payload.get("source_row_hash"),
+        )
+        existing_identity = identities.get(key)
+        if existing_identity is not None and existing_identity != identity:
+            raise RuntimeError(
+                "Settlement duplicate business_key_hash maps to conflicting source identities: "
+                f"business_key_hash={key} first={existing_identity!r} next={identity!r}"
+            )
+        identities[key] = identity
+        # Assignment replaces the payload so the final target values match the
+        # legacy sequential path's last occurrence for this exact source identity.
+        by_key[key] = payload
+    collapsed = list(by_key.values())
+    return collapsed, len(rows) - len(collapsed)
 
 
-def build_settlement_stage_insert_sql(
+def build_settlement_json_payload(
     *,
+    rows: list[dict[str, Any]],
     table_spec: SettlementTargetTableSpec,
-    row_count: int,
 ) -> str:
     validate_settlement_table_spec(table_spec)
-    if row_count < 1:
-        raise ValueError("row_count must be >= 1")
-    columns = table_spec.table_columns
-    parameter_count = row_count * len(columns)
-    if parameter_count > _SQL_SERVER_SAFE_PARAMETER_BUDGET:
-        raise ValueError(
-            "Settlement staging INSERT exceeds SQL Server safe parameter budget: "
-            f"{parameter_count} > {_SQL_SERVER_SAFE_PARAMETER_BUDGET}"
-        )
-    column_sql = ", ".join(_quote_identifier(column) for column in columns)
-    row_placeholders = "(" + ", ".join("?" for _ in columns) + ")"
-    values_sql = ", ".join(row_placeholders for _ in range(row_count))
-    return (
-        f"INSERT INTO {_SETTLEMENT_STAGE_TABLE} ({column_sql})\n"
-        f"VALUES {values_sql};"
-    )
+    validate_settlement_json_sql_types(table_spec=table_spec)
+    payload_rows = [
+        {column: _json_parameter_value(row.get(column)) for column in table_spec.table_columns}
+        for row in rows
+    ]
+    return json.dumps(payload_rows, ensure_ascii=False, separators=(",", ":"))
 
 
-def build_settlement_staged_merge_sql(*, table_spec: SettlementTargetTableSpec) -> str:
+def build_settlement_json_merge_sql(*, table_spec: SettlementTargetTableSpec) -> str:
     validate_settlement_table_spec(table_spec)
+    validate_settlement_json_sql_types(table_spec=table_spec)
     columns = table_spec.table_columns
-    update_columns = [column for column in columns if column not in {"business_key_hash"}]
+    openjson_columns = ",\n        ".join(
+        f"{_quote_identifier(column)} {_SETTLEMENT_JSON_SQL_TYPES[column]} '$.{column}'"
+        for column in columns
+    )
+    update_columns = [column for column in columns if column != "business_key_hash"]
     update_set = ",\n        ".join(
         f"target.{_quote_identifier(column)} = source.{_quote_identifier(column)}"
         for column in update_columns
     )
-    update_set = update_set + ",\n        target.[updated_at] = SYSUTCDATETIME()"
+    update_set += ",\n        target.[updated_at] = SYSUTCDATETIME()"
     insert_columns = ", ".join(_quote_identifier(column) for column in columns)
     insert_values = ", ".join(f"source.{_quote_identifier(column)}" for column in columns)
     return (
         f"MERGE dbo.{_quote_identifier(table_spec.target_table)} WITH (HOLDLOCK) AS target\n"
-        f"USING {_SETTLEMENT_STAGE_TABLE} AS source\n"
+        "USING (\n"
+        "    SELECT *\n"
+        "    FROM OPENJSON(CAST(? AS NVARCHAR(MAX)))\n"
+        f"    WITH (\n        {openjson_columns}\n    )\n"
+        ") AS source\n"
         "ON target.[business_key_hash] = source.[business_key_hash]\n"
         "WHEN MATCHED THEN\n"
         f"    UPDATE SET {update_set}\n"
@@ -522,9 +569,6 @@ def build_settlement_staged_merge_sql(*, table_spec: SettlementTargetTableSpec) 
         "OUTPUT $action AS merge_action;"
     )
 
-
-def build_settlement_stage_drop_sql() -> str:
-    return f"DROP TABLE IF EXISTS {_SETTLEMENT_STAGE_TABLE};"
 
 
 def build_settlement_merge_sql(*, table_spec: SettlementTargetTableSpec) -> str:
@@ -594,8 +638,16 @@ def _db_value(value: Any) -> Any:
     if isinstance(value, bool):
         return int(value)
     if isinstance(value, (dict, list, tuple)):
-        import json
+        return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return value
 
+
+def _json_parameter_value(value: Any) -> Any:
+    if isinstance(value, Decimal):
+        return str(value)
+    if isinstance(value, bool):
+        return int(value)
+    if isinstance(value, (dict, list, tuple)):
         return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     return value
 
@@ -617,9 +669,9 @@ __all__ = [
     "build_insert_sql",
     "build_insert_with_output_sql",
     "build_settlement_merge_sql",
-    "build_settlement_stage_create_sql",
-    "build_settlement_stage_drop_sql",
-    "build_settlement_stage_insert_sql",
-    "build_settlement_staged_merge_sql",
+    "build_settlement_json_merge_sql",
+    "build_settlement_json_payload",
+    "collapse_settlement_payloads_by_business_key",
+    "validate_settlement_json_sql_types",
     "validate_settlement_table_spec",
 ]
