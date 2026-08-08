@@ -33,6 +33,7 @@
 | [`feature_sku_cost_management.md`](feature_sku_cost_management.md) | Implemented | SKU 成本 xlsx 模板导出与导入；默认 dry-run、按 marketplace + SKU + effective_from 幂等写入 `amazon_sku_cost`。 |
 | [`feature_monthly_financial_close_report.md`](feature_monthly_financial_close_report.md) | Implemented v1.2 / pending live verification | 月度财务结算报表；已支持 Settlement-led Estimated Profit 与 Management Estimated Profit with Report-date Ads 双利润口径、Ads Timing Reconciliation、会计辅助包，默认输出 JSON + 单个 XLSX 多 sheet。 |
 | [`feature_monthly_ingestion_recovery.md`](feature_monthly_ingestion_recovery.md) | Implemented locally / Azure recovery pending | v1.81：Settlement canonical-key MERGE、rollback 语义、exact duplicate repair；Promotion/Coupon additive drift 回归；用于恢复 2026-06 / 2026-07 月报。 |
+| [`feature_settlement_repair_scalability.md`](feature_settlement_repair_scalability.md) | Implemented locally / Azure verification pending | v1.82：针对 3,878 个历史 Settlement duplicate groups，将 repair 从 N+1 SQL 改为 single-scan + bounded batch DML，并限制默认日志输出。 |
 | [`feature_weekly_business_review.md`](feature_weekly_business_review.md) | Implemented v1.1 / pending live verification | 每周经营周报；默认 Saturday-Friday，贡献指标明确为“广告和货本后贡献，未扣完整 Amazon 平台费”，默认输出 JSON + 单个 XLSX 多 sheet。 |
 | [`feature_weekly_ads_optimization_report.md`](feature_weekly_ads_optimization_report.md) | Implemented v1.1 / pending live verification | 每周广告优化报表；已支持 active action / historical paused lessons 拆分、negative keyword snapshot 去重和 `--negative-keyword-csv`，默认输出 JSON + 单个 XLSX 多 sheet，不调用 Ads 写接口。 |
 | [`feature_report_delivery_email.md`](feature_report_delivery_email.md) | Implemented v1.3 | 统一报表交付/邮件草稿包；已支持从三类报表 JSON 生成不同模板邮件正文、manifest 和 XLSX 附件包。SMTP 发送已实现，收件人从 `report_email_recipient_config` 读取；v1.3 增加中英文双语邮件正文和 XLSX 固定标签/说明。 |
@@ -43,7 +44,7 @@
 
 ## 3. 下一批建议
 
-当前核心 ingestion 功能已完成，Schema Guard resilience 已完成 main/Azure weekly 验收。当前优先执行 v1.81 monthly recovery：先 dry-run/repair Settlement exact duplicates，再补跑 2026-06 / 2026-07 monthly collect_ingest 和 report delivery。后续优先级应切换为：
+当前核心 ingestion 功能已完成，Schema Guard resilience 已完成 main/Azure weekly 验收。当前优先执行 v1.82 Settlement repair scalability 验证：重新 dry-run 3,878 个 exact duplicate groups；确认 conflict=0 后 execute，再补跑 2026-06 / 2026-07 monthly collect_ingest 和 report delivery。后续优先级应切换为：
 
 1. 构建并部署包含 `feature_schema_guard_resilience.md` / ADR-013 实现的新镜像；手动重跑最近一期 weekly `collect_ingest` + `report_delivery`，确认 Sales/Inventory 恢复和邮件 send guard 解除。
 2. 执行 `sql/seeds/002_update_ingestion_job_config_refresh_policy.sql`，使 `pipeline_job_config` 与重叠窗口刷新策略一致。

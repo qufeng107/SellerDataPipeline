@@ -110,3 +110,50 @@ def test_settlement_repo_insert_and_update_sync_run_log() -> None:
     assert len(cursor.executed) == 2
     assert "OUTPUT INSERTED.[id]" in cursor.executed[0][0]
     assert "UPDATE dbo.[amazon_sync_run_log]" in cursor.executed[1][0]
+
+
+class BatchCursor:
+    def __init__(self) -> None:
+        self.executed: list[tuple[str, tuple[object, ...]]] = []
+        self.rowcount = 0
+
+    def execute(self, sql: str, params: tuple[object, ...] = ()) -> None:
+        self.executed.append((sql, params))
+        self.rowcount = (
+            len(params) // 2 if "INNER JOIN (VALUES" in sql else len(params)
+        )
+
+    def fetchall(self) -> list[object]:
+        return []
+
+
+class BatchConnection:
+    def __init__(self, cursor: BatchCursor) -> None:
+        self._cursor = cursor
+
+    def cursor(self) -> BatchCursor:
+        return self._cursor
+
+
+def test_settlement_repo_batches_large_duplicate_deletes() -> None:
+    cursor = BatchCursor()
+    repo = SettlementRepo(BatchConnection(cursor))
+
+    deleted = repo.delete_transaction_rows_by_ids(list(range(1, 2502)), batch_size=1000)
+
+    assert deleted == 2501
+    assert len(cursor.executed) == 3
+    assert [len(params) for _, params in cursor.executed] == [1000, 1000, 501]
+
+
+def test_settlement_repo_batches_business_key_rekeys_under_sql_parameter_limit() -> None:
+    cursor = BatchCursor()
+    repo = SettlementRepo(BatchConnection(cursor))
+    rows = [(row_id, f"hash-{row_id}") for row_id in range(1, 2002)]
+
+    updated = repo.update_transaction_business_key_hashes(rows, batch_size=900)
+
+    assert updated == 2001
+    assert len(cursor.executed) == 3
+    assert [len(params) for _, params in cursor.executed] == [1800, 1800, 402]
+    assert all("INNER JOIN (VALUES" in sql for sql, _ in cursor.executed)

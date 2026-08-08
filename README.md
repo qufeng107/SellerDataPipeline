@@ -70,6 +70,7 @@ Amazon SP-API / Amazon Ads API / Seller Central raw exports
 | [`docs/features/feature_sku_cost_management.md`](docs/features/feature_sku_cost_management.md) | SKU 成本 xlsx 模板导出/导入功能；用于维护 `amazon_sku_cost`。 |
 | [`docs/features/feature_monthly_financial_close_report.md`](docs/features/feature_monthly_financial_close_report.md) | 月度财务结算报表设计；CEO/CFO 财务结算和 SKU 利润分析。 |
 | [`docs/features/feature_monthly_ingestion_recovery.md`](docs/features/feature_monthly_ingestion_recovery.md) | v1.81 monthly 恢复：Settlement 幂等/事务加固 + Promotion/Coupon schema drift 回归。 |
+| [`docs/features/feature_settlement_repair_scalability.md`](docs/features/feature_settlement_repair_scalability.md) | v1.82 Settlement repair 性能加固：single-scan planning、bounded batch DML、日志有界输出。 |
 | [`docs/features/feature_weekly_business_review.md`](docs/features/feature_weekly_business_review.md) | 每周经营周报设计；销售、流量、广告、SKU、库存和风险行动建议。 |
 | [`docs/features/feature_weekly_ads_optimization_report.md`](docs/features/feature_weekly_ads_optimization_report.md) | 每周广告优化报表设计；输出 campaign/keyword/search term/SKU 广告动作清单。 |
 | [`docs/database/database_current_schema_spec.md`](docs/database/database_current_schema_spec.md) | 当前真实 Azure SQL 表结构、字段、索引与数据来源。 |

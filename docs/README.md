@@ -51,6 +51,7 @@ docs/
     feature_ads_ingestion.md
     feature_schema_guard_resilience.md
     feature_monthly_ingestion_recovery.md
+    feature_settlement_repair_scalability.md
     feature_listing_snapshot_ingestion.md
     feature_profit_calculation.md
     feature_sku_cost_management.md
@@ -115,7 +116,7 @@ docs/
 10. [`database/database_current_schema_spec.md`](database/database_current_schema_spec.md)
 11. [`features/README.md`](features/README.md)
 12. 已实现功能：[`features/feature_azure_sql_foundation.md`](features/feature_azure_sql_foundation.md)、[`features/feature_ads_ingestion.md`](features/feature_ads_ingestion.md)
-13. 已实现并完成 Azure weekly 验收：[`features/feature_schema_guard_resilience.md`](features/feature_schema_guard_resilience.md)；ADR-013 已冻结 additive drift non-blocking / required contract fail-closed 原则。当前 monthly 恢复设计见 [`features/feature_monthly_ingestion_recovery.md`](features/feature_monthly_ingestion_recovery.md)。
+13. 已实现并完成 Azure weekly 验收：[`features/feature_schema_guard_resilience.md`](features/feature_schema_guard_resilience.md)；ADR-013 已冻结 additive drift non-blocking / required contract fail-closed 原则。当前 monthly 恢复设计见 [`features/feature_monthly_ingestion_recovery.md`](features/feature_monthly_ingestion_recovery.md)，Settlement repair 性能加固见 [`features/feature_settlement_repair_scalability.md`](features/feature_settlement_repair_scalability.md)。
 13. 已实现功能：[`features/feature_listing_snapshot_ingestion.md`](features/feature_listing_snapshot_ingestion.md)；对应 003 migration 已执行，Listing dry-run / repository / CLI / execute / 幂等性已完成
 14. 已实现功能：[`features/feature_inventory_ingestion.md`](features/feature_inventory_ingestion.md)；对应 004 migration 已执行，Inventory dry-run / repository / CLI / execute / 幂等性已完成
 15. 已实现功能：[`features/feature_sales_traffic_ingestion.md`](features/feature_sales_traffic_ingestion.md)，005 migration、专用 ingestion、真实 execute 和幂等性验证均已完成
