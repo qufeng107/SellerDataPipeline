@@ -1,7 +1,7 @@
 # SellerDataPipeline 当前进展与下一步计划
 
 > 更新时间：2026-08-08  
-> 当前版本：v1.79 schema guard resilience implemented locally; Azure verification pending  
+> 当前版本：v1.80 CI quality gate tuned for high-signal blocking; schema guard Azure verification pending  
 > 文档定位：记录项目真实进展、已完成里程碑、当前非阻塞问题和下一步开发顺序。本文不承载详细字段设计；功能细节见 `docs/features/`。
 
 ## 1. 当前一句话状态
@@ -74,6 +74,18 @@ report granularity / 语义不兼容   -> blocking
 ```
 
 下一步进入云端验收：构建/部署新镜像后，手动重跑最近一期 weekly `collect_ingest`，确认 Sales & Traffic / Inventory 均写库成功，再运行 `report_delivery` 验证邮件恢复；之后再单独处理 monthly Settlement duplicate-key 与 Promotion/Coupon review。
+
+## 1.0.1 2026-08-08 CI Quality Gate 降噪迭代
+
+针对 GitHub Actions 反复因 `I001` import sorting 等可自动修复风格问题失败，本轮已冻结并实施 CI lint 分层策略：
+
+```text
+CI blocking: E4 / E7 / E9 / F / B
+Local maintenance only: I / UP + ruff format
+```
+
+目标不是取消静态检查，而是让 CI 红灯优先代表 correctness / likely-bug 风险。新增 `docs/project/ci_quality_gate_policy.md` 与 `ADR-014-ci-quality-gate-signal-over-style.md`；`pyproject.toml` 已移除 blocking selection 中的 `I` / `UP`，GitHub Action lint step 改名为 `Safety lint`。当前触发 I001 的 `ads_ingestion_dry_run.py` import block 也已整理。该迭代不涉及业务逻辑、数据库或 Azure 配置。
+
 
 ## 1.1 2026-05-25 Azure Jobs handoff status
 

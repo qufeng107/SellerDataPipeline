@@ -21,6 +21,7 @@ from seller_data_pipeline.sampling.schema_drift import (
     validate_report_schema,
 )
 
+
 @dataclass(frozen=True)
 class AdsPreparedReportResult:
     report_type_id: str

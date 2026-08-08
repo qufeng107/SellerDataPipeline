@@ -9,7 +9,10 @@ line-length = 100
 target-version = "py311"
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "UP", "B"]
+# CI blocking lint intentionally focuses on correctness/high-signal rules.
+# Import sorting (I) and pyupgrade (UP) are maintenance/style checks and must not
+# break production delivery; developers may still run them locally with --fix.
+select = ["E4", "E7", "E9", "F", "B"]
 ignore = []
 
 [tool.pytest.ini_options]

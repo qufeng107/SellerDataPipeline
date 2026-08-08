@@ -19,7 +19,7 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Lint
+      - name: Safety lint
         run: ruff check src tests
 
       - name: Test

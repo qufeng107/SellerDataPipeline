@@ -77,6 +77,7 @@ docs/
     ADR-011-azure-container-apps-jobs-automation.md
     ADR-012-zero-paid-automation-storage-profile.md
     ADR-013-schema-guard-compatibility-policy.md
+    ADR-014-ci-quality-gate-signal-over-style.md
 ```
 
 ## 3. 文档职责边界

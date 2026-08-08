@@ -207,9 +207,16 @@ python -m compileall -q scripts src tests
 如果环境安装了 Ruff：
 
 ```bash
-ruff check src tests scripts
+# CI / 合并阻断：只执行高信号的 correctness / likely-bug lint。
+# 具体规则由 pyproject.toml 统一配置，目前为 E4/E7/E9/F/B。
+ruff check src tests
+
+# 本地维护，不作为 CI 阻断：import 排序、pyupgrade 与格式化。
+ruff check src tests scripts --select I,UP --fix
 ruff format src tests scripts
 ```
+
+CI lint 的目标是尽早阻止会影响运行正确性的代码问题，而不是把可自动修复的纯风格差异升级为发布故障。`I`（import sorting）和 `UP`（pyupgrade）保留为本地维护工具；如后续某条规则产生持续误报，应按 `ADR-014` 的“信号优先”原则评估，而不是直接取消整个 lint gate。
 
 涉及数据库的变更还应运行：
 

@@ -606,9 +606,15 @@ python -m compileall -q scripts src tests
 如果环境安装 Ruff：
 
 ```bash
-ruff check src tests scripts
+# CI blocking quality gate（高信号规则，配置见 pyproject.toml）
+ruff check src tests
+
+# 非阻断的本地自动整理
+ruff check src tests scripts --select I,UP --fix
 ruff format src tests scripts
 ```
+
+不要因为 import 顺序、可自动升级语法等纯维护问题阻塞部署；CI 必须优先拦截 undefined name、明显语法/结构错误和 Bugbear 类潜在 bug。具体决策见 `docs/adr/ADR-014-ci-quality-gate-signal-over-style.md`。
 
 ### 13.3 数据库类变更验收
 
