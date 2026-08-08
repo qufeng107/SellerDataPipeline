@@ -503,3 +503,8 @@ valid rows
 - 同一 input 内重复 business key 不进入 set-based source，避免 SQL Server MERGE multiple-match 错误并保持旧逐行语义。
 
 详细设计与验收见 `feature_settlement_ingestion_batch_upsert.md`。
+
+
+## v1.85 JSON set-based upsert
+
+v1.84 Azure performance test confirmed temp staging with ~1950 parameters per batch remained too slow and 2,106 rows fell back to sequential MERGE. Normal ingestion write path is therefore superseded by v1.85 exact-duplicate collapse + typed `OPENJSON` bounded batch MERGE. Financial identity conflicts fail closed; transaction and immutable business-key contracts are unchanged. Detailed design: `feature_settlement_ingestion_json_upsert.md`.
