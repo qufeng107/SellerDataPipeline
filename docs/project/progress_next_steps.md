@@ -1,7 +1,7 @@
 # SellerDataPipeline 当前进展与下一步计划
 
 > 更新时间：2026-08-08  
-> 当前版本：v1.81 monthly ingestion recovery implemented locally; Azure repair/recovery verification pending  
+> 当前版本：v1.82 settlement repair scalability implemented locally; Azure dry-run verification pending  
 > 文档定位：记录项目真实进展、已完成里程碑、当前非阻塞问题和下一步开发顺序。本文不承载详细字段设计；功能细节见 `docs/features/`。
 
 ## 1. 当前一句话状态
@@ -111,6 +111,33 @@ Promotion/Coupon -> schema review (发生于 ADR-013 新策略部署前)
 - 全量测试 `319 passed`，compileall success；本地环境未安装 Ruff，Safety lint 由 CI 执行。
 
 Azure 下一步：main merge/build 后先对 Settlement duplicate repair 做 dry-run；无 conflict 再 execute；随后按 2026-06、2026-07 顺序重跑 monthly collect_ingest 与 report_delivery。
+
+## 1.0.3 2026-08-08 Settlement repair scalability v1.82
+
+v1.81 Azure dry-run 暴露出 repair maintenance path 的性能问题。数据库 warm-up 正常且 `Online`；只读诊断确认：
+
+```text
+amazon_settlement_transaction rows = 12,210
+exact duplicate groups            = 3,878
+COUNT elapsed                     = 0.22s
+duplicate GROUP BY elapsed        = 0.19s
+```
+
+因此数据库扫描不是瓶颈。v1.81 对每个 duplicate group 执行 group-row + canonical-owner 两次 SQL，约形成 `1 + 2 * 3,878 = 7,757` SQL round trips；原 execute path 也会产生大量逐组 DELETE / UPDATE，并可能超过 SQL Server 2100 parameter limit。
+
+v1.82 本地已完成：
+
+- 新增 `docs/features/feature_settlement_repair_scalability.md`。
+- repair planning 改为 `fetch_idempotency_repair_rows()` 单次 bounded scan + Python in-memory grouping / ownership check。
+- 财务安全规则不变：只处理 exact source identity duplicate，cross-identity canonical owner 仍 `conflict` / fail closed。
+- DELETE 全局收集 row ids 后按 1000 ids/batch 执行。
+- rekey 使用 `UPDATE ... FROM (VALUES ...)`，按 900 rows / 1800 params 一批，低于 SQL Server 2100 parameter limit。
+- 默认 `--json` 不再输出全部数千 plan，只输出 summary + 20 条 conflict/repairable sample；显式 `--include-plans` 才展开全部。
+- 增加 scan/planning/delete/rekey/completed progress log，避免长任务无可观察输出。
+- 新增 4000 duplicate groups in-memory planning 回归和 bulk DML batching tests。
+- 不新增 migration；生产诊断已证明当前数据规模无需为本问题增加索引。
+
+Azure 下一步：构建 main 镜像 -> 仅更新 `sdp-monthly-collect-ingest` -> 重新运行 repair dry-run；若 `conflict_group_count=0`，再执行 `--execute`，随后 dry-run 应得到 `duplicate_group_count=0`，最后补跑 2026-06 / 2026-07 月度 pipeline。
 
 ## 1.1 2026-05-25 Azure Jobs handoff status
 

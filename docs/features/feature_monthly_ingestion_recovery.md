@@ -166,3 +166,17 @@ Azure 上线后：
 ```
 
 旧 weekly 邮件不补发；后续 weekly 从当前周期正常继续。
+
+
+## 7. v1.82 Azure repair scalability follow-up
+
+2026-08-08 v1.81 repair dry-run 在 Azure 上暴露性能问题。显式 Azure SQL warm-up 已成功，数据库状态 `Online`；只读诊断结果：
+
+```text
+total_rows=12,210 (0.22s)
+duplicate_groups=3,878 (0.19s)
+```
+
+因此根因不是 Azure SQL scan，而是 v1.81 repair planner 对每个 duplicate group 执行额外查询，约形成 `1 + 2N = 7,757` 次 SQL round trips；execute path 还存在大量逐组 DML 和 SQL Server 2100 parameter limit 风险。
+
+后续实现已拆到 [`feature_settlement_repair_scalability.md`](feature_settlement_repair_scalability.md)：planning 改为 single-scan + in-memory grouping，DELETE / rekey 改为 bounded batches，CLI 默认只输出 summary + plan samples。财务 safety contract 不变，本轮仍不需要 migration。

@@ -469,3 +469,9 @@ python scripts/ingest_settlement_report.py --marketplace-id ATVPDKIKX0DER --exec
 |---|---|---|---|
 | 2026-05-17 | 在 Settlement ingestion 中直接计算最终利润 | 暂缓 | Settlement 是利润核算输入之一，最终利润还需要 Ads、SKU cost、Orders、FBA fees、Reimbursements 等数据共同计算。 |
 | 2026-05-17 | 直接做通用 `ingest_sp_api_reports.py` 支持所有 SP-API reports | 暂缓 | 按渐进式抽象规则，Settlement 仍先采用专用入口，确保财务数据链路可审计。 |
+
+## 20. 2026-08-08 Monthly recovery maintenance follow-up
+
+历史数据在旧 MERGE 语义下形成了大量 exact source-identity duplicates。日常 ingestion 的 canonical-key MERGE / rollback 修复见 `feature_monthly_ingestion_recovery.md`；历史 duplicate maintenance 的性能与安全加固见 `feature_settlement_repair_scalability.md`。
+
+生产只读诊断已确认当前表约 12,210 rows、3,878 duplicate groups，aggregate/group scan 均低于 0.25s，因此 v1.82 不新增数据库索引或 migration，而是移除 repair planner 的 N+1 SQL round trips，并把 execute DML 改为 SQL Server 参数限制内的 bounded batches。

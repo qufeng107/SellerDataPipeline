@@ -205,125 +205,99 @@ class SettlementRepo:
     def rollback(self) -> None:
         self.connection.rollback()
 
-    def fetch_duplicate_source_identities(
+    def fetch_idempotency_repair_rows(
         self, *, marketplace_id: str | None = None
     ) -> list[dict[str, Any]]:
-        where = (
-            "AND [marketplace_id] = ?" if marketplace_id else ""
-        )
+        where = "WHERE [marketplace_id] = ?" if marketplace_id else ""
         sql = f"""
             SELECT
+                [id],
                 [marketplace_id],
                 [source_report_id],
                 [source_row_index],
                 [source_row_hash],
-                COUNT(*) AS [duplicate_count]
+                [business_key_hash],
+                [source_raw_file_path],
+                [source_run_id]
             FROM dbo.[amazon_settlement_transaction]
-            WHERE [source_report_id] IS NOT NULL
-              AND [source_row_index] IS NOT NULL
-              AND [source_row_hash] IS NOT NULL
-              {where}
-            GROUP BY
-                [marketplace_id],
-                [source_report_id],
-                [source_row_index],
-                [source_row_hash]
-            HAVING COUNT(*) > 1
-            ORDER BY [marketplace_id], [source_report_id], [source_row_index];
+            {where}
+            ORDER BY [id];
         """
         params = (marketplace_id,) if marketplace_id else ()
         cursor = self.connection.cursor()
         cursor.execute(sql, params)
-        rows = cursor.fetchall()
-        return [
-            {
-                "marketplace_id": row[0],
-                "source_report_id": row[1],
-                "source_row_index": int(row[2]),
-                "source_row_hash": row[3],
-                "duplicate_count": int(row[4]),
-            }
-            for row in rows
-        ]
-
-    def fetch_source_identity_rows(
-        self,
-        *,
-        marketplace_id: str,
-        source_report_id: str,
-        source_row_index: int,
-        source_row_hash: str,
-    ) -> list[dict[str, Any]]:
-        cursor = self.connection.cursor()
-        cursor.execute(
-            """
-            SELECT [id], [business_key_hash], [source_raw_file_path], [source_run_id]
-            FROM dbo.[amazon_settlement_transaction]
-            WHERE [marketplace_id] = ?
-              AND [source_report_id] = ?
-              AND [source_row_index] = ?
-              AND [source_row_hash] = ?
-            ORDER BY [id];
-            """,
-            (marketplace_id, source_report_id, source_row_index, source_row_hash),
-        )
         return [
             {
                 "id": int(row[0]),
-                "business_key_hash": row[1],
-                "source_raw_file_path": row[2],
-                "source_run_id": row[3],
+                "marketplace_id": row[1],
+                "source_report_id": row[2],
+                "source_row_index": int(row[3]) if row[3] is not None else None,
+                "source_row_hash": row[4],
+                "business_key_hash": row[5],
+                "source_raw_file_path": row[6],
+                "source_run_id": row[7],
             }
             for row in cursor.fetchall()
         ]
 
-    def fetch_business_key_owner(self, business_key_hash: str) -> dict[str, Any] | None:
-        cursor = self.connection.cursor()
-        cursor.execute(
-            """
-            SELECT TOP (1)
-                [id], [marketplace_id], [source_report_id], [source_row_index],
-                [source_row_hash], [business_key_hash]
-            FROM dbo.[amazon_settlement_transaction]
-            WHERE [business_key_hash] = ?;
-            """,
-            (business_key_hash,),
-        )
-        row = cursor.fetchone()
-        if row is None:
-            return None
-        return {
-            "id": int(row[0]),
-            "marketplace_id": row[1],
-            "source_report_id": row[2],
-            "source_row_index": row[3],
-            "source_row_hash": row[4],
-            "business_key_hash": row[5],
-        }
-
-    def delete_transaction_rows_by_ids(self, row_ids: list[int]) -> int:
+    def delete_transaction_rows_by_ids(
+        self, row_ids: list[int], *, batch_size: int = 1000
+    ) -> int:
         if not row_ids:
             return 0
-        placeholders = ", ".join("?" for _ in row_ids)
-        cursor = self.connection.cursor()
-        cursor.execute(
-            f"DELETE FROM dbo.[amazon_settlement_transaction] WHERE [id] IN ({placeholders});",
-            tuple(int(row_id) for row_id in row_ids),
-        )
-        return int(cursor.rowcount if cursor.rowcount is not None and cursor.rowcount >= 0 else len(row_ids))
+        if batch_size < 1 or batch_size > 2000:
+            raise ValueError("batch_size must be between 1 and 2000")
+        deleted = 0
+        for start in range(0, len(row_ids), batch_size):
+            batch = row_ids[start : start + batch_size]
+            placeholders = ", ".join("?" for _ in batch)
+            cursor = self.connection.cursor()
+            cursor.execute(
+                f"DELETE FROM dbo.[amazon_settlement_transaction] "
+                f"WHERE [id] IN ({placeholders});",
+                tuple(int(row_id) for row_id in batch),
+            )
+            deleted += int(
+                cursor.rowcount
+                if cursor.rowcount is not None and cursor.rowcount >= 0
+                else len(batch)
+            )
+        return deleted
 
-    def update_transaction_business_key_hash(
-        self, *, row_id: int, business_key_hash: str
-    ) -> None:
-        cursor = self.connection.cursor()
-        cursor.execute(
+    def update_transaction_business_key_hashes(
+        self,
+        rows: list[tuple[int, str]],
+        *,
+        batch_size: int = 900,
+    ) -> int:
+        if not rows:
+            return 0
+        if batch_size < 1 or batch_size > 1000:
+            raise ValueError("batch_size must be between 1 and 1000")
+        updated = 0
+        for start in range(0, len(rows), batch_size):
+            batch = rows[start : start + batch_size]
+            value_sql = ", ".join("(?, ?)" for _ in batch)
+            sql = f"""
+                UPDATE target
+                SET
+                    target.[business_key_hash] = source.[business_key_hash],
+                    target.[updated_at] = SYSUTCDATETIME()
+                FROM dbo.[amazon_settlement_transaction] AS target
+                INNER JOIN (VALUES {value_sql}) AS source([id], [business_key_hash])
+                    ON target.[id] = source.[id];
             """
-            UPDATE dbo.[amazon_settlement_transaction]
-            SET [business_key_hash] = ?, [updated_at] = SYSUTCDATETIME()
-            WHERE [id] = ?;
-            """,
-            (business_key_hash, int(row_id)),
-        )
+            params: list[Any] = []
+            for row_id, business_key_hash in batch:
+                params.extend((int(row_id), business_key_hash))
+            cursor = self.connection.cursor()
+            cursor.execute(sql, tuple(params))
+            updated += int(
+                cursor.rowcount
+                if cursor.rowcount is not None and cursor.rowcount >= 0
+                else len(batch)
+            )
+        return updated
 
 
 class NullSettlementRepo:
