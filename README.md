@@ -69,6 +69,7 @@ Amazon SP-API / Amazon Ads API / Seller Central raw exports
 | [`docs/features/feature_profit_calculation.md`](docs/features/feature_profit_calculation.md) | 利润核算功能设计；口径已冻结为 Settlement-led Financial Profit v1.0，第一版利润 preview 已实现。 |
 | [`docs/features/feature_sku_cost_management.md`](docs/features/feature_sku_cost_management.md) | SKU 成本 xlsx 模板导出/导入功能；用于维护 `amazon_sku_cost`。 |
 | [`docs/features/feature_monthly_financial_close_report.md`](docs/features/feature_monthly_financial_close_report.md) | 月度财务结算报表设计；CEO/CFO 财务结算和 SKU 利润分析。 |
+| [`docs/features/feature_monthly_ingestion_recovery.md`](docs/features/feature_monthly_ingestion_recovery.md) | v1.81 monthly 恢复：Settlement 幂等/事务加固 + Promotion/Coupon schema drift 回归。 |
 | [`docs/features/feature_weekly_business_review.md`](docs/features/feature_weekly_business_review.md) | 每周经营周报设计；销售、流量、广告、SKU、库存和风险行动建议。 |
 | [`docs/features/feature_weekly_ads_optimization_report.md`](docs/features/feature_weekly_ads_optimization_report.md) | 每周广告优化报表设计；输出 campaign/keyword/search term/SKU 广告动作清单。 |
 | [`docs/database/database_current_schema_spec.md`](docs/database/database_current_schema_spec.md) | 当前真实 Azure SQL 表结构、字段、索引与数据来源。 |
@@ -137,11 +138,7 @@ PYTHONPATH=src pytest -q
 代码检查：
 
 ```bash
-# CI blocking：只检查高信号的正确性/潜在 bug 规则（由 pyproject.toml 配置）
-ruff check src tests
-
-# 本地维护：格式和 import/pyupgrade 可自动修复，不作为 CI 阻断条件
-ruff check src tests scripts --select I,UP --fix
+ruff check src tests scripts
 ruff format src tests scripts
 ```
 

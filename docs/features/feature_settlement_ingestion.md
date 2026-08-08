@@ -1,8 +1,8 @@
 # Feature: Settlement Report Ingestion
 
-> 文档状态：Implemented; execute and idempotency verified  
+> 文档状态：Implemented; v1.81 idempotency hardening implemented locally  
 > 负责人：AI / 待定  
-> 更新时间：2026-05-17  
+> 更新时间：2026-08-08  
 > 功能状态：Implemented  
 > 相关数据接入文档：`docs/data_access/sp_api_reports_catalog.md`  
 > 相关数据库 spec：`docs/database/database_current_schema_spec.md`
@@ -38,6 +38,8 @@ Settlement 是后续利润核算、费用归类、广告费用入账、Coupon/De
 | 单元测试 | 已补齐 settlement mapping / dry-run / repository 测试 |
 
 功能整体状态：`Implemented`。`006_add_settlement_transaction_business_key.sql` 已在 Azure SQL 执行成功，并已导出 `after_006_settlement_business_key.md/json` live schema。专用 ingestion 代码已完成并通过用户本地真实 Azure SQL 验收：dry-run `prepared_rows=4911`、`processed_files=8`、`requires_review=False`；首次 execute `sync_run_id=9`，`inserted=4911`；第二次 execute `sync_run_id=10`，`inserted=0 updated=4911`。
+
+2026-08-05 monthly 自动化暴露 legacy idempotency compatibility bug：Settlement MERGE 同时按 `business_key_hash OR source identity` 匹配且 UPDATE 会改写 `business_key_hash`，在历史 legacy row 与 canonical row 并存时可能触发唯一索引冲突。v1.81 冻结修复为：**日常 MERGE 只按 canonical `business_key_hash`，business key immutable；legacy exact-source duplicates 由显式 dry-run/execute repair command 处理；失败 ingestion 必须 rollback normalized writes。** 详见 `feature_monthly_ingestion_recovery.md`。
 
 ## 3. 业务目标
 
@@ -170,7 +172,7 @@ local settlement raw files
   -> write DB-ready preview JSONL
   -> if --execute not set: stop after dry-run
   -> insert running row into amazon_sync_run_log
-  -> MERGE rows into amazon_settlement_transaction by business_key_hash
+  -> MERGE rows into amazon_settlement_transaction by immutable business_key_hash only
   -> insert schema validation event(s)
   -> update amazon_sync_run_log final status
   -> commit transaction
@@ -184,6 +186,8 @@ local settlement raw files
 4. 写库必须通过 `get_connection()`，让 Azure SQL connection retry + `SELECT 1` warm-up 先完成。
 5. 同一批多份 settlement raw file 应在同一 sync run 中处理；任一文件失败时整体 rollback，避免半批写入。
 6. 不使用 `source_row_hash` 单独作为业务幂等键；必须使用 `business_key_hash`。
+7. `business_key_hash` 是 canonical immutable key：MATCH/UPDATE 不允许通过 legacy natural-key fallback 改写该值。
+8. 历史 exact source identity duplicates 必须通过 `scripts/repair_settlement_idempotency.py` 显式 dry-run/execute 修复，不在日常 ingestion 中静默删除。
 
 ## 9. 字段映射
 
@@ -269,19 +273,20 @@ transaction_type + amount_type + amount_description + is_settlement_summary
 
 Settlement raw file 可能被重复发现或重复下载，因此必须有稳定 upsert key。
 
-推荐第一版：
+当前 canonical key：
 
 ```text
-business_key = marketplace_id + source_report_id + source_raw_file_path + source_row_index + source_row_hash
+business_key = marketplace_id + source_report_id + source_row_index + source_row_hash
 business_key_hash = sha256(canonical JSON of business_key)
 ```
 
 说明：
 
-1. `source_report_id` 来自 raw file 文件名或 report metadata；如果 CLI 显式传入则优先使用。
-2. `source_raw_file_path` 保留在 key 中，避免同一 settlement id 跨多个文件或重放时冲突。
+1. `source_report_id` 来自 Amazon report id / raw file stem，同一个 Amazon settlement report 重复下载时保持稳定。
+2. **`source_raw_file_path` 不进入 canonical key**。同一 report 在不同 collect 日期下路径会变化，路径只能作为 provenance，不能制造新的财务业务行。
 3. `source_row_index` 必须纳入 key，因为 settlement 中可能存在金额、描述、SKU 完全相同的重复行。
-4. `source_row_hash` 用于防止同一 row index 但内容变化时被错误覆盖；如果未来希望同一个 report id + row index 内容变化时 update 而不是 insert，需要重新评估 key 策略。
+4. `source_row_hash` 用于确认同一 report row 的原始内容；同一个 report id + row index 如果内容变化，会生成新的 key，需要人工审视 Amazon 是否重发了不同内容。
+5. v1.81 起 repository 只按 `business_key_hash` MERGE，UPDATE 不修改该 key；历史 legacy exact duplicates 通过显式 maintenance repair 处理。
 
 ### 11.3 新 migration 需求
 

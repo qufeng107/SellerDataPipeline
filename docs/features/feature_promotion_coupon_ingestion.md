@@ -2,7 +2,7 @@
 
 > 文档状态：Implemented; 010 executed; dry-run, Azure SQL execute and idempotency verified  
 > 负责人：AI / 待定  
-> 更新时间：2026-05-17  
+> 更新时间：2026-08-08  
 > 功能状态：Implemented  
 > 相关数据接入文档：`docs/data_access/sp_api_reports_catalog.md`  
 > 相关数据库 spec：`docs/database/database_current_schema_spec.md`
@@ -45,6 +45,11 @@ GET_COUPON_PERFORMANCE_REPORT
 | 文档同步 | 本设计已完成第一版 |
 
 功能整体状态：`Implemented`。`010` 已执行，专用 dry-run / repository / CLI 已完成，并已通过真实 Azure SQL 首次 execute 与第二次 execute 幂等性验证。
+
+
+## 2.1 2026-08-08 Schema Guard 鲁棒性补充
+
+Promotion/Coupon 采用 ADR-013 的兼容性规则：Amazon 新增未知 JSON path 只记录 `new_fields` warning/event，不再触发 `requires_review=True`；只有 required raw path 缺失、关键解析失败或 business-key payload 冲突才阻断。当前 required contract 仅为 `reportSpecification.reportType` 与 `reportSpecification.marketplaceIds[]`。2026-08-05 production 中的 schema review 发生在该公共规则部署前，v1.81 增加专用 additive-drift regression test。
 
 ## 3. 业务目标
 

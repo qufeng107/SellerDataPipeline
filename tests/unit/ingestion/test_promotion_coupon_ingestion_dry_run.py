@@ -151,3 +151,96 @@ def _write_json_raw(
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload), encoding="utf-8")
     return path
+
+
+def test_promotion_coupon_additive_schema_drift_is_non_blocking(tmp_path: Path) -> None:
+    raw_root = tmp_path / "reports" / "raw"
+    promotion_path = _write_json_raw(
+        raw_root,
+        PROMOTION_PERFORMANCE_REPORT_TYPE,
+        "promotion-extra-fields",
+        {
+            "reportSpecification": {
+                "reportType": PROMOTION_PERFORMANCE_REPORT_TYPE,
+                "marketplaceIds": [MARKETPLACE_ID],
+                "newReportOption": "future-compatible",
+            },
+            "promotions": [
+                {
+                    "promotionId": "PROMO-EXTRA",
+                    "marketplaceId": MARKETPLACE_ID,
+                    "unexpectedMetric": 123,
+                    "includedProducts": [
+                        {"asin": "ASIN-EXTRA", "unexpectedProductMetric": 1}
+                    ],
+                }
+            ],
+            "newTopLevelField": "ignored-but-audited",
+        },
+    )
+    coupon_path = _write_json_raw(
+        raw_root,
+        COUPON_PERFORMANCE_REPORT_TYPE,
+        "coupon-extra-fields",
+        {
+            "reportSpecification": {
+                "reportType": COUPON_PERFORMANCE_REPORT_TYPE,
+                "marketplaceIds": [MARKETPLACE_ID],
+            },
+            "coupons": [
+                {
+                    "couponId": "COUPON-EXTRA",
+                    "marketplaceId": MARKETPLACE_ID,
+                    "futureMetric": "x",
+                    "asins": [{"asin": "ASIN-EXTRA", "futureAsinMetric": 2}],
+                }
+            ],
+        },
+    )
+
+    service = PromotionCouponIngestionDryRunService(
+        raw_reports_root=raw_root,
+        output_root=tmp_path / "runtime",
+    )
+    result = service.prepare(
+        marketplace_id=MARKETPLACE_ID,
+        promotion_raw_file_path=promotion_path,
+        coupon_raw_file_path=coupon_path,
+    )
+
+    assert result.status == "success"
+    assert result.requires_review is False
+    assert result.prepared_row_count == 4
+    assert {item.schema_validation_status for item in result.report_results} == {"new_fields"}
+
+
+def test_promotion_coupon_missing_required_marketplace_ids_is_blocking(tmp_path: Path) -> None:
+    raw_root = tmp_path / "reports" / "raw"
+    promotion_path = _write_json_raw(
+        raw_root,
+        PROMOTION_PERFORMANCE_REPORT_TYPE,
+        "promotion-missing-required",
+        {
+            "reportSpecification": {"reportType": PROMOTION_PERFORMANCE_REPORT_TYPE},
+            "promotions": [{"promotionId": "PROMO-1"}],
+        },
+    )
+    coupon_path = _write_coupon_raw(raw_root, report_id="coupon-valid")
+
+    service = PromotionCouponIngestionDryRunService(
+        raw_reports_root=raw_root,
+        output_root=tmp_path / "runtime",
+    )
+    result = service.prepare(
+        marketplace_id=MARKETPLACE_ID,
+        promotion_raw_file_path=promotion_path,
+        coupon_raw_file_path=coupon_path,
+    )
+
+    promotion_result = next(
+        item for item in result.report_results if item.report_type == PROMOTION_PERFORMANCE_REPORT_TYPE
+    )
+    assert result.requires_review is True
+    assert promotion_result.schema_validation_status == "missing_fields"
+    assert promotion_result.requires_review is True
+    assert promotion_result.skipped is True

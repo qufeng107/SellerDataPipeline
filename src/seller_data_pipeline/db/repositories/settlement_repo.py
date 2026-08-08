@@ -202,6 +202,129 @@ class SettlementRepo:
     def commit(self) -> None:
         self.connection.commit()
 
+    def rollback(self) -> None:
+        self.connection.rollback()
+
+    def fetch_duplicate_source_identities(
+        self, *, marketplace_id: str | None = None
+    ) -> list[dict[str, Any]]:
+        where = (
+            "AND [marketplace_id] = ?" if marketplace_id else ""
+        )
+        sql = f"""
+            SELECT
+                [marketplace_id],
+                [source_report_id],
+                [source_row_index],
+                [source_row_hash],
+                COUNT(*) AS [duplicate_count]
+            FROM dbo.[amazon_settlement_transaction]
+            WHERE [source_report_id] IS NOT NULL
+              AND [source_row_index] IS NOT NULL
+              AND [source_row_hash] IS NOT NULL
+              {where}
+            GROUP BY
+                [marketplace_id],
+                [source_report_id],
+                [source_row_index],
+                [source_row_hash]
+            HAVING COUNT(*) > 1
+            ORDER BY [marketplace_id], [source_report_id], [source_row_index];
+        """
+        params = (marketplace_id,) if marketplace_id else ()
+        cursor = self.connection.cursor()
+        cursor.execute(sql, params)
+        rows = cursor.fetchall()
+        return [
+            {
+                "marketplace_id": row[0],
+                "source_report_id": row[1],
+                "source_row_index": int(row[2]),
+                "source_row_hash": row[3],
+                "duplicate_count": int(row[4]),
+            }
+            for row in rows
+        ]
+
+    def fetch_source_identity_rows(
+        self,
+        *,
+        marketplace_id: str,
+        source_report_id: str,
+        source_row_index: int,
+        source_row_hash: str,
+    ) -> list[dict[str, Any]]:
+        cursor = self.connection.cursor()
+        cursor.execute(
+            """
+            SELECT [id], [business_key_hash], [source_raw_file_path], [source_run_id]
+            FROM dbo.[amazon_settlement_transaction]
+            WHERE [marketplace_id] = ?
+              AND [source_report_id] = ?
+              AND [source_row_index] = ?
+              AND [source_row_hash] = ?
+            ORDER BY [id];
+            """,
+            (marketplace_id, source_report_id, source_row_index, source_row_hash),
+        )
+        return [
+            {
+                "id": int(row[0]),
+                "business_key_hash": row[1],
+                "source_raw_file_path": row[2],
+                "source_run_id": row[3],
+            }
+            for row in cursor.fetchall()
+        ]
+
+    def fetch_business_key_owner(self, business_key_hash: str) -> dict[str, Any] | None:
+        cursor = self.connection.cursor()
+        cursor.execute(
+            """
+            SELECT TOP (1)
+                [id], [marketplace_id], [source_report_id], [source_row_index],
+                [source_row_hash], [business_key_hash]
+            FROM dbo.[amazon_settlement_transaction]
+            WHERE [business_key_hash] = ?;
+            """,
+            (business_key_hash,),
+        )
+        row = cursor.fetchone()
+        if row is None:
+            return None
+        return {
+            "id": int(row[0]),
+            "marketplace_id": row[1],
+            "source_report_id": row[2],
+            "source_row_index": row[3],
+            "source_row_hash": row[4],
+            "business_key_hash": row[5],
+        }
+
+    def delete_transaction_rows_by_ids(self, row_ids: list[int]) -> int:
+        if not row_ids:
+            return 0
+        placeholders = ", ".join("?" for _ in row_ids)
+        cursor = self.connection.cursor()
+        cursor.execute(
+            f"DELETE FROM dbo.[amazon_settlement_transaction] WHERE [id] IN ({placeholders});",
+            tuple(int(row_id) for row_id in row_ids),
+        )
+        return int(cursor.rowcount if cursor.rowcount is not None and cursor.rowcount >= 0 else len(row_ids))
+
+    def update_transaction_business_key_hash(
+        self, *, row_id: int, business_key_hash: str
+    ) -> None:
+        cursor = self.connection.cursor()
+        cursor.execute(
+            """
+            UPDATE dbo.[amazon_settlement_transaction]
+            SET [business_key_hash] = ?, [updated_at] = SYSUTCDATETIME()
+            WHERE [id] = ?;
+            """,
+            (business_key_hash, int(row_id)),
+        )
+
 
 class NullSettlementRepo:
     """No-op repository used by tests that need the same interface."""
@@ -239,6 +362,9 @@ class NullSettlementRepo:
     def commit(self) -> None:
         return None
 
+    def rollback(self) -> None:
+        return None
+
 
 def validate_settlement_table_spec(table_spec: SettlementTargetTableSpec) -> None:
     if table_spec.target_table != SETTLEMENT_TARGET_TABLE:
@@ -254,7 +380,7 @@ def build_settlement_merge_sql(*, table_spec: SettlementTargetTableSpec) -> str:
     validate_settlement_table_spec(table_spec)
     columns = table_spec.table_columns
     source_select = ", ".join(f"? AS {_quote_identifier(column)}" for column in columns)
-    update_columns = list(columns)
+    update_columns = [column for column in columns if column not in {"business_key_hash"}]
     update_set = ",\n        ".join(
         f"target.{_quote_identifier(column)} = source.{_quote_identifier(column)}"
         for column in update_columns
@@ -262,33 +388,16 @@ def build_settlement_merge_sql(*, table_spec: SettlementTargetTableSpec) -> str:
     update_set = update_set + ",\n        target.[updated_at] = SYSUTCDATETIME()"
     insert_columns = ", ".join(_quote_identifier(column) for column in columns)
     insert_values = ", ".join(f"source.{_quote_identifier(column)}" for column in columns)
-    natural_key_predicate = _build_settlement_natural_key_predicate()
     return (
         f"MERGE dbo.{_quote_identifier(table_spec.target_table)} WITH (HOLDLOCK) AS target\n"
         f"USING (SELECT {source_select}) AS source\n"
-        "ON (\n"
-        "    target.[business_key_hash] = source.[business_key_hash]\n"
-        f"    OR ({natural_key_predicate})\n"
-        ")\n"
+        "ON target.[business_key_hash] = source.[business_key_hash]\n"
         "WHEN MATCHED THEN\n"
         f"    UPDATE SET {update_set}\n"
         "WHEN NOT MATCHED THEN\n"
         f"    INSERT ({insert_columns})\n"
         f"    VALUES ({insert_values})\n"
         "OUTPUT $action AS merge_action;"
-    )
-
-
-def _build_settlement_natural_key_predicate() -> str:
-    key_columns = (
-        "marketplace_id",
-        "source_report_id",
-        "source_row_index",
-        "source_row_hash",
-    )
-    return " AND ".join(
-        f"target.{_quote_identifier(column)} = source.{_quote_identifier(column)}"
-        for column in key_columns
     )
 
 

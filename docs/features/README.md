@@ -18,7 +18,7 @@
 | [`FEATURE_TEMPLATE.md`](FEATURE_TEMPLATE.md) | Template | 单功能设计文档标准模板。 |
 | [`feature_azure_sql_foundation.md`](feature_azure_sql_foundation.md) | Implemented | Azure SQL 连接、初始 migration、数据库检查脚本和数据库治理规则。 |
 | [`feature_ads_ingestion.md`](feature_ads_ingestion.md) | Implemented | Amazon Ads Sponsored Products 四类日报入库闭环。 |
-| [`feature_schema_guard_resilience.md`](feature_schema_guard_resilience.md) | Implemented / Azure verification pending | 2026-08-08 schema guard robustness 修订已实现并通过 313 个单测；additive new fields non-blocking，required contract 缺失/关键解析或语义变化才阻断。 |
+| [`feature_schema_guard_resilience.md`](feature_schema_guard_resilience.md) | Implemented / Azure verified | additive new fields non-blocking，required contract 缺失/关键解析或语义变化才阻断；已通过 main 镜像 weekly Azure 验收。 |
 | [`feature_listing_snapshot_ingestion.md`](feature_listing_snapshot_ingestion.md) | Implemented | SP-API `GET_MERCHANT_LISTINGS_ALL_DATA` -> `amazon_listing_snapshot`；dry-run、schema guard、repository、CLI、真实 Azure SQL execute 和幂等性验证已完成。 |
 | [`feature_inventory_ingestion.md`](feature_inventory_ingestion.md) | Implemented v1.1 / Azure verification pending | Inventory snapshot v1.1 已采用 minimal required contract；Amazon additive fields 仅 warning，不再阻断。 |
 | [`feature_sales_traffic_ingestion.md`](feature_sales_traffic_ingestion.md) | Implemented v1.1 / Azure verification pending | Sales & Traffic v1.1 已采用 minimal required contract；2026-08-03 的 24 个 additive path 回归不再阻断。 |
@@ -32,6 +32,7 @@
 | [`feature_profit_calculation.md`](feature_profit_calculation.md) | Preview implemented | 利润核算口径已冻结为 Settlement-led Financial Profit v1.0；第一版 `calculate_profit_report.py` 已实现文件型 preview，不落利润结果表。 |
 | [`feature_sku_cost_management.md`](feature_sku_cost_management.md) | Implemented | SKU 成本 xlsx 模板导出与导入；默认 dry-run、按 marketplace + SKU + effective_from 幂等写入 `amazon_sku_cost`。 |
 | [`feature_monthly_financial_close_report.md`](feature_monthly_financial_close_report.md) | Implemented v1.2 / pending live verification | 月度财务结算报表；已支持 Settlement-led Estimated Profit 与 Management Estimated Profit with Report-date Ads 双利润口径、Ads Timing Reconciliation、会计辅助包，默认输出 JSON + 单个 XLSX 多 sheet。 |
+| [`feature_monthly_ingestion_recovery.md`](feature_monthly_ingestion_recovery.md) | Implemented locally / Azure recovery pending | v1.81：Settlement canonical-key MERGE、rollback 语义、exact duplicate repair；Promotion/Coupon additive drift 回归；用于恢复 2026-06 / 2026-07 月报。 |
 | [`feature_weekly_business_review.md`](feature_weekly_business_review.md) | Implemented v1.1 / pending live verification | 每周经营周报；默认 Saturday-Friday，贡献指标明确为“广告和货本后贡献，未扣完整 Amazon 平台费”，默认输出 JSON + 单个 XLSX 多 sheet。 |
 | [`feature_weekly_ads_optimization_report.md`](feature_weekly_ads_optimization_report.md) | Implemented v1.1 / pending live verification | 每周广告优化报表；已支持 active action / historical paused lessons 拆分、negative keyword snapshot 去重和 `--negative-keyword-csv`，默认输出 JSON + 单个 XLSX 多 sheet，不调用 Ads 写接口。 |
 | [`feature_report_delivery_email.md`](feature_report_delivery_email.md) | Implemented v1.3 | 统一报表交付/邮件草稿包；已支持从三类报表 JSON 生成不同模板邮件正文、manifest 和 XLSX 附件包。SMTP 发送已实现，收件人从 `report_email_recipient_config` 读取；v1.3 增加中英文双语邮件正文和 XLSX 固定标签/说明。 |
@@ -42,7 +43,7 @@
 
 ## 3. 下一批建议
 
-当前核心 ingestion 功能已完成，2026-08-08 schema guard resilience 代码与本地回归也已完成。下一步优先构建新镜像并在 Azure 手动重跑最近一期 weekly，再继续其他 backlog。后续优先级应切换为：
+当前核心 ingestion 功能已完成，Schema Guard resilience 已完成 main/Azure weekly 验收。当前优先执行 v1.81 monthly recovery：先 dry-run/repair Settlement exact duplicates，再补跑 2026-06 / 2026-07 monthly collect_ingest 和 report delivery。后续优先级应切换为：
 
 1. 构建并部署包含 `feature_schema_guard_resilience.md` / ADR-013 实现的新镜像；手动重跑最近一期 weekly `collect_ingest` + `report_delivery`，确认 Sales/Inventory 恢复和邮件 send guard 解除。
 2. 执行 `sql/seeds/002_update_ingestion_job_config_refresh_policy.sql`，使 `pipeline_job_config` 与重叠窗口刷新策略一致。
