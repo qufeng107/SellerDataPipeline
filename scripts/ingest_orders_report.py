@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import argparse
 import json
+from datetime import date
 from pathlib import Path
 
 from seller_data_pipeline.common.cli import run_cli_main
 from seller_data_pipeline.common.logging import configure_logging
 from seller_data_pipeline.config.settings import get_settings
 from seller_data_pipeline.ingestion.orders_ingestion import OrdersIngestionService
+from seller_data_pipeline.ingestion.period_raw_file_selection import select_sp_api_period_raw_files
 
 
 def main() -> None:
@@ -30,6 +32,8 @@ def main() -> None:
             "If omitted, the latest file under reports/raw/amazon/{marketplace}/... is used."
         ),
     )
+    parser.add_argument("--start-date", default=None, help="Optional period start YYYY-MM-DD; requires --end-date.")
+    parser.add_argument("--end-date", default=None, help="Optional period end YYYY-MM-DD; requires --start-date.")
     parser.add_argument(
         "--output-root",
         default="runtime/ingestion/sp_api",
@@ -65,13 +69,59 @@ def main() -> None:
         raw_reports_root=settings.raw_reports_root,
         output_root=args.output_root,
     )
-    result = service.run(
-        marketplace_id=marketplace_id,
-        raw_file_path=args.raw_file,
-        execute=args.execute,
-        fail_on_review=not args.allow_review,
-    )
-    payload = result.to_dict()
+    if bool(args.start_date) != bool(args.end_date):
+        raise SystemExit("--start-date and --end-date must be provided together.")
+    if args.raw_file and args.start_date:
+        raise SystemExit("Use either --raw-file or --start-date/--end-date, not both.")
+
+    results = []
+    if args.start_date:
+        start_date = date.fromisoformat(args.start_date)
+        end_date = date.fromisoformat(args.end_date)
+        selection = select_sp_api_period_raw_files(
+            sampling_root=settings.local_sampling_root,
+            marketplace_id=marketplace_id,
+            report_type="GET_FLAT_FILE_ALL_ORDERS_DATA_BY_ORDER_DATE_GENERAL",
+            start_date=start_date,
+            end_date=end_date,
+        )
+        missing = ",".join(f"{a}..{b}" for a, b in selection.missing_ranges) or "none"
+        print(
+            f"period_file_selection report_type={selection.report_type} "
+            f"files_selected={selection.selected_file_count} "
+            f"coverage_complete={selection.coverage_complete} missing_ranges={missing}"
+        )
+        if not selection.coverage_complete:
+            raise SystemExit(2)
+        for index, item in enumerate(selection.files, start=1):
+            print(
+                f"period_file[{index}/{selection.selected_file_count}] "
+                f"report_id={item.report_id} range={item.start_date}..{item.end_date}"
+            )
+            results.append(
+                service.run(
+                    marketplace_id=marketplace_id,
+                    raw_file_path=item.raw_file_path,
+                    execute=args.execute,
+                    fail_on_review=not args.allow_review,
+                )
+            )
+    else:
+        results.append(
+            service.run(
+                marketplace_id=marketplace_id,
+                raw_file_path=args.raw_file,
+                execute=args.execute,
+                fail_on_review=not args.allow_review,
+            )
+        )
+
+    result = results[-1]
+    payload = result.to_dict() if len(results) == 1 else {
+        "workflow_name": "sp_api_orders_period_ingestion",
+        "result_count": len(results),
+        "results": [item.to_dict() for item in results],
+    }
     if args.json_output:
         output_path = Path(args.json_output)
         output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -80,23 +130,28 @@ def main() -> None:
             encoding="utf-8",
         )
 
-    print(f"Orders ingestion mode={result.mode} status={result.status}")
-    print(result.message)
-    print(f"dry_run_output_dir={result.dry_run_result.output_dir}")
+    total_prepared = sum(item.dry_run_result.prepared_row_count for item in results)
+    total_attempted = sum(item.upsert_result.attempted_rows for item in results if item.upsert_result)
+    total_inserted = sum(item.upsert_result.inserted_rows for item in results if item.upsert_result)
+    total_updated = sum(item.upsert_result.updated_rows for item in results if item.upsert_result)
+    total_written = sum(item.upsert_result.written_rows for item in results if item.upsert_result)
+    total_skipped = sum(item.upsert_result.skipped_rows for item in results if item.upsert_result)
+    failed = sum(1 for item in results if item.requires_review or item.status not in {"success", "dry_run_success"})
     print(
-        f"prepared_rows={result.dry_run_result.prepared_row_count} requires_review={result.requires_review} sync_run_id={result.sync_run_id}"
+        f"Orders period ingestion files_processed={len(results)} failed={failed} "
+        f"prepared_rows={total_prepared} attempted={total_attempted} inserted={total_inserted} "
+        f"updated={total_updated} written={total_written} skipped={total_skipped}"
     )
-    if result.upsert_result is not None:
-        table_result = result.upsert_result.table_result
+    for item in results:
+        print(f"Orders ingestion mode={item.mode} status={item.status}")
+        print(item.message)
+        print(f"dry_run_output_dir={item.dry_run_result.output_dir}")
         print(
-            f"upsert attempted={result.upsert_result.attempted_rows} inserted={result.upsert_result.inserted_rows} updated={result.upsert_result.updated_rows} "
-            f"written={result.upsert_result.written_rows} skipped={result.upsert_result.skipped_rows}"
+            f"prepared_rows={item.dry_run_result.prepared_row_count} requires_review={item.requires_review} sync_run_id={item.sync_run_id}"
         )
-        print(
-            f"{table_result.table_name}: attempted={table_result.attempted_rows} inserted={table_result.inserted_rows} updated={table_result.updated_rows} skipped={table_result.skipped_rows}"
-        )
-    if result.requires_review and not args.allow_review:
+    if failed and not args.allow_review:
         raise SystemExit(2)
+
 
 
 if __name__ == "__main__":

@@ -33,7 +33,9 @@
 | [`feature_sku_cost_management.md`](feature_sku_cost_management.md) | Implemented | SKU 成本 xlsx 模板导出与导入；默认 dry-run、按 marketplace + SKU + effective_from 幂等写入 `amazon_sku_cost`。 |
 | [`feature_monthly_financial_close_report.md`](feature_monthly_financial_close_report.md) | Implemented v1.2 / pending live verification | 月度财务结算报表；已支持 Settlement-led Estimated Profit 与 Management Estimated Profit with Report-date Ads 双利润口径、Ads Timing Reconciliation、会计辅助包，默认输出 JSON + 单个 XLSX 多 sheet。 |
 | [`feature_monthly_ingestion_recovery.md`](feature_monthly_ingestion_recovery.md) | Implemented locally / Azure recovery pending | v1.81：Settlement canonical-key MERGE、rollback 语义、exact duplicate repair；Promotion/Coupon additive drift 回归；用于恢复 2026-06 / 2026-07 月报。 |
+| [`feature_monthly_chunk_completeness_recovery.md`](feature_monthly_chunk_completeness_recovery.md) | Implemented locally / Azure verification pending | v1.83：修复 Monthly Sales/Orders/Ads 多分片只入最新文件、历史月份 coverage window 过宽、Ads timing 误阻断邮件。 |
 | [`feature_settlement_repair_scalability.md`](feature_settlement_repair_scalability.md) | Implemented locally / Azure verification pending | v1.82：针对 3,878 个历史 Settlement duplicate groups，将 repair 从 N+1 SQL 改为 single-scan + bounded batch DML，并限制默认日志输出。 |
+| [`feature_settlement_ingestion_batch_upsert.md`](feature_settlement_ingestion_batch_upsert.md) | Implemented locally / Azure verification pending | v1.84：正常 Settlement ingestion 从逐行 MERGE 改为 typed temp staging + bounded multi-row INSERT + single set-based MERGE；重复 business key 安全回退逐行。 |
 | [`feature_weekly_business_review.md`](feature_weekly_business_review.md) | Implemented v1.1 / pending live verification | 每周经营周报；默认 Saturday-Friday，贡献指标明确为“广告和货本后贡献，未扣完整 Amazon 平台费”，默认输出 JSON + 单个 XLSX 多 sheet。 |
 | [`feature_weekly_ads_optimization_report.md`](feature_weekly_ads_optimization_report.md) | Implemented v1.1 / pending live verification | 每周广告优化报表；已支持 active action / historical paused lessons 拆分、negative keyword snapshot 去重和 `--negative-keyword-csv`，默认输出 JSON + 单个 XLSX 多 sheet，不调用 Ads 写接口。 |
 | [`feature_report_delivery_email.md`](feature_report_delivery_email.md) | Implemented v1.3 | 统一报表交付/邮件草稿包；已支持从三类报表 JSON 生成不同模板邮件正文、manifest 和 XLSX 附件包。SMTP 发送已实现，收件人从 `report_email_recipient_config` 读取；v1.3 增加中英文双语邮件正文和 XLSX 固定标签/说明。 |
@@ -44,16 +46,16 @@
 
 ## 3. 下一批建议
 
-当前核心 ingestion 功能已完成，Schema Guard resilience 已完成 main/Azure weekly 验收。当前优先执行 v1.82 Settlement repair scalability 验证：重新 dry-run 3,878 个 exact duplicate groups；确认 conflict=0 后 execute，再补跑 2026-06 / 2026-07 monthly collect_ingest 和 report delivery。后续优先级应切换为：
+当前优先级已切换到 v1.83 + v1.84 合并后的 Monthly recovery Azure 验收：
 
-1. 构建并部署包含 `feature_schema_guard_resilience.md` / ADR-013 实现的新镜像；手动重跑最近一期 weekly `collect_ingest` + `report_delivery`，确认 Sales/Inventory 恢复和邮件 send guard 解除。
-2. 执行 `sql/seeds/002_update_ingestion_job_config_refresh_policy.sql`，使 `pipeline_job_config` 与重叠窗口刷新策略一致。
-3. 运行 `scripts/audit_data_coverage.py --target-start-date 2026-01-01`，按 stable cutoff 判断 2026 YTD 数据覆盖。
-4. 使用 historical backfill CLI 按明确日期范围补 Orders / Ads 等历史缺口，并对最近 10/14/30/60 天做 rolling refresh。
-5. 使用 `feature_sku_cost_management.md` 维护 SKU 成本，并验证缺成本阻塞规则。
-6. 用真实 3月/4月或 5月上旬数据人工复核利润 preview。
-7. 三份管理报表已完成本轮口径升级代码对齐。Monthly Financial Close Report v1.2 已支持双利润口径和 Ads Timing Reconciliation；Weekly Business Review v1.1 已统一 Saturday-Friday 周期并修正贡献指标展示口径；Weekly Ads Optimization Report v1.1 已支持 active actions / historical paused lessons 拆分和 negative keyword snapshot 去重。统一 Report Delivery / Email Pack、SMTP 真实发送、数据库收件人和中英文双语 presentation 已实现。
-8. 三类管理报表与 Report Delivery 已完成第一轮真实验证：WAOR 双语邮件和 XLSX 附件已通过 SMTP 成功发送。Azure Container Apps Jobs 已进入 manual dev rollout：GHCR dev image、`sdp-smoke-dev`、`sdp-weekly-submit-dev` 均已成功。下一步创建 `sdp-weekly-collect-ingest-dev` 与 `sdp-weekly-report-delivery-dev`，详见 `feature_automation_jobs_workflow.md` 和 `docs/operations/azure_container_apps_jobs_workflow.md`。后续报表默认遵循 JSON + 单个 XLSX 多 sheet，避免 Markdown 和多个 CSV 文件碎片化。
+1. CI/main image 通过后，仅更新 monthly jobs。
+2. 直接重跑 `2026-06 collect_ingest`，不重新 submit；确认 Sales & Traffic / Orders 各处理 3 个 chunk，Ads table-ready report types 各处理 3 个 chunk，stage `failed=0`。
+3. 重新生成 2026-06 Monthly Financial Close preview；Ads timing 差异只作为 warning，若无真实财务阻断项则 send guard 应允许发送。
+4. 发送 2026-06 月报后恢复 2026-07。
+5. Settlement normal ingestion 性能优化已提前在 v1.84 实现；6 月 collect 重跑同时验证 chunk completeness 与 batch upsert，随后恢复 7 月。
+
+不补发历史 weekly；weekly 从当前周期继续。
+
 
 注意：数据刷新可以每 1-2 天执行一次；销售、广告、利润等正式分析产物最短周期为一周。
 

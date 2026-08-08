@@ -62,6 +62,7 @@ class AdsIngestionService:
         profile_id: str,
         report_type_ids: list[str] | None = None,
         marketplace_id: str | None = None,
+        raw_file_paths_by_report_type: dict[str, list[str | Path]] | None = None,
         execute: bool = False,
         fail_on_review: bool = True,
     ) -> AdsIngestionRunResult:
@@ -69,6 +70,7 @@ class AdsIngestionService:
             profile_id=profile_id,
             report_type_ids=report_type_ids,
             marketplace_id=marketplace_id,
+            raw_file_paths_by_report_type=raw_file_paths_by_report_type,
             fail_on_review=fail_on_review,
         )
         if dry_run_result.requires_review:

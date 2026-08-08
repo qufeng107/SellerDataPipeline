@@ -90,6 +90,7 @@ class OrdersIngestionService:
         with get_connection() as conn:
             repo = OrdersRepo(conn)
             sync_run_id = repo.insert_sync_run_log(initial_event)
+            repo.commit()
             try:
                 upsert_result = self._upsert_preview_rows(
                     repo=repo,
@@ -112,6 +113,7 @@ class OrdersIngestionService:
                 repo.update_sync_run_log(sync_run_id, finished_event)
                 repo.commit()
             except Exception as exc:
+                _rollback_safely(conn)
                 failed_event = build_finished_audit_event(
                     dry_run_result=dry_run_result,
                     upsert_result=None,
@@ -221,6 +223,12 @@ def _duration_ms(started_at: str, finished_at: str) -> int:
 
 def _utc_now_iso() -> str:
     return datetime.now(UTC).isoformat().replace("+00:00", "Z")
+
+
+def _rollback_safely(conn: Any) -> None:
+    rollback = getattr(conn, "rollback", None)
+    if callable(rollback):
+        rollback()
 
 
 __all__ = [

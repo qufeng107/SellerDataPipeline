@@ -366,7 +366,7 @@ class SalesTrafficIngestionDryRunService:
         return result
 
     def _build_run_output_dir(self, *, marketplace_id: str) -> Path:
-        timestamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
+        timestamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S_%f")
         output_dir = (
             self.output_root
             / SALES_AND_TRAFFIC_REPORT_TYPE

@@ -180,3 +180,8 @@ duplicate_groups=3,878 (0.19s)
 因此根因不是 Azure SQL scan，而是 v1.81 repair planner 对每个 duplicate group 执行额外查询，约形成 `1 + 2N = 7,757` 次 SQL round trips；execute path 还存在大量逐组 DML 和 SQL Server 2100 parameter limit 风险。
 
 后续实现已拆到 [`feature_settlement_repair_scalability.md`](feature_settlement_repair_scalability.md)：planning 改为 single-scan + in-memory grouping，DELETE / rekey 改为 bounded batches，CLI 默认只输出 summary + plan samples。财务 safety contract 不变，本轮仍不需要 migration。
+
+
+## 8. v1.83 Monthly chunk completeness follow-up
+
+2026-06 Azure 恢复验证发现 Sales & Traffic / Orders / Ads backfill 分片已全部下载，但旧 ingestion 默认只选 latest raw file。v1.83 改为 manifest-bound period selection + complete interval gate，并把历史月 coverage audit 限定到目标月；无需重新 submit 已下载的 2026-06 reports，部署后直接重跑 collect_ingest。

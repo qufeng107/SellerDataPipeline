@@ -100,3 +100,38 @@ def test_ads_ingestion_dry_run_skips_not_ready_mapping_without_review(tmp_path: 
         result.report_results[0].skip_reason == "target_table_not_ready_non_empty_sample_required"
     )
     assert result.report_results[0].requires_review is False
+
+
+def test_ads_ingestion_dry_run_processes_multiple_explicit_files_without_preview_overwrite(tmp_path: Path) -> None:
+    raw_root = tmp_path / "reports" / "raw"
+    first = _write_ads_raw(
+        raw_root,
+        "3917953989967300",
+        "spCampaigns",
+        "ads-report-1",
+        '[{"date":"2026-06-01","campaignId":1,"campaignName":"A","campaignStatus":"ENABLED","impressions":10,"clicks":1,"cost":"1.00","sales7d":"2.00","purchases7d":1,"unitsSoldClicks7d":1}]',
+    )
+    second = _write_ads_raw(
+        raw_root,
+        "3917953989967300",
+        "spCampaigns",
+        "ads-report-2",
+        '[{"date":"2026-06-15","campaignId":1,"campaignName":"A","campaignStatus":"ENABLED","impressions":20,"clicks":2,"cost":"2.00","sales7d":"4.00","purchases7d":1,"unitsSoldClicks7d":1}]',
+    )
+
+    result = AdsIngestionDryRunService(
+        raw_reports_root=raw_root,
+        output_root=tmp_path / "out",
+    ).prepare(
+        profile_id="3917953989967300",
+        report_type_ids=["spCampaigns"],
+        marketplace_id="ATVPDKIKX0DER",
+        raw_file_paths_by_report_type={"spCampaigns": [first, second]},
+    )
+
+    assert result.status == "success"
+    assert result.processed_file_count == 2
+    assert result.prepared_row_count == 2
+    preview_paths = [Path(item.preview_file_path or "") for item in result.report_results]
+    assert len(set(preview_paths)) == 2
+    assert all(path.exists() for path in preview_paths)

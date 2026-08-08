@@ -386,3 +386,28 @@ class FakeMonthlyRepo:
     ) -> dict[str, object]:
         self.calls.append("reimbursement")
         return {"reimbursement_count": 0}
+
+
+def test_large_ads_timing_difference_is_warning_not_delivery_blocker() -> None:
+    result = MonthlyFinancialCloseService().calculate_from_rows(
+        marketplace_id="ATVPDKIKX0DER",
+        profile_id="3917953989967300",
+        month="2026-06",
+        start_date=date(2026, 6, 1),
+        end_date=date(2026, 6, 30),
+        settlement_rows=[
+            _settlement_row(1, "SKU-1", Decimal("100.00"), "product_sales", "revenue", 1),
+            _settlement_row(2, None, Decimal("-10.00"), "advertising_fee", "advertising_cost", None),
+        ],
+        sku_cost_rows=[_cost_row("SKU-1", Decimal("20.00"), Decimal("0.00"), date(2026, 1, 1))],
+        ads_summary={"ads_cost": Decimal("500.00"), "ads_row_count": 10},
+        sales_traffic_summary={"ordered_product_sales_amount": Decimal("100.00")},
+    )
+
+    timing = next(
+        check for check in result.reconciliation_checks
+        if check.check_name == "settlement_ads_fee_vs_ads_api_spend"
+    )
+    assert timing.status == "warning"
+    assert timing.severity == "warning"
+    assert result.status == "ok"

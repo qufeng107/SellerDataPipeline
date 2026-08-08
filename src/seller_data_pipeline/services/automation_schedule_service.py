@@ -364,9 +364,26 @@ def _monthly_commands(
                 "Collect ready Amazon Ads reports",
                 ("scripts/collect_ads_reports.py", "--limit", "100"),
             ),
-            _ingest("Sales & Traffic", "scripts/ingest_sales_traffic_report.py", marketplace_id),
-            _ingest("Orders", "scripts/ingest_orders_report.py", marketplace_id),
-            _ingest_ads(profile_id=profile_id, marketplace_id=marketplace_id),
+            _ingest(
+                "Sales & Traffic",
+                "scripts/ingest_sales_traffic_report.py",
+                marketplace_id,
+                start_date=window.start,
+                end_date=window.end,
+            ),
+            _ingest(
+                "Orders",
+                "scripts/ingest_orders_report.py",
+                marketplace_id,
+                start_date=window.start,
+                end_date=window.end,
+            ),
+            _ingest_ads(
+                profile_id=profile_id,
+                marketplace_id=marketplace_id,
+                start_date=window.start,
+                end_date=window.end,
+            ),
             _ingest("Settlement", "scripts/ingest_settlement_report.py", marketplace_id),
             _ingest(
                 "FBA reimbursements", "scripts/ingest_fba_reimbursements_report.py", marketplace_id
@@ -382,6 +399,8 @@ def _monthly_commands(
                     marketplace_id,
                     "--target-start-date",
                     window.start.isoformat(),
+                    "--target-end-date",
+                    window.end.isoformat(),
                 ),
             ),
         )
@@ -480,18 +499,38 @@ def _run_sampling_plan(
     )
 
 
-def _ingest(label: str, script_path: str, marketplace_id: str) -> AutomationCommand:
-    return _command(
-        f"Ingest {label}",
-        (script_path, "--marketplace-id", marketplace_id, "--execute"),
-        writes=True,
-    )
+def _ingest(
+    label: str,
+    script_path: str,
+    marketplace_id: str,
+    *,
+    start_date: date | None = None,
+    end_date: date | None = None,
+) -> AutomationCommand:
+    argv = [script_path, "--marketplace-id", marketplace_id]
+    if start_date is not None or end_date is not None:
+        if start_date is None or end_date is None:
+            raise ValueError("start_date and end_date must be provided together")
+        argv.extend(["--start-date", start_date.isoformat(), "--end-date", end_date.isoformat()])
+    argv.append("--execute")
+    return _command(f"Ingest {label}", tuple(argv), writes=True)
 
 
-def _ingest_ads(*, profile_id: str | None, marketplace_id: str) -> AutomationCommand:
-    argv = ["scripts/ingest_ads_reports.py", "--marketplace-id", marketplace_id, "--execute"]
+def _ingest_ads(
+    *,
+    profile_id: str | None,
+    marketplace_id: str,
+    start_date: date | None = None,
+    end_date: date | None = None,
+) -> AutomationCommand:
+    argv = ["scripts/ingest_ads_reports.py", "--marketplace-id", marketplace_id]
     if profile_id:
         argv.extend(["--profile-id", profile_id])
+    if start_date is not None or end_date is not None:
+        if start_date is None or end_date is None:
+            raise ValueError("start_date and end_date must be provided together")
+        argv.extend(["--start-date", start_date.isoformat(), "--end-date", end_date.isoformat()])
+    argv.append("--execute")
     return _command("Ingest Amazon Ads", tuple(argv), writes=True)
 
 

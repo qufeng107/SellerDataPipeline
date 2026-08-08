@@ -502,3 +502,8 @@ python scripts/ingest_sales_traffic_report.py --marketplace-id ATVPDKIKX0DER --e
 | 2026-08-08 | 全量测试 | `313 passed`; `compileall` success |
 
 Azure 生产/手动 Job 验收尚未执行；本地代码阶段完成后不得把该项写成已云端恢复。
+
+
+### v1.83 Monthly period ingestion
+
+默认/manual/weekly 未传日期窗口时仍使用 latest raw file。Monthly collect 显式传 `--start-date/--end-date`，CLI 通过 report request manifests 选择目标月全部 downloaded chunks；区间存在缺口时非零退出，不允许“只入最新 chunk”后继续生成月报。

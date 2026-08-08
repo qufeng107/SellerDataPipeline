@@ -1047,7 +1047,7 @@ def _ads_timing_reconciliation_rows(result: MonthlyFinancialCloseResult) -> list
             "value": status,
             "currency": None,
             "source": "derived",
-            "notes": "ok < $20 or <5%; warning $20-$100 or 5%-15%; needs_review above that.",
+            "notes": "ok < $20 or <5%; otherwise warning because Settlement and Ads API use different timing semantics.",
         },
     ]
 
@@ -1702,9 +1702,7 @@ def _ads_timing_status(*, ads_api_spend: Decimal, settlement_ads_abs: Decimal) -
     diff_ratio = _safe_ratio(diff_abs, denominator)
     if diff_abs <= Decimal("20.00") or (diff_ratio is not None and diff_ratio <= Decimal("0.05")):
         return "ok"
-    if diff_abs <= Decimal("100.00") or (diff_ratio is not None and diff_ratio <= Decimal("0.15")):
-        return "warning"
-    return "needs_review"
+    return "warning"
 
 
 def _context_diff_check(
