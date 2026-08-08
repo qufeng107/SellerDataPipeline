@@ -53,9 +53,30 @@ def test_fba_inventory_parser_maps_core_fields() -> None:
     assert record.to_dict()["per_unit_volume"] == "0.03"
 
 
+def test_fba_inventory_parser_accepts_minimal_required_fields() -> None:
+    records = FbaInventoryParser().parse_bytes(
+        content=b"sku\tafn-fulfillable-quantity\nSKU-1\t1\n",
+        marketplace_id="ATVPDKIKX0DER",
+        snapshot_date=date(2026, 5, 14),
+    )
+
+    assert len(records) == 1
+    assert records[0].seller_sku == "SKU-1"
+    assert records[0].afn_fulfillable_quantity == 1
+    assert records[0].asin is None
+
+
 def test_fba_inventory_parser_rejects_missing_required_fields() -> None:
     with pytest.raises(ValueError, match="Missing required FBA inventory report fields"):
         FbaInventoryParser().parse_bytes(
-            content=b"sku\tafn-fulfillable-quantity\nSKU-1\t1\n",
+            content=b"sku\tother\nSKU-1\tx\n",
+            marketplace_id="ATVPDKIKX0DER",
+        )
+
+
+def test_fba_inventory_parser_rejects_empty_sku_identity() -> None:
+    with pytest.raises(ValueError, match="Missing required FBA inventory sku"):
+        FbaInventoryParser().parse_bytes(
+            content=b"sku\tafn-fulfillable-quantity\n\t1\n",
             marketplace_id="ATVPDKIKX0DER",
         )

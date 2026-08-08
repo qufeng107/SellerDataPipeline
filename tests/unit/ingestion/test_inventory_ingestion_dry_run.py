@@ -93,3 +93,75 @@ def test_inventory_ingestion_dry_run_blocks_schema_drift(tmp_path: Path) -> None
 def test_infer_snapshot_date_from_path_uses_date_directory(tmp_path: Path) -> None:
     path = tmp_path / "amazon" / "ATVPDKIKX0DER" / "report" / "2026-05-14" / "1.txt"
     assert infer_snapshot_date_from_path(path).isoformat() == "2026-05-14"
+
+
+def test_inventory_dry_run_allows_2026_08_03_additive_schema_drift(tmp_path: Path) -> None:
+    raw_root = tmp_path / "reports" / "raw"
+    payload = (
+        "sku\tafn-fulfillable-quantity\tafn-fc-transfer-quantity\tafn-onhand-buyable-quantity\n"
+        "SKU-1\t277\t3\t274\n"
+    )
+    _write_inventory_raw(raw_root, "ATVPDKIKX0DER", "inventory-report-aug-03", payload)
+
+    result = InventoryIngestionDryRunService(
+        raw_reports_root=raw_root,
+        output_root=tmp_path / "out",
+    ).prepare(marketplace_id="ATVPDKIKX0DER")
+
+    assert result.status == "success"
+    assert result.requires_review is False
+    assert result.prepared_row_count == 1
+    assert result.report_result.schema_validation_status == "new_fields"
+    assert result.report_result.schema_validation_event is not None
+    event = result.report_result.schema_validation_event
+    assert event["requires_review"] is False
+    assert json.loads(event["new_fields_json"]) == [
+        "afn-fc-transfer-quantity",
+        "afn-onhand-buyable-quantity",
+    ]
+    preview_row = json.loads(
+        Path(result.report_result.preview_file_path or "").read_text().splitlines()[0]
+    )
+    raw_data = json.loads(preview_row["raw_data"])
+    assert raw_data["afn-fc-transfer-quantity"] == "3"
+    assert raw_data["afn-onhand-buyable-quantity"] == "274"
+
+
+def test_inventory_dry_run_allows_optional_columns_to_be_absent(tmp_path: Path) -> None:
+    raw_root = tmp_path / "reports" / "raw"
+    _write_inventory_raw(
+        raw_root,
+        "ATVPDKIKX0DER",
+        "inventory-report-minimal",
+        "sku\tafn-fulfillable-quantity\nSKU-1\t277\n",
+    )
+
+    result = InventoryIngestionDryRunService(
+        raw_reports_root=raw_root,
+        output_root=tmp_path / "out",
+    ).prepare(marketplace_id="ATVPDKIKX0DER")
+
+    assert result.status == "success"
+    assert result.requires_review is False
+    assert result.prepared_row_count == 1
+    assert result.report_result.schema_validation_status == "ok"
+
+
+def test_inventory_dry_run_blocks_missing_required_sku(tmp_path: Path) -> None:
+    raw_root = tmp_path / "reports" / "raw"
+    _write_inventory_raw(
+        raw_root,
+        "ATVPDKIKX0DER",
+        "inventory-report-missing-sku",
+        "afn-fulfillable-quantity\tasin\n277\tB000TEST01\n",
+    )
+
+    result = InventoryIngestionDryRunService(
+        raw_reports_root=raw_root,
+        output_root=tmp_path / "out",
+    ).prepare(marketplace_id="ATVPDKIKX0DER")
+
+    assert result.status == "requires_review"
+    assert result.requires_review is True
+    assert result.report_result.schema_validation_status == "missing_fields"
+    assert result.report_result.prepared_row_count == 0

@@ -1,6 +1,6 @@
 # SellerDataPipeline 开发与文档维护规则
 
-> 更新时间：2026-05-16  
+> 更新时间：2026-08-08  
 > 文档定位：定义本项目后续开发、文档、数据库、测试和 AI 迭代的硬规则。任何新功能、新表结构、新数据源或重构，都应先阅读本文件。
 
 ## 1. 总原则
@@ -14,7 +14,8 @@
 5. **先 migration 后 spec**：数据库真实结构变化必须通过 migration 执行；执行成功后再更新 current schema spec。
 6. **不修改已执行 migration**：已在 Azure SQL 执行成功的 migration 是历史事实，禁止回改。
 7. **所有 ingestion 必须可审计**：必须有 dry-run、schema guard、run log、validation event 和幂等性验证。
-8. **真实 SQL 前必须连接预热**：migration、ingestion、检查脚本等真实数据库入口必须使用 `get_connection()`，不得直接绕开 Azure SQL retry + `SELECT 1` warm-up。
+8. **Schema guard 保护数据契约而不是完整字段一致性**：新增 unknown field 默认只告警、不阻断；只有 required field 缺失、关键语义变化、关键解析失败等才阻断。详见 ADR-013。
+9. **真实 SQL 前必须连接预热**：migration、ingestion、检查脚本等真实数据库入口必须使用 `get_connection()`，不得直接绕开 Azure SQL retry + `SELECT 1` warm-up。
 
 ## 2. 文档维护规则
 
@@ -158,6 +159,7 @@ raw file
 
 - 支持 dry-run，不写数据库也能生成 preview。
 - 支持 execute 模式，真实写库前必须经过 schema guard。
+- schema guard 默认采用向后兼容数据契约：`expected_fields` 与 `required_fields` 分离；additive new fields 记录 warning/event 但不阻断，missing required / semantic incompatibility / critical parse failure 才阻断。
 - 写库必须幂等，重复执行同一批数据不能重复插入。
 - 写库入口必须使用 `get_connection()`，让数据库连接先完成 retry + `SELECT 1` warm-up。
 - 写入后必须能通过检查脚本或 SQL 查询验证行数和 run log。
@@ -205,9 +207,16 @@ python -m compileall -q scripts src tests
 如果环境安装了 Ruff：
 
 ```bash
-ruff check src tests scripts
+# CI / 合并阻断：只执行高信号的 correctness / likely-bug lint。
+# 具体规则由 pyproject.toml 统一配置，目前为 E4/E7/E9/F/B。
+ruff check src tests
+
+# 本地维护，不作为 CI 阻断：import 排序、pyupgrade 与格式化。
+ruff check src tests scripts --select I,UP --fix
 ruff format src tests scripts
 ```
+
+CI lint 的目标是尽早阻止会影响运行正确性的代码问题，而不是把可自动修复的纯风格差异升级为发布故障。`I`（import sorting）和 `UP`（pyupgrade）保留为本地维护工具；如后续某条规则产生持续误报，应按 `ADR-014` 的“信号优先”原则评估，而不是直接取消整个 lint gate。
 
 涉及数据库的变更还应运行：
 

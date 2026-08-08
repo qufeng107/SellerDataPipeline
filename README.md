@@ -137,7 +137,11 @@ PYTHONPATH=src pytest -q
 代码检查：
 
 ```bash
-ruff check src tests scripts
+# CI blocking：只检查高信号的正确性/潜在 bug 规则（由 pyproject.toml 配置）
+ruff check src tests
+
+# 本地维护：格式和 import/pyupgrade 可自动修复，不作为 CI 阻断条件
+ruff check src tests scripts --select I,UP --fix
 ruff format src tests scripts
 ```
 

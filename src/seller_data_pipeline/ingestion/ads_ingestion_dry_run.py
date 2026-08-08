@@ -15,19 +15,11 @@ from seller_data_pipeline.ingestion.ads_table_mapping import (
 from seller_data_pipeline.parsers.amazon.ads_report_parser import AdsReportParser
 from seller_data_pipeline.sampling.report_analyzer import analyze_report_file
 from seller_data_pipeline.sampling.schema_drift import (
+    BLOCKING_SCHEMA_STATUSES,
     SchemaValidationResult,
     build_ads_expected_schema,
     validate_report_schema,
 )
-
-BLOCKING_SCHEMA_STATUSES = {
-    "missing_fields",
-    "new_fields",
-    "schema_drift",
-    "unmapped_fields",
-    "validation_failed",
-    "empty_report_unexpected",
-}
 
 
 @dataclass(frozen=True)

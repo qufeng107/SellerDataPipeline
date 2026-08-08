@@ -199,13 +199,22 @@ business_key_hash = sha256(canonical JSON of business key)
 
 | 场景 | 处理方式 | 是否阻塞入库 | 是否记录 validation event |
 |---|---|---|---|
-| 缺少必需字段 |  | yes/no | yes/no |
-| 出现新增字段 |  | yes/no | yes/no |
-| 空文件 |  | yes/no | yes/no |
-| 数字解析失败 |  | yes/no | yes/no |
-| 日期解析失败 |  | yes/no | yes/no |
+| 缺少必需字段 | 默认 `requires_review=True` | yes | yes |
+| 出现新增字段 | 默认 warning，保留 drift 证据并继续处理 | no | yes |
+| 已知非关键字段缺失 | 默认 warning/info | no | yes/no |
+| 空文件 | 按该 report 的业务语义明确设计 | yes/no | yes |
+| 数字解析失败 | 关键字段默认阻断 | yes | yes |
+| 日期解析失败 | 关键字段默认阻断 | yes | yes |
 
-必须说明何时设置：
+项目默认遵循 `ADR-013-schema-guard-compatibility-policy.md`：
+
+- `expected_fields` 是已知字段目录，不等于全部必需字段。
+- `required_fields` 只包含安全入库所需的最小业务契约。
+- Amazon 新增 unknown field 属于 additive drift，默认 non-blocking，但必须留 validation event。
+- warning 与 blocking 解耦；只有真正需要人工处理后才能安全继续时才设置 `requires_review=True`。
+- 如某功能需要比该默认策略更严格，必须在 feature 文档中写明业务原因。
+
+必须明确说明何时设置：
 
 ```text
 requires_review=True

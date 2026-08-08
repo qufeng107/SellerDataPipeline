@@ -1,6 +1,6 @@
 # 功能设计文档索引
 
-> 更新时间：2026-06-01  
+> 更新时间：2026-08-08  
 > 文档定位：本目录记录 SellerDataPipeline 的单功能设计、实现状态、验收标准和相关代码路径。每个功能文档必须以 `FEATURE_TEMPLATE.md` 为标准，不应把多个功能混在同一份文档里。
 
 ## 1. 功能文档维护规则
@@ -18,9 +18,10 @@
 | [`FEATURE_TEMPLATE.md`](FEATURE_TEMPLATE.md) | Template | 单功能设计文档标准模板。 |
 | [`feature_azure_sql_foundation.md`](feature_azure_sql_foundation.md) | Implemented | Azure SQL 连接、初始 migration、数据库检查脚本和数据库治理规则。 |
 | [`feature_ads_ingestion.md`](feature_ads_ingestion.md) | Implemented | Amazon Ads Sponsored Products 四类日报入库闭环。 |
+| [`feature_schema_guard_resilience.md`](feature_schema_guard_resilience.md) | Implemented / Azure verification pending | 2026-08-08 schema guard robustness 修订已实现并通过 313 个单测；additive new fields non-blocking，required contract 缺失/关键解析或语义变化才阻断。 |
 | [`feature_listing_snapshot_ingestion.md`](feature_listing_snapshot_ingestion.md) | Implemented | SP-API `GET_MERCHANT_LISTINGS_ALL_DATA` -> `amazon_listing_snapshot`；dry-run、schema guard、repository、CLI、真实 Azure SQL execute 和幂等性验证已完成。 |
-| [`feature_inventory_ingestion.md`](feature_inventory_ingestion.md) | Implemented | SP-API `GET_FBA_MYI_UNSUPPRESSED_INVENTORY_DATA` -> `amazon_inventory_daily`；004、dry-run、execute 和第二次 execute 幂等性验证已完成。 |
-| [`feature_sales_traffic_ingestion.md`](feature_sales_traffic_ingestion.md) | Implemented | SP-API `GET_SALES_AND_TRAFFIC_REPORT` -> `amazon_sales_traffic_daily` / `amazon_sales_traffic_asin_daily`；005、dry-run、execute 和第二次 execute 幂等性验证已完成。 |
+| [`feature_inventory_ingestion.md`](feature_inventory_ingestion.md) | Implemented v1.1 / Azure verification pending | Inventory snapshot v1.1 已采用 minimal required contract；Amazon additive fields 仅 warning，不再阻断。 |
+| [`feature_sales_traffic_ingestion.md`](feature_sales_traffic_ingestion.md) | Implemented v1.1 / Azure verification pending | Sales & Traffic v1.1 已采用 minimal required contract；2026-08-03 的 24 个 additive path 回归不再阻断。 |
 | [`feature_settlement_ingestion.md`](feature_settlement_ingestion.md) | Implemented | SP-API `GET_V2_SETTLEMENT_REPORT_DATA_FLAT_FILE_V2` -> `amazon_settlement_transaction`；006、dry-run、execute 和第二次 execute 幂等性验证已完成。 |
 | [`feature_orders_ingestion.md`](feature_orders_ingestion.md) | Implemented | SP-API `GET_FLAT_FILE_ALL_ORDERS_DATA_BY_ORDER_DATE_GENERAL` -> `amazon_order_item`；007、dry-run、execute 和第二次 execute 幂等性验证已完成。 |
 | [`feature_fba_reimbursements_ingestion.md`](feature_fba_reimbursements_ingestion.md) | Implemented | SP-API `GET_FBA_REIMBURSEMENTS_DATA` -> `amazon_fba_reimbursement`；008、dry-run、execute 和第二次 execute 幂等性验证已完成。 |
@@ -41,15 +42,16 @@
 
 ## 3. 下一批建议
 
-当前核心 ingestion 功能已全部完成。后续优先级应切换为：
+当前核心 ingestion 功能已完成，2026-08-08 schema guard resilience 代码与本地回归也已完成。下一步优先构建新镜像并在 Azure 手动重跑最近一期 weekly，再继续其他 backlog。后续优先级应切换为：
 
-1. 执行 `sql/seeds/002_update_ingestion_job_config_refresh_policy.sql`，使 `pipeline_job_config` 与重叠窗口刷新策略一致。
-2. 运行 `scripts/audit_data_coverage.py --target-start-date 2026-01-01`，按 stable cutoff 判断 2026 YTD 数据覆盖。
-3. 使用 historical backfill CLI 按明确日期范围补 Orders / Ads 等历史缺口，并对最近 10/14/30/60 天做 rolling refresh。
-4. 使用 `feature_sku_cost_management.md` 维护 SKU 成本，并验证缺成本阻塞规则。
-5. 用真实 3月/4月或 5月上旬数据人工复核利润 preview。
-6. 三份管理报表已完成本轮口径升级代码对齐。Monthly Financial Close Report v1.2 已支持双利润口径和 Ads Timing Reconciliation；Weekly Business Review v1.1 已统一 Saturday-Friday 周期并修正贡献指标展示口径；Weekly Ads Optimization Report v1.1 已支持 active actions / historical paused lessons 拆分和 negative keyword snapshot 去重。统一 Report Delivery / Email Pack、SMTP 真实发送、数据库收件人和中英文双语 presentation 已实现。
-7. 三类管理报表与 Report Delivery 已完成第一轮真实验证：WAOR 双语邮件和 XLSX 附件已通过 SMTP 成功发送。Azure Container Apps Jobs 已进入 manual dev rollout：GHCR dev image、`sdp-smoke-dev`、`sdp-weekly-submit-dev` 均已成功。下一步创建 `sdp-weekly-collect-ingest-dev` 与 `sdp-weekly-report-delivery-dev`，详见 `feature_automation_jobs_workflow.md` 和 `docs/operations/azure_container_apps_jobs_workflow.md`。后续报表默认遵循 JSON + 单个 XLSX 多 sheet，避免 Markdown 和多个 CSV 文件碎片化。
+1. 构建并部署包含 `feature_schema_guard_resilience.md` / ADR-013 实现的新镜像；手动重跑最近一期 weekly `collect_ingest` + `report_delivery`，确认 Sales/Inventory 恢复和邮件 send guard 解除。
+2. 执行 `sql/seeds/002_update_ingestion_job_config_refresh_policy.sql`，使 `pipeline_job_config` 与重叠窗口刷新策略一致。
+3. 运行 `scripts/audit_data_coverage.py --target-start-date 2026-01-01`，按 stable cutoff 判断 2026 YTD 数据覆盖。
+4. 使用 historical backfill CLI 按明确日期范围补 Orders / Ads 等历史缺口，并对最近 10/14/30/60 天做 rolling refresh。
+5. 使用 `feature_sku_cost_management.md` 维护 SKU 成本，并验证缺成本阻塞规则。
+6. 用真实 3月/4月或 5月上旬数据人工复核利润 preview。
+7. 三份管理报表已完成本轮口径升级代码对齐。Monthly Financial Close Report v1.2 已支持双利润口径和 Ads Timing Reconciliation；Weekly Business Review v1.1 已统一 Saturday-Friday 周期并修正贡献指标展示口径；Weekly Ads Optimization Report v1.1 已支持 active actions / historical paused lessons 拆分和 negative keyword snapshot 去重。统一 Report Delivery / Email Pack、SMTP 真实发送、数据库收件人和中英文双语 presentation 已实现。
+8. 三类管理报表与 Report Delivery 已完成第一轮真实验证：WAOR 双语邮件和 XLSX 附件已通过 SMTP 成功发送。Azure Container Apps Jobs 已进入 manual dev rollout：GHCR dev image、`sdp-smoke-dev`、`sdp-weekly-submit-dev` 均已成功。下一步创建 `sdp-weekly-collect-ingest-dev` 与 `sdp-weekly-report-delivery-dev`，详见 `feature_automation_jobs_workflow.md` 和 `docs/operations/azure_container_apps_jobs_workflow.md`。后续报表默认遵循 JSON + 单个 XLSX 多 sheet，避免 Markdown 和多个 CSV 文件碎片化。
 
 注意：数据刷新可以每 1-2 天执行一次；销售、广告、利润等正式分析产物最短周期为一周。
 

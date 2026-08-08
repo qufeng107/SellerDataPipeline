@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import json
 from pathlib import Path
 
@@ -112,6 +113,46 @@ SALES_TRAFFIC_PAYLOAD = {
 }
 
 
+def _payload_with_2026_08_03_additive_fields() -> dict:
+    payload = copy.deepcopy(SALES_TRAFFIC_PAYLOAD)
+    asin_sales = payload["salesAndTrafficByAsin"][0]["salesByAsin"]
+    asin_sales.update(
+        {
+            "ordersShipped": 5,
+            "ordersShippedB2B": 0,
+            "refundRate": 25.0,
+            "refundRateB2B": 0.0,
+            "shippedProductSales": {"amount": 126.0, "currencyCode": "USD"},
+            "shippedProductSalesB2B": {"amount": 0.0, "currencyCode": "USD"},
+            "unitsRefunded": 1,
+            "unitsRefundedB2B": 0,
+            "unitsShipped": 5,
+            "unitsShippedB2B": 0,
+        }
+    )
+    date_sales = payload["salesAndTrafficByDate"][0]["salesByDate"]
+    date_sales.update(
+        {
+            "claimsAmountB2B": {"amount": 0.0, "currencyCode": "USD"},
+            "claimsGrantedB2B": 0,
+            "ordersShippedB2B": 0,
+            "refundRateB2B": 0.0,
+            "shippedProductSalesB2B": {"amount": 0.0, "currencyCode": "USD"},
+            "unitsRefundedB2B": 0,
+            "unitsShippedB2B": 0,
+        }
+    )
+    date_traffic = payload["salesAndTrafficByDate"][0]["trafficByDate"]
+    date_traffic.update(
+        {
+            "feedbackReceivedB2B": 0,
+            "negativeFeedbackReceivedB2B": 0,
+            "receivedNegativeFeedbackRateB2B": 0.0,
+        }
+    )
+    return payload
+
+
 def _write_sales_raw(
     root: Path, marketplace_id: str, report_id: str, payload: dict = SALES_TRAFFIC_PAYLOAD
 ) -> Path:
@@ -185,3 +226,50 @@ def test_sales_traffic_dry_run_blocks_schema_drift(tmp_path: Path) -> None:
         item.skip_reason == "schema_validation_requires_review" for item in result.table_results
     )
     assert result.prepared_row_count == 0
+
+
+def test_sales_traffic_dry_run_allows_2026_08_03_additive_schema_drift(tmp_path: Path) -> None:
+    raw_root = tmp_path / "reports" / "raw"
+    payload = _payload_with_2026_08_03_additive_fields()
+    _write_sales_raw(raw_root, "ATVPDKIKX0DER", "sales-report-aug-03", payload)
+
+    result = SalesTrafficIngestionDryRunService(
+        raw_reports_root=raw_root,
+        output_root=tmp_path / "out",
+    ).prepare(marketplace_id="ATVPDKIKX0DER")
+
+    assert result.status == "success"
+    assert result.requires_review is False
+    assert result.prepared_row_count == 2
+    assert result.schema_validation_status == "new_fields"
+    assert result.schema_validation_event is not None
+    new_fields = json.loads(result.schema_validation_event["new_fields_json"])
+    assert len(new_fields) == 24
+    assert "salesAndTrafficByAsin[].salesByAsin.ordersShipped" in new_fields
+    assert result.schema_validation_event["requires_review"] is False
+
+    asin_result = next(
+        item
+        for item in result.table_results
+        if item.target_table == "amazon_sales_traffic_asin_daily"
+    )
+    asin_row = json.loads(Path(asin_result.preview_file_path or "").read_text().splitlines()[0])
+    raw_data = json.loads(asin_row["raw_data"])
+    assert raw_data["salesByAsin"]["ordersShipped"] == 5
+
+
+def test_sales_traffic_dry_run_blocks_missing_required_date(tmp_path: Path) -> None:
+    raw_root = tmp_path / "reports" / "raw"
+    payload = copy.deepcopy(SALES_TRAFFIC_PAYLOAD)
+    del payload["salesAndTrafficByDate"][0]["date"]
+    _write_sales_raw(raw_root, "ATVPDKIKX0DER", "sales-report-missing-date", payload)
+
+    result = SalesTrafficIngestionDryRunService(
+        raw_reports_root=raw_root,
+        output_root=tmp_path / "out",
+    ).prepare(marketplace_id="ATVPDKIKX0DER")
+
+    assert result.status == "requires_review"
+    assert result.requires_review is True
+    assert result.prepared_row_count == 0
+    assert result.schema_validation_status == "missing_fields"

@@ -1,6 +1,6 @@
 # SellerDataPipeline 迭代工作流 SOP
 
-> 更新时间：2026-05-16  
+> 更新时间：2026-08-08  
 > 文档定位：本文件是后续 AI / 开发者迭代 SellerDataPipeline 的端到端操作流程。它把“新需求提出后先做什么、何时写文档、何时改代码、何时改数据库、如何验收、如何更新真实 schema spec”固定下来。  
 > 相关文档：`docs/project/development_rules.md`、`docs/database/database_migration_policy.md`、`docs/features/FEATURE_TEMPLATE.md`、`docs/database/database_current_schema_spec.md`。
 
@@ -524,9 +524,20 @@ Dry-run 不写数据库，但要暴露：
 - `requires_review`。
 - preview 输出目录。
 
+Schema guard 的默认项目级 policy 见 ADR-013：
+
+```text
+new/unknown additive fields -> warning + validation event, non-blocking
+missing required fields      -> requires_review=True, blocking
+critical parse/type failure  -> blocking
+semantic incompatibility     -> blocking
+```
+
+`expected_fields` 不得默认等同于 `required_fields`。Feature 文档必须写清最小 required contract；如果需要比默认 policy 更严格，必须说明业务原因。
+
 ### 11.3 Execute 和幂等性
 
-Execute 只有在 schema guard 通过后才能写库。
+Execute 只有在 schema guard 判定为 **non-blocking** 后才能写库；warning 本身不等于 blocking。
 
 幂等性验收必须至少跑两次同一批数据：
 
@@ -595,9 +606,15 @@ python -m compileall -q scripts src tests
 如果环境安装 Ruff：
 
 ```bash
-ruff check src tests scripts
+# CI blocking quality gate（高信号规则，配置见 pyproject.toml）
+ruff check src tests
+
+# 非阻断的本地自动整理
+ruff check src tests scripts --select I,UP --fix
 ruff format src tests scripts
 ```
+
+不要因为 import 顺序、可自动升级语法等纯维护问题阻塞部署；CI 必须优先拦截 undefined name、明显语法/结构错误和 Bugbear 类潜在 bug。具体决策见 `docs/adr/ADR-014-ci-quality-gate-signal-over-style.md`。
 
 ### 13.3 数据库类变更验收
 

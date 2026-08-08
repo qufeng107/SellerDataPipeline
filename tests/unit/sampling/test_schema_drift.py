@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from seller_data_pipeline.sampling.report_analyzer import analyze_json_report_text
 from seller_data_pipeline.sampling.schema_drift import (
+    ExpectedReportSchema,
     build_ads_expected_schema,
     normalize_field_name,
     validate_report_schema,
@@ -82,7 +83,8 @@ def test_validate_ads_schema_detects_new_fields() -> None:
     )
 
     assert result.status == "new_fields"
-    assert result.requires_review
+    assert result.severity == "warning"
+    assert not result.requires_review
     assert result.new_fields == ("newMetric",)
 
 
@@ -112,3 +114,55 @@ def test_validate_ads_schema_marks_empty_report_without_review() -> None:
     assert not result.requires_review
     assert result.row_count == 0
     assert result.observed_fields == ()
+
+
+def test_validate_schema_blocks_required_missing_plus_new_fields() -> None:
+    analysis = _analyze_ads_json('[{"campaignId":"1","newMetric":99}]')
+    expected = ExpectedReportSchema(
+        source_system="amazon_ads",
+        report_type="spCampaigns",
+        expected_fields=("campaignId", "date"),
+        required_fields=("campaignId", "date"),
+    )
+
+    result = validate_report_schema(analysis=analysis, expected_schema=expected)
+
+    assert result.status == "schema_drift"
+    assert result.severity == "error"
+    assert result.requires_review
+    assert result.missing_fields == ("date",)
+    assert result.new_fields == ("newMetric",)
+
+
+def test_validate_schema_allows_known_optional_field_to_be_absent() -> None:
+    analysis = _analyze_ads_json('[{"campaignId":"1"}]')
+    expected = ExpectedReportSchema(
+        source_system="amazon_ads",
+        report_type="spCampaigns",
+        expected_fields=("campaignId", "optionalMetric"),
+        required_fields=("campaignId",),
+    )
+
+    result = validate_report_schema(analysis=analysis, expected_schema=expected)
+
+    assert result.status == "ok"
+    assert not result.requires_review
+    assert result.missing_fields == ()
+    assert "optional" in result.message.lower()
+
+
+def test_validate_schema_blocks_unexpected_empty_report() -> None:
+    analysis = _analyze_ads_json("[]")
+    expected = ExpectedReportSchema(
+        source_system="amazon_ads",
+        report_type="spCampaigns",
+        expected_fields=("campaignId",),
+        required_fields=("campaignId",),
+        allow_empty_report=False,
+    )
+
+    result = validate_report_schema(analysis=analysis, expected_schema=expected)
+
+    assert result.status == "empty_report_unexpected"
+    assert result.severity == "error"
+    assert result.requires_review

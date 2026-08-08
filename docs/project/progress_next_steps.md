@@ -1,7 +1,7 @@
 # SellerDataPipeline 当前进展与下一步计划
 
-> 更新时间：2026-06-01  
-> 当前版本：v1.77 report code口径升级完成：双利润月报 + WBR Saturday–Friday + WAOR negative snapshot  
+> 更新时间：2026-08-08  
+> 当前版本：v1.80 CI quality gate tuned for high-signal blocking; schema guard Azure verification pending  
 > 文档定位：记录项目真实进展、已完成里程碑、当前非阻塞问题和下一步开发顺序。本文不承载详细字段设计；功能细节见 `docs/features/`。
 
 ## 1. 当前一句话状态
@@ -26,6 +26,65 @@
 -> Azure Container Apps Environment / smoke job / weekly submit dev job 已创建
 -> sdp-weekly-submit-dev 已在 Azure 上执行成功，下一步创建 sdp-weekly-collect-ingest-dev
 ```
+
+
+
+## 1.0 2026-08-08 Schema Guard 鲁棒性迭代（代码与本地回归已完成，Azure 验收待执行）
+
+2026-08-03 weekly / monthly 自动化故障排查已确认：Amazon SP-API 与 Ads API 鉴权、提交、下载均正常；Weekly collect/ingest 的直接阻塞来自 schema guard 对 additive fields 的 false-positive blocking。
+
+```text
+GET_SALES_AND_TRAFFIC_REPORT:
+  missing_fields=[]
+  new_fields=24
+  -> requires_review=True -> execute blocked
+
+GET_FBA_MYI_UNSUPPRESSED_INVENTORY_DATA:
+  missing_fields=[]
+  new_fields=2
+  -> requires_review=True -> execute blocked
+
+Orders ingestion -> success
+Ads ingestion    -> success
+Weekly report    -> Sales & Traffic 0 dates + stale inventory -> no_data -> send_guard blocked
+```
+
+本轮已按项目 SOP 完成“先设计、后代码、再测试”：
+
+- 新增 `docs/features/feature_schema_guard_resilience.md`。
+- 新增 `docs/adr/ADR-013-schema-guard-compatibility-policy.md`。
+- 同步更新 Sales & Traffic / Inventory feature 文档。
+- 同步更新 `FEATURE_TEMPLATE.md`、`development_rules.md`、`iteration_workflow.md`，把新 policy 固化为后续默认规则。
+- **不新增 migration，不修改 database current schema spec。**
+- 公共 `BLOCKING_SCHEMA_STATUSES` 已迁至 `sampling/schema_drift.py`，warning 与 blocking 解耦。
+- `new_fields` / 普通 `unmapped_fields` 保留 warning/event，但 `requires_review=False`。
+- Sales & Traffic required contract 已收敛到 6 个核心 raw path。
+- Inventory required contract 已收敛到 `sku` + `afn-fulfillable-quantity`，parser 同步允许 optional columns 缺失。
+- 已新增 2026-08-03 真实 drift 形态回归：Sales 24 个新 path、Inventory 2 个新字段均继续 prepared。
+- 全量验证：`PYTHONPATH=src pytest -q` -> `313 passed`；`python -m compileall -q scripts src tests` -> success。
+
+冻结后的核心规则：
+
+```text
+新增 unknown field                -> warning + event, non-blocking
+已知非关键字段缺失                -> warning/info, non-blocking
+required field 缺失               -> requires_review=True, blocking
+关键字段解析失败                  -> blocking
+report granularity / 语义不兼容   -> blocking
+```
+
+下一步进入云端验收：构建/部署新镜像后，手动重跑最近一期 weekly `collect_ingest`，确认 Sales & Traffic / Inventory 均写库成功，再运行 `report_delivery` 验证邮件恢复；之后再单独处理 monthly Settlement duplicate-key 与 Promotion/Coupon review。
+
+## 1.0.1 2026-08-08 CI Quality Gate 降噪迭代
+
+针对 GitHub Actions 反复因 `I001` import sorting 等可自动修复风格问题失败，本轮已冻结并实施 CI lint 分层策略：
+
+```text
+CI blocking: E4 / E7 / E9 / F / B
+Local maintenance only: I / UP + ruff format
+```
+
+目标不是取消静态检查，而是让 CI 红灯优先代表 correctness / likely-bug 风险。新增 `docs/project/ci_quality_gate_policy.md` 与 `ADR-014-ci-quality-gate-signal-over-style.md`；`pyproject.toml` 已移除 blocking selection 中的 `I` / `UP`，GitHub Action lint step 改名为 `Safety lint`。当前触发 I001 的 `ads_ingestion_dry_run.py` import block 也已整理。该迭代不涉及业务逻辑、数据库或 Azure 配置。
 
 
 ## 1.1 2026-05-25 Azure Jobs handoff status
@@ -159,7 +218,7 @@ docs/database/database_current_schema_spec.md
 | Firewall/IP allowlist 错误识别 | 已实现，40615 fail fast |
 | `check_database_status.py` | 已实现 |
 | `export_database_schema_spec.py` | 已实现 |
-| schema guard | 已在各 ingestion 链路使用 |
+| schema guard | v1.79 resilience 已本地实现：additive drift non-blocking、required contract fail-closed；313 tests passed；Azure verification pending |
 | dry-run preview | 已在各 ingestion 链路使用 |
 | repository MERGE/upsert | 已在各 ingestion 链路使用 |
 | updated-files-only 交付模式 | 当前默认工作方式 |

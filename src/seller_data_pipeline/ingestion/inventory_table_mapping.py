@@ -7,7 +7,10 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
-from seller_data_pipeline.parsers.amazon.fba_inventory_parser import FbaInventorySnapshotRecord
+from seller_data_pipeline.parsers.amazon.fba_inventory_parser import (
+    FBA_INVENTORY_REQUIRED_FIELDS,
+    FbaInventorySnapshotRecord,
+)
 
 INVENTORY_REPORT_TYPE = "GET_FBA_MYI_UNSUPPRESSED_INVENTORY_DATA"
 INVENTORY_TARGET_TABLE = "amazon_inventory_daily"
@@ -37,7 +40,7 @@ INVENTORY_EXPECTED_FIELDS: tuple[str, ...] = (
     "store",
 )
 
-INVENTORY_REQUIRED_FIELDS: tuple[str, ...] = INVENTORY_EXPECTED_FIELDS
+INVENTORY_REQUIRED_FIELDS: tuple[str, ...] = tuple(sorted(FBA_INVENTORY_REQUIRED_FIELDS))
 
 
 @dataclass(frozen=True)
