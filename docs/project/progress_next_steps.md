@@ -1,7 +1,7 @@
 # SellerDataPipeline 当前进展与下一步计划
 
 > 更新时间：2026-08-08  
-> 当前版本：v1.80 CI quality gate tuned for high-signal blocking; schema guard Azure verification pending  
+> 当前版本：v1.81 monthly ingestion recovery implemented locally; Azure repair/recovery verification pending  
 > 文档定位：记录项目真实进展、已完成里程碑、当前非阻塞问题和下一步开发顺序。本文不承载详细字段设计；功能细节见 `docs/features/`。
 
 ## 1. 当前一句话状态
@@ -29,7 +29,7 @@
 
 
 
-## 1.0 2026-08-08 Schema Guard 鲁棒性迭代（代码与本地回归已完成，Azure 验收待执行）
+## 1.0 2026-08-08 Schema Guard 鲁棒性迭代（已完成 Azure main 镜像生产验收）
 
 2026-08-03 weekly / monthly 自动化故障排查已确认：Amazon SP-API 与 Ads API 鉴权、提交、下载均正常；Weekly collect/ingest 的直接阻塞来自 schema guard 对 additive fields 的 false-positive blocking。
 
@@ -73,7 +73,7 @@ required field 缺失               -> requires_review=True, blocking
 report granularity / 语义不兼容   -> blocking
 ```
 
-下一步进入云端验收：构建/部署新镜像后，手动重跑最近一期 weekly `collect_ingest`，确认 Sales & Traffic / Inventory 均写库成功，再运行 `report_delivery` 验证邮件恢复；之后再单独处理 monthly Settlement duplicate-key 与 Promotion/Coupon review。
+Azure main 镜像生产验收已完成：`sdp-weekly-collect-ingest-r41hug0` -> `Succeeded`，Sales & Traffic 12 rows、Orders 19 rows、Ads 546 rows、Inventory 5 rows 均 `requires_review=False`，重复执行表现为 `inserted=0, updated=N`，stage `commands=7 failed=0`。三个 weekly jobs 已锁定同一 main SHA。旧 weekly 邮件不补发；后续 weekly 从当前周期继续。
 
 ## 1.0.1 2026-08-08 CI Quality Gate 降噪迭代
 
@@ -86,6 +86,31 @@ Local maintenance only: I / UP + ruff format
 
 目标不是取消静态检查，而是让 CI 红灯优先代表 correctness / likely-bug 风险。新增 `docs/project/ci_quality_gate_policy.md` 与 `ADR-014-ci-quality-gate-signal-over-style.md`；`pyproject.toml` 已移除 blocking selection 中的 `I` / `UP`，GitHub Action lint step 改名为 `Safety lint`。当前触发 I001 的 `ads_ingestion_dry_run.py` import block 也已整理。该迭代不涉及业务逻辑、数据库或 Azure 配置。
 
+
+
+## 1.0.2 2026-08-08 Monthly ingestion recovery v1.81
+
+目标：恢复 2026-06 / 2026-07 月度 collect/ingest 与月报发送，不补历史 weekly。
+
+生产根因：
+
+```text
+Settlement -> UX_amazon_settlement_transaction_business_key_hash duplicate key
+Promotion/Coupon -> schema review (发生于 ADR-013 新策略部署前)
+```
+
+本地已完成：
+
+- 新增 `docs/features/feature_monthly_ingestion_recovery.md`。
+- Settlement MERGE 只按 immutable `business_key_hash`，移除 legacy natural-key OR fallback，UPDATE 不再改写 business key。
+- Settlement running audit 先 commit；数据异常真正 rollback，再更新 failed audit，避免“失败但部分财务行已提交”。
+- 新增 `scripts/repair_settlement_idempotency.py`：默认 dry-run，只修复 `marketplace_id + source_report_id + source_row_index + source_row_hash` 完全一致的 exact duplicates；跨 identity hash conflict 阻断。
+- Promotion/Coupon transaction audit 边界同步加固。
+- Promotion/Coupon additive unknown fields 已通过专用回归证明 non-blocking；missing required field 仍 blocking。
+- 不新增 migration，不修改数据库结构。
+- 全量测试 `319 passed`，compileall success；本地环境未安装 Ruff，Safety lint 由 CI 执行。
+
+Azure 下一步：main merge/build 后先对 Settlement duplicate repair 做 dry-run；无 conflict 再 execute；随后按 2026-06、2026-07 顺序重跑 monthly collect_ingest 与 report_delivery。
 
 ## 1.1 2026-05-25 Azure Jobs handoff status
 

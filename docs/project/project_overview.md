@@ -167,3 +167,9 @@ tests/
 - 长期架构决策：`docs/adr/`
 
 `requirements_to_be_deprecated/` 下旧文档暂时作为历史取样和旧设计参考；新开发不应继续把它作为唯一事实来源，删除计划见 `docs/project/requirements_deprecation_plan.md`。
+
+
+## 2026-08-08 Reliability update
+
+- v1.79 Schema Guard compatibility policy has passed Azure weekly production verification.
+- v1.81 monthly recovery hardens Settlement idempotency/rollback semantics and adds an explicit exact-duplicate repair command before backfilling June/July monthly reports.

@@ -100,6 +100,8 @@ class PromotionCouponIngestionService:
         with get_connection(autocommit=False) as conn:
             repo = PromotionCouponRepo(conn)
             sync_run_id = repo.insert_sync_run_log(initial_event)
+            # Keep the run audit durable while normalized writes remain rollback-safe.
+            repo.commit()
             try:
                 upsert_result = self._upsert_preview_rows(
                     repo=repo,

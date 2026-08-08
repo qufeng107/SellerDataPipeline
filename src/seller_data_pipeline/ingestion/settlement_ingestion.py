@@ -93,6 +93,9 @@ class SettlementIngestionService:
         with get_connection() as conn:
             repo = SettlementRepo(conn)
             sync_run_id = repo.insert_sync_run_log(initial_event)
+            # Persist the audit row before normalized writes so a later rollback can
+            # remove partial data without erasing the failed-run evidence.
+            repo.commit()
             try:
                 upsert_result = self._upsert_preview_rows(
                     repo=repo,
@@ -113,6 +116,7 @@ class SettlementIngestionService:
                 repo.update_sync_run_log(sync_run_id, finished_event)
                 repo.commit()
             except Exception as exc:
+                repo.rollback()
                 failed_event = build_finished_audit_event(
                     dry_run_result=dry_run_result,
                     upsert_result=None,

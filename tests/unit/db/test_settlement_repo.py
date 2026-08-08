@@ -32,16 +32,16 @@ class FakeConnection:
         self.committed = True
 
 
-def test_build_settlement_merge_sql_uses_business_key_and_natural_key() -> None:
+def test_build_settlement_merge_sql_uses_immutable_business_key_only() -> None:
     sql = build_settlement_merge_sql(table_spec=SETTLEMENT_TARGET_TABLE_SPEC)
 
     assert "MERGE dbo.[amazon_settlement_transaction]" in sql
-    assert "target.[business_key_hash] = source.[business_key_hash]" in sql
-    assert "target.[marketplace_id] = source.[marketplace_id]" in sql
-    assert "target.[source_report_id] = source.[source_report_id]" in sql
-    assert "target.[source_row_index] = source.[source_row_index]" in sql
-    assert "target.[source_row_hash] = source.[source_row_hash]" in sql
-    assert "target.[business_key_hash] = source.[business_key_hash]" in sql
+    on_sql = sql.split("WHEN MATCHED THEN", 1)[0]
+    assert "ON target.[business_key_hash] = source.[business_key_hash]" in on_sql
+    assert " OR (" not in on_sql
+    assert "target.[marketplace_id] = source.[marketplace_id]" not in on_sql
+    update_sql = sql.split("WHEN MATCHED THEN", 1)[1].split("WHEN NOT MATCHED THEN", 1)[0]
+    assert "target.[business_key_hash] = source.[business_key_hash]" not in update_sql
     assert "OUTPUT $action AS merge_action" in sql
     assert "target.[updated_at] = SYSUTCDATETIME()" in sql
 

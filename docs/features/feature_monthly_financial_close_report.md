@@ -2,7 +2,7 @@
 
 > 文档状态：Implemented / in production observation  
 > 负责人：AI + Feng  
-> 更新时间：2026-06-01  
+> 更新时间：2026-08-08  
 > 功能状态：Implemented / v1.2 双利润口径与 Ads Timing Reconciliation 已完成代码对齐，待真实 Azure SQL 周期复核  
 > 设计版本：v1.2-dual-profit-and-ads-timing-reconciliation  
 > 相关数据接入文档：`docs/data_access/sp_api_reports_catalog.md`, `docs/data_access/amazon_ads_reports_catalog.md`, `docs/data_access/seller_central_manual_exports.md`  
@@ -52,6 +52,11 @@ v1.2 新增双利润口径和 Ads Timing Reconciliation：月报首页必须并�
 | 验收样本 | 先以 `2026-03`、`2026-04` 为主，因为 Settlement 和 SKU 成本当前最完整。 |
 
 ---
+
+
+## 2.1 2026-08-08 Monthly recovery dependency
+
+2026-08-05 自动化暴露的 Settlement duplicate-key 与 Promotion/Coupon schema review 不属于月报计算公式错误，而是上游 ingestion 可靠性问题。补发 2026-06 / 2026-07 月报前必须先完成 `feature_monthly_ingestion_recovery.md`：Settlement exact duplicate repair、canonical-key MERGE/rollback 验证，以及 Promotion/Coupon additive-drift non-blocking 验证。旧 weekly 报告不做历史补发。
 
 ## 3. 业务目标
 
@@ -1783,7 +1788,7 @@ v1 稳定后再考虑：
 
 ## 18. v1 / v1.1 / v1.2 代码实现记录
 
-> 更新时间：2026-06-01  
+> 更新时间：2026-08-08  
 > 实现状态：v1 JSON/XLSX + v1.1 Accountant Bookkeeping Pack + v1.2 双利润口径/Ads Timing Reconciliation 已实现；本地 unit tests / compileall 通过；待真实 Azure SQL 周期按新口径重新生成并人工复核。
 
 ### 18.1 新增代码路径
