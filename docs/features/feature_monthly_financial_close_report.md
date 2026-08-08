@@ -1858,3 +1858,8 @@ Default presentation artifacts must be bilingual:
 3. Report delivery emails are Chinese-first with English reference text.
 4. Amazon-native raw values such as campaign names, search terms, keywords, SKU/ASIN and raw IDs stay unchanged.
 ```
+
+
+### v1.83 Ads timing send-guard correction
+
+`settlement_ads_fee_vs_ads_api_spend` 比较 posted-date Settlement 与 report-date Ads API，属于时间口径 reconciliation。大差异继续展示为 warning，但不再仅凭该差异把 Monthly Financial Close 升级为 `needs_review`；Settlement self-check、未知金额、成本缺失/币种冲突等真实财务完整性问题仍可阻断发送。

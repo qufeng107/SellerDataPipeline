@@ -475,3 +475,31 @@ python scripts/ingest_settlement_report.py --marketplace-id ATVPDKIKX0DER --exec
 历史数据在旧 MERGE 语义下形成了大量 exact source-identity duplicates。日常 ingestion 的 canonical-key MERGE / rollback 修复见 `feature_monthly_ingestion_recovery.md`；历史 duplicate maintenance 的性能与安全加固见 `feature_settlement_repair_scalability.md`。
 
 生产只读诊断已确认当前表约 12,210 rows、3,878 duplicate groups，aggregate/group scan 均低于 0.25s，因此 v1.82 不新增数据库索引或 migration，而是移除 repair planner 的 N+1 SQL round trips，并把 execute DML 改为 SQL Server 参数限制内的 bounded batches。
+
+
+## 21. 2026-08-08 v1.84 Normal ingestion batch upsert
+
+2026-06 Monthly recovery 实测 `prepared_rows=3921`，正常 Settlement ingestion 成功但 `collect_ingest` 总耗时约 17 分钟。代码确认旧 repository 对每一 prepared row 执行一次 `MERGE + OUTPUT + fetchone`，产生数千次 Azure SQL round trip。
+
+v1.84 将正常写入改为：
+
+```text
+valid rows
+-> unique business_key_hash rows
+   -> typed #settlement_upsert_stage
+   -> <= 2000 params 的 multi-row INSERT batches
+   -> one set-based MERGE WITH (HOLDLOCK)
+   -> OUTPUT $action 统计 insert/update
+-> duplicate business_key_hash rows
+   -> sequential single-row MERGE fallback
+```
+
+核心 contract 不变：
+
+- `business_key_hash` 仍是唯一 MERGE match key，UPDATE 不改写该 key。
+- 事务边界仍为 running audit 先 commit；normalized write 任意异常 rollback，再单独 commit failed audit。
+- 不新增 permanent staging table，不新增 migration。
+- SQL Server 2100 parameters hard limit 采用 2000 safe budget 动态约束 batch size；当前 39 mapped columns 时默认 50 rows/batch。
+- 同一 input 内重复 business key 不进入 set-based source，避免 SQL Server MERGE multiple-match 错误并保持旧逐行语义。
+
+详细设计与验收见 `feature_settlement_ingestion_batch_upsert.md`。

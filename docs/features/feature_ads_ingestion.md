@@ -474,3 +474,8 @@ python scripts/check_database_status.py
 | 2026-05-16 | 将 `source_row_hash` 作为 upsert key | 同一业务行在不同 report request 或不同文件排序下 row_index 可能变化，会导致重复插入 | 使用 `business_key_hash`。 |
 | 2026-05-16 | 在 `spPurchasedProduct` 空样例基础上直接建表入库 | 空数组不能证明真实字段结构；贸然建表容易偏移 | 等待非空样例后新增功能和 migration。 |
 | 2026-05-16 | 没有 dry-run 直接写 Ads 表 | Amazon Ads schema 可能变化，直接写库风险高 | schema guard + preview 通过后才允许 `--execute`。 |
+
+
+### v1.83 Monthly period ingestion
+
+Monthly Ads ingestion 不再每个 report type 只选 latest raw file。对 table-ready report types 按 Ads request manifests 选择目标月全部 downloaded chunks，验证 interval coverage 后逐文件解析/upsert；preview 文件名包含 report id，避免多 chunk 覆盖。

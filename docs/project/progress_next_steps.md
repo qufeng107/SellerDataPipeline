@@ -1,7 +1,7 @@
 # SellerDataPipeline 当前进展与下一步计划
 
 > 更新时间：2026-08-08  
-> 当前版本：v1.82 settlement repair scalability implemented locally; Azure dry-run verification pending  
+> 当前版本：v1.84 settlement normal ingestion batch upsert implemented locally on top of v1.83; Azure verification pending  
 > 文档定位：记录项目真实进展、已完成里程碑、当前非阻塞问题和下一步开发顺序。本文不承载详细字段设计；功能细节见 `docs/features/`。
 
 ## 1. 当前一句话状态
@@ -112,6 +112,22 @@ Promotion/Coupon -> schema review (发生于 ADR-013 新策略部署前)
 
 Azure 下一步：main merge/build 后先对 Settlement duplicate repair 做 dry-run；无 conflict 再 execute；随后按 2026-06、2026-07 顺序重跑 monthly collect_ingest 与 report_delivery。
 
+
+## 1.0.4 2026-08-08 Monthly chunk completeness recovery v1.83
+
+生产恢复验证确认 v1.82 Settlement repair 已成功清理 6,803 duplicate rows，二次 dry-run 为 0 duplicate groups。随后 2026-06 Monthly collect 暴露新的完整性问题：Sales & Traffic / Orders / Ads 的月度 backfill 会拆成多个 chunk，但 ingestion 默认只选 latest raw file。
+
+v1.83 本地已完成：
+
+- Monthly Sales & Traffic / Orders / Ads 改为按 manifest + 目标月份选择全部 downloaded chunks；缺少任一日期覆盖时 fail closed。
+- 相同 interval 重复请求只取最新 downloaded manifest。
+- Monthly data coverage audit 明确限定目标月 start/end。
+- Ads timing reconciliation 仅作为 timing warning，不再因跨口径差异单独阻断邮件。
+- Sales/Orders ingestion 失败路径增加 rollback，避免 partial write 被 failure audit commit。
+- 本地 330 tests passed，compileall passed；Ruff CLI 当前环境未安装。
+
+下一步已并入 v1.84：CI/main image -> 仅更新 monthly jobs -> 重跑 2026-06 collect_ingest，同时验收 v1.83 chunk completeness 与 v1.84 Settlement batch upsert -> preview report/send guard -> 发送 6 月；再恢复 7 月。
+
 ## 1.0.3 2026-08-08 Settlement repair scalability v1.82
 
 v1.81 Azure dry-run 暴露出 repair maintenance path 的性能问题。数据库 warm-up 正常且 `Online`；只读诊断确认：
@@ -138,6 +154,25 @@ v1.82 本地已完成：
 - 不新增 migration；生产诊断已证明当前数据规模无需为本问题增加索引。
 
 Azure 下一步：构建 main 镜像 -> 仅更新 `sdp-monthly-collect-ingest` -> 重新运行 repair dry-run；若 `conflict_group_count=0`，再执行 `--execute`，随后 dry-run 应得到 `duplicate_group_count=0`，最后补跑 2026-06 / 2026-07 月度 pipeline。
+
+## 1.0.5 2026-08-08 Settlement normal ingestion batch upsert v1.84
+
+在 2026-06 Monthly recovery 中，Settlement 正常 ingestion 已成功处理 `3921` rows，但 `sdp-monthly-collect-ingest` 总耗时约 17 分钟。代码确认瓶颈为每行一次 `MERGE + OUTPUT + fetchone` 的 Azure SQL round trip。
+
+v1.84 已在 v1.83 基础上实现，二者职责正交：v1.83 决定 Monthly 哪些 chunk/rows 必须处理；v1.84 只优化 Settlement prepared rows 如何写入 SQL。
+
+本地实现：
+
+- typed local temp staging table 继承 `amazon_settlement_transaction` mapped column types。
+- 39 columns 使用 2000 safe parameter budget，默认 50 rows/batch，避免 SQL Server 2100 参数上限。
+- unique business keys 经 bounded multi-row INSERT 后只执行一次 target set-based MERGE。
+- input 内 duplicate business keys 安全回退旧 single-row MERGE，避免 multiple-source-match 错误并保持语义。
+- `business_key_hash` immutable、`WITH (HOLDLOCK)`、transaction rollback / failed audit contract 均不变。
+- 3921-row fake regression 由约 3921 target MERGE round trips 降为 82 SQL statements（79 staging INSERT + create + one target MERGE + drop）。
+- 不新增 migration / live schema。
+
+Azure 下一步：构建 v1.84 main image，更新 monthly jobs；直接重跑 `2026-06 collect_ingest`（不重新 submit），同时验收 v1.83 chunk completeness 与 v1.84 Settlement batch upsert；随后重新生成 6 月月报并恢复 7 月。
+
 
 ## 1.1 2026-05-25 Azure Jobs handoff status
 

@@ -83,6 +83,7 @@ class AdsIngestionDryRunService:
         profile_id: str,
         report_type_ids: list[str] | None = None,
         marketplace_id: str | None = None,
+        raw_file_paths_by_report_type: dict[str, list[str | Path]] | None = None,
         fail_on_review: bool = False,
     ) -> AdsIngestionDryRunResult:
         started_at = _utc_now_iso()
@@ -96,15 +97,19 @@ class AdsIngestionDryRunService:
         schema_events: list[dict[str, Any]] = []
 
         for report_type_id in report_type_ids:
-            prepared = self._prepare_one_report(
-                profile_id=profile_id,
-                report_type_id=report_type_id,
-                marketplace_id=marketplace_id,
-                preview_dir=preview_dir,
-            )
-            results.append(prepared)
-            if prepared.schema_validation_event is not None:
-                schema_events.append(prepared.schema_validation_event)
+            explicit_paths = (raw_file_paths_by_report_type or {}).get(report_type_id)
+            paths_to_prepare: list[str | Path | None] = list(explicit_paths) if explicit_paths else [None]
+            for explicit_path in paths_to_prepare:
+                prepared = self._prepare_one_report(
+                    profile_id=profile_id,
+                    report_type_id=report_type_id,
+                    marketplace_id=marketplace_id,
+                    preview_dir=preview_dir,
+                    raw_file_path=explicit_path,
+                )
+                results.append(prepared)
+                if prepared.schema_validation_event is not None:
+                    schema_events.append(prepared.schema_validation_event)
 
         write_jsonl(schema_events_path, schema_events)
         finished_at = _utc_now_iso()
@@ -149,6 +154,7 @@ class AdsIngestionDryRunService:
         report_type_id: str,
         marketplace_id: str | None,
         preview_dir: Path,
+        raw_file_path: str | Path | None = None,
     ) -> AdsPreparedReportResult:
         table_spec = get_ads_target_table_spec(report_type_id)
         if table_spec is None:
@@ -180,10 +186,14 @@ class AdsIngestionDryRunService:
                 schema_validation_event=None,
             )
 
-        raw_file_path = find_latest_ads_raw_file(
-            raw_reports_root=self.raw_reports_root,
-            profile_id=profile_id,
-            report_type_id=report_type_id,
+        raw_file_path = (
+            Path(raw_file_path)
+            if raw_file_path is not None
+            else find_latest_ads_raw_file(
+                raw_reports_root=self.raw_reports_root,
+                profile_id=profile_id,
+                report_type_id=report_type_id,
+            )
         )
         if raw_file_path is None:
             return AdsPreparedReportResult(
@@ -241,7 +251,7 @@ class AdsIngestionDryRunService:
             )
             for record in records
         ]
-        preview_path = preview_dir / f"{table_spec.target_table}.preview.jsonl"
+        preview_path = preview_dir / f"{table_spec.target_table}.{raw_file_path.stem}.preview.jsonl"
         write_jsonl(preview_path, rows)
         return AdsPreparedReportResult(
             report_type_id=report_type_id,
@@ -258,7 +268,7 @@ class AdsIngestionDryRunService:
         )
 
     def _build_run_output_dir(self, *, profile_id: str) -> Path:
-        timestamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
+        timestamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S_%f")
         output_dir = self.output_root / _safe_path_part(profile_id) / timestamp
         output_dir.mkdir(parents=True, exist_ok=True)
         return output_dir

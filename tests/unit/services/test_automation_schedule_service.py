@@ -149,3 +149,40 @@ def test_run_records_command_callbacks(monkeypatch) -> None:
     assert result.command_executions[0].duration_ms is not None
     assert started == [(1, command.label)]
     assert finished == [({"id": 1}, 0)]
+
+
+def test_monthly_collect_ingest_commands_are_period_bound() -> None:
+    commands = AutomationScheduleService().build_commands(
+        workflow="monthly",
+        phase="collect_ingest",
+        marketplace_id="ATVPDKIKX0DER",
+        profile_id="3917953989967300",
+        reference_date=date(2026, 8, 8),
+        month="2026-06",
+    )
+
+    printable = "\n".join(command.printable() for command in commands)
+    for script in (
+        "scripts/ingest_sales_traffic_report.py",
+        "scripts/ingest_orders_report.py",
+        "scripts/ingest_ads_reports.py",
+    ):
+        line = next(line for line in printable.splitlines() if script in line)
+        assert "--start-date 2026-06-01" in line
+        assert "--end-date 2026-06-30" in line
+    audit_line = next(line for line in printable.splitlines() if "audit_data_coverage.py" in line)
+    assert "--target-start-date 2026-06-01" in audit_line
+    assert "--target-end-date 2026-06-30" in audit_line
+
+
+def test_weekly_collect_ingest_keeps_latest_file_behavior() -> None:
+    commands = AutomationScheduleService().build_commands(
+        workflow="weekly",
+        phase="collect_ingest",
+        marketplace_id="ATVPDKIKX0DER",
+        profile_id="3917953989967300",
+        reference_date=date(2026, 8, 8),
+    )
+    printable = "\n".join(command.printable() for command in commands)
+    sales_line = next(line for line in printable.splitlines() if "ingest_sales_traffic_report.py" in line)
+    assert "--start-date" not in sales_line

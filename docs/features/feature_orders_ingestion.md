@@ -436,3 +436,8 @@ python scripts/ingest_orders_report.py --marketplace-id ATVPDKIKX0DER --execute
 |---|---|---|---|
 | 2026-05-17 | 在 Orders ingestion 中直接计算利润 | Orders 不是财务入账最终口径，利润需要 Settlement/Ads/Cost/Fee 等共同参与。 | 先可靠入库，后续单独设计 `feature_profit_calculation.md`。 |
 | 2026-05-17 | 把 `cpf` 结构化入库 | 税号字段敏感，当前样例为空且业务不需要。 | 非空时 requires_review，后续另行决定脱敏/丢弃策略。 |
+
+
+### v1.83 Monthly period ingestion
+
+默认/manual/weekly 未传日期窗口时仍使用 latest raw file。Monthly collect 显式传 `--start-date/--end-date`，通过 manifests 处理目标月全部 downloaded chunks，并在日期区间不完整时 fail closed。失败写入路径先 rollback，再提交 failure audit，避免 partial DML 被错误 commit。

@@ -2,12 +2,15 @@ from __future__ import annotations
 
 import argparse
 import json
+from datetime import date
 from pathlib import Path
 
 from seller_data_pipeline.common.cli import run_cli_main
 from seller_data_pipeline.common.logging import configure_logging
 from seller_data_pipeline.config.settings import get_settings
 from seller_data_pipeline.ingestion.ads_ingestion import AdsIngestionService
+from seller_data_pipeline.ingestion.ads_table_mapping import ADS_TARGET_TABLE_SPECS
+from seller_data_pipeline.ingestion.period_raw_file_selection import select_ads_period_raw_files
 
 
 def main() -> None:
@@ -33,6 +36,8 @@ def main() -> None:
         default=None,
         help="Ads reportTypeId to ingest. Repeat for multiple report types.",
     )
+    parser.add_argument("--start-date", default=None, help="Optional period start YYYY-MM-DD; requires --end-date.")
+    parser.add_argument("--end-date", default=None, help="Optional period end YYYY-MM-DD; requires --start-date.")
     parser.add_argument(
         "--output-root",
         default="runtime/ingestion/amazon_ads",
@@ -66,14 +71,50 @@ def main() -> None:
     if not profile_id:
         raise SystemExit("Missing --profile-id or AMAZON_ADS_PROFILE_ID.")
 
+    if bool(args.start_date) != bool(args.end_date):
+        raise SystemExit("--start-date and --end-date must be provided together.")
+
+    raw_file_paths_by_report_type = None
+    report_type_ids = args.report_type_id
+    if args.start_date:
+        start_date = date.fromisoformat(args.start_date)
+        end_date = date.fromisoformat(args.end_date)
+        report_type_ids = report_type_ids or [
+            spec.report_type_id for spec in ADS_TARGET_TABLE_SPECS if spec.table_ready
+        ]
+        raw_file_paths_by_report_type = {}
+        incomplete = False
+        for report_type_id in report_type_ids:
+            selection = select_ads_period_raw_files(
+                sampling_root=settings.local_sampling_root,
+                profile_id=profile_id,
+                report_type_id=report_type_id,
+                start_date=start_date,
+                end_date=end_date,
+            )
+            missing = ",".join(f"{a}..{b}" for a, b in selection.missing_ranges) or "none"
+            print(
+                f"period_file_selection report_type={selection.report_type} "
+                f"files_selected={selection.selected_file_count} "
+                f"coverage_complete={selection.coverage_complete} missing_ranges={missing}"
+            )
+            if not selection.coverage_complete:
+                incomplete = True
+            raw_file_paths_by_report_type[report_type_id] = [
+                item.raw_file_path for item in selection.files
+            ]
+        if incomplete:
+            raise SystemExit(2)
+
     service = AdsIngestionService(
         raw_reports_root=settings.raw_reports_root,
         output_root=args.output_root,
     )
     result = service.run(
         profile_id=profile_id,
-        report_type_ids=args.report_type_id,
+        report_type_ids=report_type_ids,
         marketplace_id=args.marketplace_id or settings.amazon_marketplace_id,
+        raw_file_paths_by_report_type=raw_file_paths_by_report_type,
         execute=args.execute,
         fail_on_review=not args.allow_review,
     )
@@ -91,6 +132,10 @@ def main() -> None:
     print(f"dry_run_output_dir={result.dry_run_result.output_dir}")
     print(
         f"prepared_rows={result.dry_run_result.prepared_row_count} requires_review={result.requires_review} sync_run_id={result.sync_run_id}"
+    )
+    print(
+        f"Ads period ingestion files_processed={result.dry_run_result.processed_file_count} "
+        f"prepared_rows={result.dry_run_result.prepared_row_count}"
     )
     if result.upsert_result is not None:
         print(
