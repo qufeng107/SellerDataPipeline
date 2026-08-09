@@ -250,7 +250,8 @@ transaction_type + amount_type + amount_description + is_settlement_summary
 | `sales_tax` | `tax_passthrough` | Tax / ShippingTax。 |
 | `marketplace_facilitator_tax` | `tax_passthrough` | MarketplaceFacilitatorTax。 |
 | `inventory_reimbursement` | `reimbursement` | FBA Inventory Reimbursement。 |
-| `storage_fee` | `fba_storage_fee` | Storage Fee。 |
+| `storage_fee` | `fba_storage_fee` | Storage Fee；兼容真实 `FBA Inventory Storage Fee / Base fee` amount-type 形态。 |
+| `fba_customer_returns_fee` | `fba_fee` | `FBAFees` 下的 `FBA Customer Returns Fee (...)`；动态 ASIN/日期 suffix 允许变化。 |
 | `liquidation_revenue` | `liquidation` | Liquidations principal。 |
 | `liquidation_fee` | `liquidation_fee` | Liquidations brokerage fee。 |
 | `settlement_summary` | `reconciliation` | summary row。 |
@@ -508,3 +509,8 @@ valid rows
 ## v1.85 JSON set-based upsert
 
 v1.84 Azure performance test confirmed temp staging with ~1950 parameters per batch remained too slow and 2,106 rows fell back to sequential MERGE. Normal ingestion write path is therefore superseded by v1.85 exact-duplicate collapse + typed `OPENJSON` bounded batch MERGE. Financial identity conflicts fail closed; transaction and immutable business-key contracts are unchanged. Detailed design: `feature_settlement_ingestion_json_upsert.md`.
+
+
+## v1.86 FBA fee classification coverage
+
+2026-07 Financial Close preview 暴露 `-35.45 USD` unknown/unclassified。生产只读诊断确认由两条正常 FBA fee 组成：`FBA Inventory Storage Fee / Base fee = -32.75` 与 `FBA Customer Returns Fee (...) / Base fee = -2.70`。v1.86 仅补 parser 分类：前者归 `storage_fee / fba_storage_fee`，后者在 `transaction=FBAFees` 且 normalized amount type 以 `fbacustomerreturnsfee` 开头时归 `fba_customer_returns_fee / fba_fee`。未命中新组合仍 fail closed 到 `unclassified / unknown`。不修改数据库、金额、business key 或 v1.85 JSON MERGE。详细设计：`feature_settlement_fba_fee_classification.md`。
