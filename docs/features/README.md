@@ -31,7 +31,8 @@
 | [`feature_ingestion_job_config.md`](feature_ingestion_job_config.md) | Implemented | 数据下载/入库/加工/报表任务周期配置表；012 migration 和 seed 001 已执行，seed 002 用于同步重叠窗口刷新策略。 |
 | [`feature_profit_calculation.md`](feature_profit_calculation.md) | Preview implemented | 利润核算口径已冻结为 Settlement-led Financial Profit v1.0；第一版 `calculate_profit_report.py` 已实现文件型 preview，不落利润结果表。 |
 | [`feature_sku_cost_management.md`](feature_sku_cost_management.md) | Implemented | SKU 成本 xlsx 模板导出与导入；默认 dry-run、按 marketplace + SKU + effective_from 幂等写入 `amazon_sku_cost`。 |
-| [`feature_monthly_financial_close_report.md`](feature_monthly_financial_close_report.md) | Implemented v1.2 / pending live verification | 月度财务结算报表；已支持 Settlement-led Estimated Profit 与 Management Estimated Profit with Report-date Ads 双利润口径、Ads Timing Reconciliation、会计辅助包，默认输出 JSON + 单个 XLSX 多 sheet。 |
+| [`feature_monthly_financial_close_report.md`](feature_monthly_financial_close_report.md) | Implemented v1.3 / Azure cost update pending | 月度财务结算报表；v1.3 将 Management Operating Profit 升为首页主指标，拆分 landed COGS components，同时保留 Settlement Close Profit 与 Ads Timing Reconciliation / 会计辅助包。 |
+| [`feature_monthly_executive_pnl_landed_cogs.md`](feature_monthly_executive_pnl_landed_cogs.md) | Implemented locally / Azure verification pending | v1.87：月报经营口径升级；Management Operating Profit 作为首页主指标，拆分商品/头程/包装/其他到岸COGS，并更新邮件利润口径。 |
 | [`feature_monthly_ingestion_recovery.md`](feature_monthly_ingestion_recovery.md) | Implemented locally / Azure recovery pending | v1.81：Settlement canonical-key MERGE、rollback 语义、exact duplicate repair；Promotion/Coupon additive drift 回归；用于恢复 2026-06 / 2026-07 月报。 |
 | [`feature_monthly_chunk_completeness_recovery.md`](feature_monthly_chunk_completeness_recovery.md) | Implemented locally / Azure verification pending | v1.83：修复 Monthly Sales/Orders/Ads 多分片只入最新文件、历史月份 coverage window 过宽、Ads timing 误阻断邮件。 |
 | [`feature_settlement_repair_scalability.md`](feature_settlement_repair_scalability.md) | Implemented locally / Azure verification pending | v1.82：针对 3,878 个历史 Settlement duplicate groups，将 repair 从 N+1 SQL 改为 single-scan + bounded batch DML，并限制默认日志输出。 |
@@ -48,13 +49,13 @@
 
 ## 3. 下一批建议
 
-当前优先级已切换到 v1.86 2026-07 Financial Close 分类补丁验收：
+当前优先级已切换到 v1.87 月报经营利润 / landed COGS 生产验收：
 
-1. v1.86 CI/main image 通过后更新 monthly jobs。
-2. 不重新 submit，直接重跑 `2026-07 collect_ingest`；确认 Settlement、Sales & Traffic、Orders、Ads、FBA、Promotion/Coupon 全部 success，stage `commands=9 failed=0`。
-3. 重新生成 2026-07 Monthly Financial Close preview；确认 `unknown_bucket_amount=0`、`unclassified_amount=0`，且无其他真实财务阻断项。
-4. `status=ok`、`send_allowed=True` 后发送 2026-07 月报。
-5. 6 月月报已经恢复并正式发送；v1.85 Settlement JSON upsert 已完成 2026-06/07 Azure 生产性能验收。
+1. 先只读确认 4 个正式 SKU 当前 `amazon_sku_cost` 行、effective dates 和现有 first-mile 值。
+2. 用白名单 + 原值检查把 `0.5275 USD/unit` first-mile estimate 写入覆盖 2026-05/06/07 的成本记录，并保留计算来源 remark。
+3. v1.87 CI/main image 通过后更新 monthly report-delivery job。
+4. 不重新 submit/collect Amazon 数据，直接重新生成 2026-05、2026-06、2026-07 Monthly Financial Close preview。
+5. 验收 first-mile COGS、Total Landed COGS、Management Operating Profit/Margin、email subject 和 send guard 均正确。
 
 不补发历史 weekly；weekly 从当前周期继续。
 

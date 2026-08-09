@@ -2,9 +2,9 @@
 
 > 文档状态：Implemented / in production observation  
 > 负责人：AI + Feng  
-> 更新时间：2026-08-08  
-> 功能状态：Implemented / v1.2 双利润口径与 Ads Timing Reconciliation 已完成代码对齐，待真实 Azure SQL 周期复核  
-> 设计版本：v1.2-dual-profit-and-ads-timing-reconciliation  
+> 更新时间：2026-08-09  
+> 功能状态：Implemented / v1.3 landed COGS executive P&L 已完成本地实现，待 Azure 成本补录与月报复核  
+> 设计版本：v1.3-landed-cogs-executive-pnl  
 > 相关数据接入文档：`docs/data_access/sp_api_reports_catalog.md`, `docs/data_access/amazon_ads_reports_catalog.md`, `docs/data_access/seller_central_manual_exports.md`  
 > 相关数据库 spec：`docs/database/database_current_schema_spec.md`  
 > 相关功能：`docs/features/feature_profit_calculation.md`, `docs/features/feature_sku_cost_management.md`, `docs/operations/manual_refresh_plan_workflow.md`, `docs/operations/historical_backfill_workflow.md`  
@@ -34,6 +34,8 @@ v1 不新增数据库结果表，不自动发送邮件，不生成正式 PDF；�
 v1.1 在既有管理口径月报基础上增加 Accountant Bookkeeping Pack（会计做账辅助包）设计，目标是让会计每月拿到 XLSX 后，能直接理解 Amazon 销售、退款、平台费、广告费、FBA 费、赔偿、内部成本、汇率、凭证附件和季度汇总之间的关系，减少人工拆账和解释成本。
 
 v1.2 新增双利润口径和 Ads Timing Reconciliation：月报首页必须并列展示 `settlement_led_estimated_profit` 与 `management_estimated_profit_report_date_ads`，并单独展示 Settlement posted-date advertising fee、Ads API report-date spend 和二者差异，避免 Amazon Ads 账单集中入账时误判单月真实经营利润。
+
+v1.3 / v1.87 进一步把经营视角改成 CEO-first：`Management Operating Profit` 成为首页主利润指标，并把 `internal_cogs` 展开为商品货款、头程、包装和其他单位成本。Settlement-led profit 保留为 `Settlement Close Profit` 会计/月结参考；旧 JSON 字段继续保留兼容，但 XLSX 首页不再把 legacy `Estimated Operating Profit` 重复展示成经营主利润。详细设计见 `feature_monthly_executive_pnl_landed_cogs.md`。
 
 ---
 
@@ -1784,6 +1786,7 @@ v1 稳定后再考虑：
 | 2026-05-23 | 增加 Ads API context 缺失 warning、console reconciliation 计数、SKU Profit scope note。 | 真实 2026-03 / 2026-04 复核发现 Ads campaign daily 仅覆盖 2026-05-06 起，需避免把运营解释数据缺失误读为财务利润异常；同时避免将 SKU 表误读为最终公司利润。 |
 | 2026-05-30 | 增加并实现 v1.1 Accountant Bookkeeping Pack，新增 7 个会计辅助 sheet，并要求会计 sheet 顶部中文说明和双语列名。 | 让会计每月更容易基于月报做账、季度汇总和税务申报准备，减少人工拆分 Amazon 结算单和反复解释口径。 |
 | 2026-06-01 | 增加并实现 v1.2 双利润口径：Settlement-led Estimated Profit + Management Estimated Profit with Report-date Ads；新增 `02_Management_PnL` 与 `03_Ads_Timing_Recon`。 | 解决广告费按账单 posted-date 集中入账导致 Amazon Finance 表面盈利但经营利润被高估的问题。 |
+| 2026-08-09 | v1.87 / report v1.3：Management Operating Profit 升为首页主指标；拆分 Product / First-Mile / Packaging / Other Unit COGS；邮件 subject 改用 Operating Profit；保留 legacy JSON 字段兼容。 | 生产复核确认此前月报货本未包含头程，且 Settlement-led legacy alias 容易被误读为真正经营利润。 |
 ---
 
 ## 18. v1 / v1.1 / v1.2 代码实现记录
@@ -1863,3 +1866,21 @@ Default presentation artifacts must be bilingual:
 ### v1.83 Ads timing send-guard correction
 
 `settlement_ads_fee_vs_ads_api_spend` 比较 posted-date Settlement 与 report-date Ads API，属于时间口径 reconciliation。大差异继续展示为 warning，但不再仅凭该差异把 Monthly Financial Close 升级为 `needs_review`；Settlement self-check、未知金额、成本缺失/币种冲突等真实财务完整性问题仍可阻断发送。
+
+
+## 23. v1.87 Landed COGS / Executive P&L 实现记录
+
+> 日期：2026-08-09  
+> 状态：本地实现完成，待 Azure 成本补录与 2026-05/06/07 preview 验收。
+
+本轮不新增 migration，复用 `amazon_sku_cost.first_mile_cost`。代码已：
+
+- 将 `MonthlyFinancialSummary` 增加 `product_cost_cogs`、`first_mile_cogs`、`packaging_cogs`、`other_unit_cogs`。
+- JSON 增加 `landed_cogs`、`management_operating_profit`、`management_operating_margin`、`settlement_close_profit` alias，同时保留旧字段。
+- `06_SKU_Profit` 增加单位成本与 COGS component breakdown。
+- `01_Summary` 以 Management Operating Profit / Margin 为经营主指标，并增加成本覆盖、头程是否计入、unknown classification、bank payout 状态。
+- `02_Management_PnL` 展开 Settlement bucket detail、Ads report-date replacement、到岸成本组件和最终经营利润。
+- 邮件标题从 legacy Settlement-led `Profit` 改为 `Operating Profit`，正文优先使用 management profit 和 landed COGS。
+- Settlement-led profit 保留为 `Settlement Close Profit`，继续服务会计/月结解释。
+
+当前本地全量测试：`337 passed`；compileall 成功。

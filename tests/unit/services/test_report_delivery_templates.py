@@ -14,9 +14,18 @@ def test_monthly_template_renders_core_metrics() -> None:
             "settlement_net_amount": "1853.15",
             "product_sales_amount": "6241.84",
             "product_sales_units": 258,
+            "product_cost_cogs": "1000.00",
+            "first_mile_cogs": "75.86",
+            "landed_cogs": "1075.86",
             "internal_cogs": "1075.86",
             "estimated_operating_profit": "777.29",
             "profit_margin": "0.1245",
+            "management_operating_profit": "650.00",
+            "management_operating_margin": "0.1041",
+            "management_estimated_profit_report_date_ads": "650.00",
+            "management_profit_margin_report_date_ads": "0.1041",
+            "settlement_close_profit": "777.29",
+            "ads_api_report_date_spend": "2131.14",
             "advertising_cost": "-2003.85",
             "fba_fee": "-1135.83",
             "refund": "-537.65",
@@ -29,8 +38,9 @@ def test_monthly_template_renders_core_metrics() -> None:
     draft = get_template("monthly_financial_close").render(report, audience="shareholders")
 
     assert "[月结 Monthly Close]" in draft.subject
-    assert "Profit USD 777.29" in draft.subject
-    assert "Settlement净额 / Settlement net amount" in draft.body_text
+    assert "Operating Profit USD 650.00" in draft.subject
+    assert "经营利润 / Management operating profit" in draft.body_text
+    assert "头程海运COGS / First-mile freight COGS" in draft.body_text
     assert "USD 1,853.15" in draft.body_html
 
 

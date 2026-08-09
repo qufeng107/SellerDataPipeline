@@ -23,6 +23,12 @@ METRIC_LABEL_ZH = {
     "Product sales amount": "商品销售额",
     "Product sales units": "商品销售件数",
     "Internal COGS": "内部COGS",
+    "Product cost COGS": "商品货款COGS",
+    "First-mile freight COGS": "头程海运COGS",
+    "Total landed COGS": "到岸COGS合计",
+    "Management operating profit": "经营利润",
+    "Management operating margin": "经营利润率",
+    "Settlement close profit": "Settlement结算口径利润",
     "Estimated operating profit": "估算经营利润",
     "Profit margin": "利润率",
     "Advertising cost": "广告费用",
@@ -91,37 +97,58 @@ class MonthlyFinancialCloseEmailTemplate:
         month = _text(period.get("month"), _period_key(report))
         summary = report.get("financial_summary") or {}
         executive = report.get("executive_summary") or {}
-        profit = _money(summary.get("estimated_operating_profit"), currency)
-        subject = f"[月结 Monthly Close] Amazon US {month} | Profit {profit} | Status {status}"
+        operating_profit_value = (
+            summary.get("management_operating_profit")
+            or summary.get("management_estimated_profit_report_date_ads")
+            or summary.get("estimated_operating_profit")
+        )
+        operating_margin_value = (
+            summary.get("management_operating_margin")
+            or summary.get("management_profit_margin_report_date_ads")
+            or summary.get("profit_margin")
+        )
+        landed_cogs_value = summary.get("landed_cogs") or summary.get("internal_cogs")
+        profit = _money(operating_profit_value, currency)
+        subject = f"[月结 Monthly Close] Amazon US {month} | Operating Profit {profit} | Status {status}"
         rows = [
-            ("Settlement net amount", _money(summary.get("settlement_net_amount"), currency)),
             ("Product sales amount", _money(summary.get("product_sales_amount"), currency)),
             ("Product sales units", _text(summary.get("product_sales_units"), "0")),
-            ("Internal COGS", _money(summary.get("internal_cogs"), currency)),
-            ("Estimated operating profit", profit),
-            ("Profit margin", _percent(summary.get("profit_margin"))),
-            ("Advertising cost", _money(summary.get("advertising_cost"), currency)),
-            ("FBA fee", _money(summary.get("fba_fee"), currency)),
-            ("Refund", _money(summary.get("refund"), currency)),
-            ("Promotion cost", _money(summary.get("promotion_cost"), currency)),
-            ("Reimbursement", _money(summary.get("reimbursement"), currency)),
+            ("Ads spend", _money(summary.get("ads_api_report_date_spend"), currency)),
+            ("Product cost COGS", _money(summary.get("product_cost_cogs"), currency)),
+            ("First-mile freight COGS", _money(summary.get("first_mile_cogs"), currency)),
+            ("Total landed COGS", _money(landed_cogs_value, currency)),
+            ("Management operating profit", profit),
+            ("Management operating margin", _percent(operating_margin_value)),
+            ("Settlement net amount", _money(summary.get("settlement_net_amount"), currency)),
+            (
+                "Settlement close profit",
+                _money(
+                    summary.get("settlement_close_profit")
+                    or summary.get("settlement_led_estimated_profit")
+                    or summary.get("estimated_operating_profit"),
+                    currency,
+                ),
+            ),
         ]
         key_points = _as_text_list(executive.get("key_points"))
         headline = _text(executive.get("headline"), "Monthly financial close report is ready.")
-        headline_zh = f"{month} 月结报表已生成，估算经营利润为 {profit}，状态 {status}。"
+        headline_zh = f"{month} 月结报表已生成，经营利润为 {profit}，状态 {status}。"
         intro = (
             f"Monthly Financial Close for {month} ({marketplace_id}) is ready. "
-            "Settlement is the financial source of truth; operational data is context only."
+            "Management operating profit uses report-date Ads spend and landed COGS; "
+            "Settlement remains the accounting/close source of truth."
         )
         intro_zh = (
             f"{month} 月度财务结算报表已生成，市场为 {marketplace_id}。"
-            "本报表以 Settlement 为财务主口径，运营数据仅用于解释和交叉校验。"
+            "经营利润采用 Ads API 月度广告发生口径并扣除到岸COGS；"
+            "Settlement 继续作为会计月结与对账主口径。"
         )
         key_points_zh = [
             f"报表状态：{status}。",
+            f"商品销售额：{_money(summary.get('product_sales_amount'), currency)}。",
+            f"到岸COGS：{_money(landed_cogs_value, currency)}。",
+            f"经营利润：{profit}。",
             f"Settlement净额：{_money(summary.get('settlement_net_amount'), currency)}。",
-            f"内部COGS：{_money(summary.get('internal_cogs'), currency)}。",
-            f"估算经营利润：{profit}。",
             f"非信息类警告：{_non_info_warning_count(report)}。",
         ]
         return _build_draft(

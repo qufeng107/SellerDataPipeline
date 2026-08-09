@@ -31,7 +31,7 @@ MONEY_QUANT = Decimal("0.01")
 RATIO_QUANT = Decimal("0.0001")
 ZERO = Decimal("0")
 REPORT_TYPE = "monthly_financial_close"
-REPORT_VERSION = "v1.2-dual-profit-ads-timing"
+REPORT_VERSION = "v1.3-landed-cogs-executive-pnl"
 DEFAULT_OUTPUT_ROOT = "runtime/analysis_reports/monthly_financial_close"
 REVIEW_BUCKETS = {"unknown", "unclassified"}
 REVIEW_CATEGORIES = {"unknown", "unclassified"}
@@ -137,7 +137,15 @@ class MonthlySkuProfitRow:
     units: int
     product_sales_amount: Decimal
     settlement_net_amount: Decimal
+    unit_product_cost: Decimal | None
+    unit_first_mile_cost: Decimal | None
+    unit_packaging_cost: Decimal | None
+    unit_other_cost: Decimal | None
     unit_standard_cost: Decimal | None
+    product_cost_cogs: Decimal
+    first_mile_cogs: Decimal
+    packaging_cogs: Decimal
+    other_unit_cogs: Decimal
     internal_cogs: Decimal
     estimated_profit_after_cogs: Decimal
     profit_margin: Decimal | None
@@ -153,7 +161,15 @@ class MonthlySkuProfitRow:
             "units": self.units,
             "product_sales_amount": _decimal_to_string(self.product_sales_amount),
             "settlement_net_amount": _decimal_to_string(self.settlement_net_amount),
+            "unit_product_cost": _optional_decimal_to_string(self.unit_product_cost),
+            "unit_first_mile_cost": _optional_decimal_to_string(self.unit_first_mile_cost),
+            "unit_packaging_cost": _optional_decimal_to_string(self.unit_packaging_cost),
+            "unit_other_cost": _optional_decimal_to_string(self.unit_other_cost),
             "unit_standard_cost": _optional_decimal_to_string(self.unit_standard_cost),
+            "product_cost_cogs": _decimal_to_string(self.product_cost_cogs),
+            "first_mile_cogs": _decimal_to_string(self.first_mile_cogs),
+            "packaging_cogs": _decimal_to_string(self.packaging_cogs),
+            "other_unit_cogs": _decimal_to_string(self.other_unit_cogs),
             "internal_cogs": _decimal_to_string(self.internal_cogs),
             "estimated_profit_after_cogs": _decimal_to_string(self.estimated_profit_after_cogs),
             "profit_margin": _optional_ratio_to_string(self.profit_margin),
@@ -163,6 +179,24 @@ class MonthlySkuProfitRow:
             "status": self.status,
             "notes": list(self.notes),
         }
+
+
+@dataclass(frozen=True)
+class SkuCogsCalculation:
+    total_cogs: Decimal
+    product_cost_cogs: Decimal
+    first_mile_cogs: Decimal
+    packaging_cogs: Decimal
+    other_unit_cogs: Decimal
+    cost_currency: str | None
+    unit_product_cost: Decimal | None
+    unit_first_mile_cost: Decimal | None
+    unit_packaging_cost: Decimal | None
+    unit_other_cost: Decimal | None
+    unit_standard_cost: Decimal | None
+    status: str
+    notes: tuple[str, ...]
+    costed_units: int
 
 
 @dataclass(frozen=True)
@@ -190,6 +224,10 @@ class MonthlyFinancialSummary:
     settlement_net_amount: Decimal
     product_sales_amount: Decimal
     product_sales_units: int
+    product_cost_cogs: Decimal
+    first_mile_cogs: Decimal
+    packaging_cogs: Decimal
+    other_unit_cogs: Decimal
     internal_cogs: Decimal
     estimated_operating_profit: Decimal
     profit_margin: Decimal | None
@@ -216,6 +254,11 @@ class MonthlyFinancialSummary:
             "settlement_net_amount": _decimal_to_string(self.settlement_net_amount),
             "product_sales_amount": _decimal_to_string(self.product_sales_amount),
             "product_sales_units": self.product_sales_units,
+            "product_cost_cogs": _decimal_to_string(self.product_cost_cogs),
+            "first_mile_cogs": _decimal_to_string(self.first_mile_cogs),
+            "packaging_cogs": _decimal_to_string(self.packaging_cogs),
+            "other_unit_cogs": _decimal_to_string(self.other_unit_cogs),
+            "landed_cogs": _decimal_to_string(self.internal_cogs),
             "internal_cogs": _decimal_to_string(self.internal_cogs),
             "estimated_operating_profit": _decimal_to_string(self.estimated_operating_profit),
             "profit_margin": _optional_ratio_to_string(self.profit_margin),
@@ -249,6 +292,15 @@ class MonthlyFinancialSummary:
             ),
             "management_profit_margin_report_date_ads": _optional_ratio_to_string(
                 self.management_profit_margin_report_date_ads
+            ),
+            "management_operating_profit": _decimal_to_string(
+                self.management_estimated_profit_report_date_ads
+            ),
+            "management_operating_margin": _optional_ratio_to_string(
+                self.management_profit_margin_report_date_ads
+            ),
+            "settlement_close_profit": _decimal_to_string(
+                self.settlement_led_estimated_profit
             ),
         }
 
@@ -341,14 +393,19 @@ class MonthlyFinancialCloseResult:
         management_profit = fs.management_estimated_profit_report_date_ads
         margin = fs.management_profit_margin_report_date_ads
         headline = (
-            f"{self.month} management estimated profit with report-date ads was "
-            f"{_format_money(management_profit, self.currency)}; settlement-led estimated profit "
-            f"was {_format_money(settlement_profit, self.currency)}."
+            f"{self.month} management operating profit after report-date ads and landed COGS was "
+            f"{_format_money(management_profit, self.currency)}; settlement close profit was "
+            f"{_format_money(settlement_profit, self.currency)}."
         )
         key_points = [
             (
-                "Settlement net amount was "
-                f"{_format_money(fs.settlement_net_amount, self.currency)}."
+                "Product sales amount was "
+                f"{_format_money(fs.product_sales_amount, self.currency)}."
+            ),
+            (
+                "Total landed COGS was "
+                f"{_format_money(fs.internal_cogs, self.currency)}, including first-mile freight "
+                f"of {_format_money(fs.first_mile_cogs, self.currency)}."
             ),
             (
                 "Ads timing difference was "
@@ -356,8 +413,8 @@ class MonthlyFinancialCloseResult:
                 "(Ads API report-date spend minus settlement posted-date advertising fee)."
             ),
             (
-                "Internal COGS was "
-                f"{_format_money(fs.internal_cogs, self.currency)}."
+                "Settlement net amount was "
+                f"{_format_money(fs.settlement_net_amount, self.currency)}."
             ),
             f"Report status is {self.status}.",
         ]
@@ -567,6 +624,10 @@ class MonthlyFinancialCloseService:
         missing_cost_skus: set[str] = set()
         currency_mismatch_skus: set[str] = set()
         internal_cogs = ZERO
+        product_cost_cogs = ZERO
+        first_mile_cogs = ZERO
+        packaging_cogs = ZERO
+        other_unit_cogs = ZERO
         product_sales_units = 0
         costed_units = 0
 
@@ -576,40 +637,54 @@ class MonthlyFinancialCloseService:
             sku_product_sales = _money(sku_data["product_sales_amount"])
             sku_settlement_net = _money(sku_data["settlement_net_amount"])
             product_sales_units += units
-            sku_cogs, cost_currency, unit_standard_cost, status, notes, costed_sku_units = (
-                _calculate_sku_cogs(
-                    cost_index=cost_index,
-                    marketplace_id=marketplace_id,
-                    seller_sku=seller_sku,
-                    unit_events=sku_data["unit_events"],
-                    settlement_currency=currency,
-                )
+            cogs = _calculate_sku_cogs(
+                cost_index=cost_index,
+                marketplace_id=marketplace_id,
+                seller_sku=seller_sku,
+                unit_events=sku_data["unit_events"],
+                settlement_currency=currency,
             )
-            if status == "missing_cost":
+            if cogs.status == "missing_cost":
                 missing_cost_skus.add(seller_sku)
-            if status == "currency_mismatch":
+            if cogs.status == "currency_mismatch":
                 currency_mismatch_skus.add(seller_sku)
-            costed_units += costed_sku_units
-            internal_cogs += sku_cogs
-            estimated_profit = _money(sku_settlement_net - sku_cogs)
+            costed_units += cogs.costed_units
+            internal_cogs += cogs.total_cogs
+            product_cost_cogs += cogs.product_cost_cogs
+            first_mile_cogs += cogs.first_mile_cogs
+            packaging_cogs += cogs.packaging_cogs
+            other_unit_cogs += cogs.other_unit_cogs
+            estimated_profit = _money(sku_settlement_net - cogs.total_cogs)
             sku_rows.append(
                 MonthlySkuProfitRow(
                     seller_sku=seller_sku,
                     units=units,
                     product_sales_amount=sku_product_sales,
                     settlement_net_amount=sku_settlement_net,
-                    unit_standard_cost=unit_standard_cost,
-                    internal_cogs=sku_cogs,
+                    unit_product_cost=cogs.unit_product_cost,
+                    unit_first_mile_cost=cogs.unit_first_mile_cost,
+                    unit_packaging_cost=cogs.unit_packaging_cost,
+                    unit_other_cost=cogs.unit_other_cost,
+                    unit_standard_cost=cogs.unit_standard_cost,
+                    product_cost_cogs=cogs.product_cost_cogs,
+                    first_mile_cogs=cogs.first_mile_cogs,
+                    packaging_cogs=cogs.packaging_cogs,
+                    other_unit_cogs=cogs.other_unit_cogs,
+                    internal_cogs=cogs.total_cogs,
                     estimated_profit_after_cogs=estimated_profit,
                     profit_margin=_safe_ratio(estimated_profit, sku_product_sales),
                     revenue_share=_safe_ratio(sku_product_sales, product_sales_amount),
                     currency=currency,
-                    cost_currency=cost_currency,
-                    status=status,
-                    notes=tuple(notes),
+                    cost_currency=cogs.cost_currency,
+                    status=cogs.status,
+                    notes=cogs.notes,
                 )
             )
 
+        product_cost_cogs = _money(product_cost_cogs)
+        first_mile_cogs = _money(first_mile_cogs)
+        packaging_cogs = _money(packaging_cogs)
+        other_unit_cogs = _money(other_unit_cogs)
         internal_cogs = _money(internal_cogs)
         settlement_advertising_fee = _money(bucket_totals.get("advertising_cost", ZERO))
         settlement_advertising_fee_abs = _money(abs(settlement_advertising_fee))
@@ -626,6 +701,10 @@ class MonthlyFinancialCloseService:
             settlement_net_amount=settlement_net_amount,
             product_sales_amount=product_sales_amount,
             product_sales_units=product_sales_units,
+            product_cost_cogs=product_cost_cogs,
+            first_mile_cogs=first_mile_cogs,
+            packaging_cogs=packaging_cogs,
+            other_unit_cogs=other_unit_cogs,
             internal_cogs=internal_cogs,
             estimated_operating_profit=settlement_led_estimated_profit,
             profit_margin=_safe_ratio(settlement_led_estimated_profit, product_sales_amount),
@@ -787,7 +866,9 @@ def build_monthly_financial_close_workbook(result: MonthlyFinancialCloseResult) 
         scope_zh="Settlement 是财务主口径；运营数据只用于解释和交叉校验。",
     )
     _write_rows_sheet(workbook, "01_Summary", _summary_rows(result))
+    _format_executive_metric_sheet(workbook["01_Summary"], summary=True)
     _write_rows_sheet(workbook, "02_Management_PnL", _management_pnl_rows(result))
+    _format_executive_metric_sheet(workbook["02_Management_PnL"], summary=False)
     _write_rows_sheet(workbook, "03_Ads_Timing_Recon", _ads_timing_reconciliation_rows(result))
     _write_rows_sheet(
         workbook,
@@ -824,7 +905,7 @@ def build_monthly_financial_close_workbook(result: MonthlyFinancialCloseResult) 
 def _summary_rows(result: MonthlyFinancialCloseResult) -> list[dict[str, Any]]:
     fs = result.financial_summary
     return [
-        _metric_row("Report Type", REPORT_TYPE, None, "Monthly Financial Close Report v1"),
+        _metric_row("Report Type", REPORT_TYPE, None, "Monthly Financial Close Report v1.3"),
         _metric_row("Marketplace ID", result.marketplace_id, None, ""),
         _metric_row(
             "Ads Profile ID",
@@ -839,16 +920,22 @@ def _summary_rows(result: MonthlyFinancialCloseResult) -> list[dict[str, Any]]:
         _metric_row("Currency", result.currency or "", None, "Settlement currency."),
         _metric_row("Settlement Rows", result.settlement_row_count, None, "Non-summary rows."),
         _metric_row(
-            "Settlement Net Amount",
-            fs.settlement_net_amount,
+            "Management Operating Profit",
+            fs.management_estimated_profit_report_date_ads,
             result.currency,
-            "Financial source of truth.",
+            "Primary operating KPI: report-date Ads spend and total landed COGS included.",
+        ),
+        _metric_row(
+            "Management Operating Margin",
+            fs.management_profit_margin_report_date_ads,
+            None,
+            "Management operating profit / settlement product sales.",
         ),
         _metric_row(
             "Product Sales Amount",
             fs.product_sales_amount,
             result.currency,
-            "Settlement product-sales categories.",
+            "Settlement product-sales categories; reference denominator for margin.",
         ),
         _metric_row(
             "Product Sales Units",
@@ -857,34 +944,34 @@ def _summary_rows(result: MonthlyFinancialCloseResult) -> list[dict[str, Any]]:
             "Deduplicated by settlement/order/item/SKU.",
         ),
         _metric_row(
-            "Internal COGS",
+            "Total Landed COGS",
             fs.internal_cogs,
             result.currency,
-            "SKU standard cost from amazon_sku_cost.",
+            "Product + first-mile + packaging + other unit costs from amazon_sku_cost.",
         ),
         _metric_row(
-            "Settlement-led Estimated Profit",
-            fs.settlement_led_estimated_profit,
+            "Product Cost COGS",
+            fs.product_cost_cogs,
             result.currency,
-            "Settlement net minus internal COGS; accounting/close view.",
+            "Factory/product purchase cost allocated to sold units.",
         ),
         _metric_row(
-            "Management Estimated Profit with Report-date Ads",
-            fs.management_estimated_profit_report_date_ads,
+            "First-Mile Freight COGS",
+            fs.first_mile_cogs,
             result.currency,
-            "Settlement net excluding posted ads, less Ads API report-date spend and COGS.",
+            "First-mile/ocean freight/customs/inbound allocation recorded in amazon_sku_cost.",
         ),
         _metric_row(
-            "Management Profit Margin",
-            fs.management_profit_margin_report_date_ads,
-            None,
-            "Management estimated profit / product sales.",
+            "Packaging COGS",
+            fs.packaging_cogs,
+            result.currency,
+            "Packaging unit cost allocated to sold units.",
         ),
         _metric_row(
-            "Settlement-led Profit Margin",
-            fs.settlement_led_profit_margin,
-            None,
-            "Settlement-led estimated profit / product sales.",
+            "Other Unit COGS",
+            fs.other_unit_cogs,
+            result.currency,
+            "Other stable unit cost allocated to sold units.",
         ),
         _metric_row(
             "Ads API Report-date Spend",
@@ -893,10 +980,22 @@ def _summary_rows(result: MonthlyFinancialCloseResult) -> list[dict[str, Any]]:
             "Ads API spend by report_date; management P&L ad cost.",
         ),
         _metric_row(
+            "Settlement Close Profit",
+            fs.settlement_led_estimated_profit,
+            result.currency,
+            "Accounting/close reference: settlement net minus total landed COGS.",
+        ),
+        _metric_row(
+            "Settlement Net Amount",
+            fs.settlement_net_amount,
+            result.currency,
+            "Posted-date settlement net; accounting/close source of truth.",
+        ),
+        _metric_row(
             "Settlement Advertising Fee",
             fs.settlement_advertising_fee,
             result.currency,
-            "Settlement posted-date advertising bucket; accounting/close view.",
+            "Posted-date advertising bucket; replaced by report-date Ads spend in management P&L.",
         ),
         _metric_row(
             "Ads Timing Difference",
@@ -904,44 +1003,50 @@ def _summary_rows(result: MonthlyFinancialCloseResult) -> list[dict[str, Any]]:
             result.currency,
             "Ads API report-date spend minus absolute settlement advertising fee.",
         ),
-        _metric_row(
-            "Estimated Operating Profit",
-            fs.estimated_operating_profit,
-            result.currency,
-            "Legacy alias: settlement-led estimated profit.",
-        ),
-        _metric_row(
-            "Profit Margin",
-            fs.profit_margin,
-            None,
-            "Legacy alias: settlement-led margin.",
-        ),
-        _metric_row(
-            "Advertising Cost",
-            fs.advertising_cost,
-            result.currency,
-            "Legacy alias: settlement advertising fee.",
-        ),
-        _metric_row("FBA Fee", fs.fba_fee, result.currency, "Settlement FBA bucket."),
+        _metric_row("FBA Fee", fs.fba_fee, result.currency, "Settlement FBA fulfillment bucket."),
         _metric_row("Amazon Fee", fs.amazon_fee, result.currency, "Settlement Amazon fee bucket."),
         _metric_row("Refund", fs.refund, result.currency, "Settlement refund bucket."),
         _metric_row(
             "Promotion Cost",
             fs.promotion_cost,
             result.currency,
-            "Settlement promotion cost bucket.",
+            "Settlement promotion discount bucket.",
         ),
         _metric_row(
             "Promotion Fee",
             fs.promotion_fee,
             result.currency,
-            "Settlement promotion fee bucket.",
+            "Settlement coupon/deal fee bucket.",
         ),
         _metric_row(
             "Reimbursement",
             fs.reimbursement,
             result.currency,
             "Settlement reimbursement bucket.",
+        ),
+        _metric_row(
+            "SKU Cost Coverage",
+            _check_status(result, "sku_cost_coverage"),
+            None,
+            "ok means all product-sales units matched an effective amazon_sku_cost row.",
+        ),
+        _metric_row(
+            "First-Mile Cost Included",
+            "yes" if fs.first_mile_cogs != ZERO else "no_or_zero",
+            None,
+            "Informational only: zero can be valid, but should be reviewed when first-mile is material.",
+        ),
+        _metric_row(
+            "Unknown Settlement Classification",
+            _unknown_classification_status(result),
+            None,
+            "ok means unknown/unclassified financial amounts are zero.",
+        ),
+        _metric_row(
+            "Bank Payout Reconciliation",
+            "pending_manual",
+            None,
+            "Settlement close does not yet prove WorldFirst/bank cash receipt; use 14_Payout_Recon.",
         ),
         _metric_row(
             "SKU Profit Table Scope",
@@ -954,51 +1059,165 @@ def _summary_rows(result: MonthlyFinancialCloseResult) -> list[dict[str, Any]]:
 
 def _management_pnl_rows(result: MonthlyFinancialCloseResult) -> list[dict[str, Any]]:
     fs = result.financial_summary
-    return [
+    rows = [
         _metric_row(
-            "Settlement Net Amount",
-            fs.settlement_net_amount,
+            "Product Sales Amount",
+            fs.product_sales_amount,
             result.currency,
-            "Posted-date settlement net; includes posted advertising fees.",
-        ),
-        _metric_row(
-            "Add Back Settlement Advertising Fee",
-            fs.settlement_advertising_fee_abs,
-            result.currency,
-            "Absolute value of posted settlement advertising fee added back before replacement.",
-        ),
-        _metric_row(
-            "Settlement Net Excluding Posted Ads",
-            fs.settlement_net_excluding_posted_ads,
-            result.currency,
-            "Settlement net with posted-date advertising removed.",
-        ),
-        _metric_row(
-            "Less Ads API Report-date Spend",
-            -fs.ads_api_report_date_spend,
-            result.currency,
-            "Advertising cost incurred during the calendar month by Ads API report_date.",
-        ),
-        _metric_row(
-            "Less Internal COGS",
-            -fs.internal_cogs,
-            result.currency,
-            "SKU standard cost from amazon_sku_cost.",
-        ),
-        _metric_row(
-            "Management Estimated Profit with Report-date Ads",
-            fs.management_estimated_profit_report_date_ads,
-            result.currency,
-            MANAGEMENT_PNL_POLICY_NOTE,
-        ),
-        _metric_row(
-            "Management Profit Margin",
-            fs.management_profit_margin_report_date_ads,
-            None,
-            "Management estimated profit / settlement product sales.",
-        ),
+            "Reference sales KPI; settlement bucket detail below reconciles to settlement net.",
+        )
     ]
 
+    bucket_map = {row.profit_bucket: row.amount for row in result.settlement_bucket_breakdown}
+    preferred_buckets = [
+        "revenue",
+        "reimbursement",
+        "liquidation",
+        "other",
+        "refund",
+        "promotion_cost",
+        "promotion_fee",
+        "fba_fee",
+        "fba_storage_fee",
+        "amazon_fee",
+        "amazon_fee_refund",
+        "liquidation_fee",
+        "tax_passthrough",
+        "reconciliation",
+    ]
+    bucket_labels = {
+        "revenue": "Settlement Revenue Bucket",
+        "reimbursement": "Settlement Reimbursement",
+        "liquidation": "Settlement Liquidation Income",
+        "other": "Settlement Other",
+        "refund": "Settlement Refund",
+        "promotion_cost": "Settlement Promotion Discounts",
+        "promotion_fee": "Settlement Promotion Fees",
+        "fba_fee": "Settlement FBA Fulfillment Fees",
+        "fba_storage_fee": "Settlement FBA Storage Fees",
+        "amazon_fee": "Settlement Amazon Platform Fees",
+        "amazon_fee_refund": "Settlement Amazon Fee Refunds",
+        "liquidation_fee": "Settlement Liquidation Fees",
+        "tax_passthrough": "Settlement Tax Passthrough",
+        "reconciliation": "Settlement Reconciliation Items",
+    }
+    emitted: set[str] = set()
+    for bucket in preferred_buckets:
+        if bucket not in bucket_map:
+            continue
+        emitted.add(bucket)
+        rows.append(
+            _metric_row(
+                bucket_labels[bucket],
+                bucket_map[bucket],
+                result.currency,
+                f"Settlement posted-date bucket: {bucket}.",
+            )
+        )
+    for bucket in sorted(bucket_map):
+        if bucket in emitted or bucket == "advertising_cost":
+            continue
+        rows.append(
+            _metric_row(
+                f"Settlement Bucket: {bucket}",
+                bucket_map[bucket],
+                result.currency,
+                "Additional settlement bucket retained for completeness.",
+            )
+        )
+
+    contribution_after_ads = _money(
+        fs.settlement_net_excluding_posted_ads - fs.ads_api_report_date_spend
+    )
+    rows.extend(
+        [
+            _metric_row(
+                "Settlement Net Excluding Posted Ads",
+                fs.settlement_net_excluding_posted_ads,
+                result.currency,
+                "All settlement buckets except posted-date advertising.",
+            ),
+            _metric_row(
+                "Less Ads API Report-date Spend",
+                -fs.ads_api_report_date_spend,
+                result.currency,
+                "Calendar-month advertising cost by Ads API report_date.",
+            ),
+            _metric_row(
+                "Contribution After Ads Before Landed COGS",
+                contribution_after_ads,
+                result.currency,
+                "Settlement net excluding posted ads, less report-date Ads spend.",
+            ),
+            _metric_row(
+                "Less Product Cost COGS",
+                -fs.product_cost_cogs,
+                result.currency,
+                "Factory/product purchase cost allocated to sold units.",
+            ),
+            _metric_row(
+                "Less First-Mile Freight COGS",
+                -fs.first_mile_cogs,
+                result.currency,
+                "First-mile/ocean freight/customs/inbound allocation for sold units.",
+            ),
+            _metric_row(
+                "Less Packaging COGS",
+                -fs.packaging_cogs,
+                result.currency,
+                "Packaging unit cost for sold units.",
+            ),
+            _metric_row(
+                "Less Other Unit COGS",
+                -fs.other_unit_cogs,
+                result.currency,
+                "Other stable unit cost for sold units.",
+            ),
+            _metric_row(
+                "Total Landed COGS",
+                -fs.internal_cogs,
+                result.currency,
+                "Product + first-mile + packaging + other unit costs.",
+            ),
+            _metric_row(
+                "Management Operating Profit",
+                fs.management_estimated_profit_report_date_ads,
+                result.currency,
+                MANAGEMENT_PNL_POLICY_NOTE,
+            ),
+            _metric_row(
+                "Management Operating Margin",
+                fs.management_profit_margin_report_date_ads,
+                None,
+                "Management operating profit / settlement product sales.",
+            ),
+            _metric_row(
+                "Settlement Close Profit",
+                fs.settlement_led_estimated_profit,
+                result.currency,
+                "Accounting/close reference using settlement posted-date advertising.",
+            ),
+        ]
+    )
+    return rows
+
+
+def _check_status(result: MonthlyFinancialCloseResult, check_name: str) -> str:
+    check = next(
+        (item for item in result.reconciliation_checks if item.check_name == check_name),
+        None,
+    )
+    return check.status if check is not None else "not_available"
+
+
+def _unknown_classification_status(result: MonthlyFinancialCloseResult) -> str:
+    names = {"unknown_bucket_amount", "unclassified_amount"}
+    statuses = [
+        check.status for check in result.reconciliation_checks if check.check_name in names
+    ]
+    if not statuses:
+        return "not_available"
+    return "ok" if all(status == "ok" for status in statuses) else "needs_review"
 
 def _ads_timing_reconciliation_rows(result: MonthlyFinancialCloseResult) -> list[dict[str, Any]]:
     fs = result.financial_summary
@@ -1099,6 +1318,40 @@ def _write_rows_sheet(
     _format_sheet(sheet)
 
 
+def _format_executive_metric_sheet(sheet: Any, *, summary: bool) -> None:
+    profit_fill = PatternFill("solid", fgColor="E2F0D9")
+    landed_fill = PatternFill("solid", fgColor="D9EAF7")
+    close_fill = PatternFill("solid", fgColor="FFF2CC")
+    quality_fill = PatternFill("solid", fgColor="F2F2F2")
+
+    for row in range(2, sheet.max_row + 1):
+        metric = str(sheet.cell(row=row, column=1).value or "")
+        fill = None
+        if metric.startswith("Management Operating Profit") or metric.startswith(
+            "Management Operating Margin"
+        ):
+            fill = profit_fill
+        elif metric.startswith("Total Landed COGS") or metric.startswith(
+            "Contribution After Ads Before Landed COGS"
+        ):
+            fill = landed_fill
+        elif metric.startswith("Settlement Close Profit"):
+            fill = close_fill
+        elif summary and (
+            metric.startswith("SKU Cost Coverage")
+            or metric.startswith("First-Mile Cost Included")
+            or metric.startswith("Unknown Settlement Classification")
+            or metric.startswith("Bank Payout Reconciliation")
+        ):
+            fill = quality_fill
+        if fill is None:
+            continue
+        for cell in sheet[row]:
+            cell.fill = fill
+        sheet.cell(row=row, column=1).font = Font(bold=True)
+        sheet.cell(row=row, column=2).font = Font(bold=True)
+
+
 def _format_sheet(sheet: Any) -> None:
     header_fill = PatternFill("solid", fgColor="1F4E78")
     for cell in sheet[1]:
@@ -1173,15 +1426,47 @@ def _calculate_sku_cogs(
     seller_sku: str,
     unit_events: Sequence[Mapping[str, Any]],
     settlement_currency: str | None,
-) -> tuple[Decimal, str | None, Decimal | None, str, list[str], int]:
+) -> SkuCogsCalculation:
     candidates = cost_index.get((marketplace_id, seller_sku), ())
     if not candidates:
-        units = sum(_optional_int(event.get("quantity")) or 0 for event in unit_events)
-        return ZERO, None, None, "missing_cost", ["no amazon_sku_cost row"], 0 if units else 0
+        return SkuCogsCalculation(
+            total_cogs=ZERO,
+            product_cost_cogs=ZERO,
+            first_mile_cogs=ZERO,
+            packaging_cogs=ZERO,
+            other_unit_cogs=ZERO,
+            cost_currency=None,
+            unit_product_cost=None,
+            unit_first_mile_cost=None,
+            unit_packaging_cost=None,
+            unit_other_cost=None,
+            unit_standard_cost=None,
+            status="missing_cost",
+            notes=("no amazon_sku_cost row",),
+            costed_units=0,
+        )
     if not unit_events:
-        return ZERO, candidates[0].currency, None, "ok", ["no product-sales units"], 0
+        return SkuCogsCalculation(
+            total_cogs=ZERO,
+            product_cost_cogs=ZERO,
+            first_mile_cogs=ZERO,
+            packaging_cogs=ZERO,
+            other_unit_cogs=ZERO,
+            cost_currency=candidates[0].currency,
+            unit_product_cost=None,
+            unit_first_mile_cost=None,
+            unit_packaging_cost=None,
+            unit_other_cost=None,
+            unit_standard_cost=None,
+            status="ok",
+            notes=("no product-sales units",),
+            costed_units=0,
+        )
 
-    cogs = ZERO
+    product_cogs = ZERO
+    first_mile_cogs = ZERO
+    packaging_cogs = ZERO
+    other_cogs = ZERO
     costed_units = 0
     matched_costs: list[SkuCostRecord] = []
     notes: list[str] = []
@@ -1201,7 +1486,11 @@ def _calculate_sku_cogs(
             continue
         cost_currency = cost_currency or match.currency
         matched_costs.append(match)
-        cogs += match.unit_standard_cost * Decimal(quantity)
+        quantity_decimal = Decimal(quantity)
+        product_cogs += match.product_cost * quantity_decimal
+        first_mile_cogs += match.first_mile_cost * quantity_decimal
+        packaging_cogs += match.packaging_cost * quantity_decimal
+        other_cogs += match.other_unit_cost * quantity_decimal
         costed_units += quantity
         if settlement_currency and match.currency and match.currency != settlement_currency:
             status = "currency_mismatch"
@@ -1209,24 +1498,75 @@ def _calculate_sku_cogs(
                 f"cost currency {match.currency} != settlement currency {settlement_currency}"
             )
 
+    total_cogs = _money(product_cogs + first_mile_cogs + packaging_cogs + other_cogs)
+    product_cogs = _money(product_cogs)
+    first_mile_cogs = _money(first_mile_cogs)
+    packaging_cogs = _money(packaging_cogs)
+    other_cogs = _money(other_cogs)
+    component_total = product_cogs + first_mile_cogs + packaging_cogs + other_cogs
+    # Keep the established total-cost rounding as source of truth while forcing the
+    # displayed component breakdown to reconcile exactly to that total. Any cent-level
+    # residual from independently rounded components is absorbed into product cost.
+    product_cogs = _money(product_cogs + (total_cogs - component_total))
+
     if not matched_costs:
-        return ZERO, cost_currency, None, "missing_cost", notes, costed_units
+        return SkuCogsCalculation(
+            total_cogs=ZERO,
+            product_cost_cogs=ZERO,
+            first_mile_cogs=ZERO,
+            packaging_cogs=ZERO,
+            other_unit_cogs=ZERO,
+            cost_currency=cost_currency,
+            unit_product_cost=None,
+            unit_first_mile_cost=None,
+            unit_packaging_cost=None,
+            unit_other_cost=None,
+            unit_standard_cost=None,
+            status="missing_cost",
+            notes=tuple(notes),
+            costed_units=costed_units,
+        )
     unique_cost_keys = {
         (
             cost.effective_from,
             cost.effective_to,
             cost.currency,
-            cost.unit_standard_cost,
+            cost.product_cost,
+            cost.first_mile_cost,
+            cost.packaging_cost,
+            cost.other_unit_cost,
         )
         for cost in matched_costs
     }
     if len(unique_cost_keys) > 1:
-        notes.append("multiple cost rows matched; weighted average unit_standard_cost shown")
+        notes.append("multiple cost rows matched; weighted average unit costs shown")
     if status == "missing_cost":
-        return _money(cogs), cost_currency, None, status, notes, costed_units
-    unit_standard_cost = _money(cogs / Decimal(costed_units)) if costed_units else None
-    return _money(cogs), cost_currency, unit_standard_cost, status, notes, costed_units
-
+        unit_values = (None, None, None, None, None)
+    else:
+        denominator = Decimal(costed_units) if costed_units else None
+        unit_values = (
+            _money(product_cogs / denominator) if denominator else None,
+            _money(first_mile_cogs / denominator) if denominator else None,
+            _money(packaging_cogs / denominator) if denominator else None,
+            _money(other_cogs / denominator) if denominator else None,
+            _money(total_cogs / denominator) if denominator else None,
+        )
+    return SkuCogsCalculation(
+        total_cogs=total_cogs,
+        product_cost_cogs=product_cogs,
+        first_mile_cogs=first_mile_cogs,
+        packaging_cogs=packaging_cogs,
+        other_unit_cogs=other_cogs,
+        cost_currency=cost_currency,
+        unit_product_cost=unit_values[0],
+        unit_first_mile_cost=unit_values[1],
+        unit_packaging_cost=unit_values[2],
+        unit_other_cost=unit_values[3],
+        unit_standard_cost=unit_values[4],
+        status=status,
+        notes=tuple(notes),
+        costed_units=costed_units,
+    )
 
 def _build_cost_index(costs: Iterable[SkuCostRecord]) -> dict[tuple[str, str], list[SkuCostRecord]]:
     index: dict[tuple[str, str], list[SkuCostRecord]] = defaultdict(list)

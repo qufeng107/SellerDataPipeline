@@ -52,19 +52,30 @@ def test_calculate_monthly_financial_close_core_metrics() -> None:
     assert result.financial_summary.settlement_net_amount == Decimal("60.00")
     assert result.financial_summary.product_sales_amount == Decimal("100.00")
     assert result.financial_summary.product_sales_units == 2
+    assert result.financial_summary.product_cost_cogs == Decimal("40.00")
+    assert result.financial_summary.first_mile_cogs == Decimal("10.00")
+    assert result.financial_summary.packaging_cogs == Decimal("0.00")
+    assert result.financial_summary.other_unit_cogs == Decimal("0.00")
     assert result.financial_summary.internal_cogs == Decimal("50.00")
     assert result.financial_summary.estimated_operating_profit == Decimal("10.00")
     assert result.financial_summary.profit_margin == Decimal("0.1000")
     assert result.financial_summary.settlement_led_estimated_profit == Decimal("10.00")
     assert result.financial_summary.management_estimated_profit_report_date_ads == Decimal("10.00")
     assert result.financial_summary.ads_timing_difference == Decimal("0.00")
+    assert result.sku_profitability[0].unit_product_cost == Decimal("20.00")
+    assert result.sku_profitability[0].unit_first_mile_cost == Decimal("5.00")
     assert result.sku_profitability[0].unit_standard_cost == Decimal("25.00")
+    assert result.sku_profitability[0].product_cost_cogs == Decimal("40.00")
+    assert result.sku_profitability[0].first_mile_cogs == Decimal("10.00")
     assert result.sku_profitability[0].estimated_profit_after_cogs == Decimal("15.00")
-    assert result.executive_summary()["headline"].startswith("2026-03 management estimated profit")
-
+    assert result.executive_summary()["headline"].startswith(
+        "2026-03 management operating profit"
+    )
 
     payload = result.to_dict()
-    assert payload["version"] == "v1.2-dual-profit-ads-timing"
+    assert payload["version"] == "v1.3-landed-cogs-executive-pnl"
+    assert payload["financial_summary"]["management_operating_profit"] == "10.00"
+    assert payload["financial_summary"]["landed_cogs"] == "50.00"
     assert "accountant_pack" in payload
     assert payload["accountant_pack"]["bookkeeping_summary"][0]["accounting_item"].startswith(
         "Product Sales Revenue"
@@ -225,6 +236,19 @@ def test_write_report_files_creates_json_and_xlsx(tmp_path: Path) -> None:
     fx_sheet = workbook["12_FX_Rates"]
     assert fx_sheet["A1"].value == "Sheet Purpose / 本表用途"
     assert fx_sheet["D7"].value == "FX Rate / 汇率"
+
+    summary_sheet = workbook["01_Summary"]
+    summary_metrics = {summary_sheet[f"A{row}"].value for row in range(2, summary_sheet.max_row + 1)}
+    assert "Management Operating Profit / 经营利润" in summary_metrics
+    assert "First-Mile Freight COGS / 头程海运COGS" in summary_metrics
+    assert "Estimated Operating Profit / 估算经营利润" not in summary_metrics
+
+    management_sheet = workbook["02_Management_PnL"]
+    management_metrics = {
+        management_sheet[f"A{row}"].value for row in range(2, management_sheet.max_row + 1)
+    }
+    assert "Management Operating Profit / 经营利润" in management_metrics
+    assert "Less First-Mile Freight COGS / 减：头程海运成本" in management_metrics
 
 
 def test_run_uses_repo_and_writes_report(tmp_path: Path) -> None:
