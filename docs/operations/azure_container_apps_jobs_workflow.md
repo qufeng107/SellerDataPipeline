@@ -141,14 +141,19 @@ request window = 上上周三 .. 上周五
 
 ### 3.4 Report-driven monthly jobs
 
-每月 3 日处理上一个自然月。
+v1.88 起不再把每月 3 日视为 Settlement final close。Amazon-generated Settlement 可能在月末交易之后数日才可通过 `getReports` discovery 看见；2026-07 已出现 7 月 31 日交易到 8 月 8–9 日才 release、对应 Settlement 在 8 月 5 日尚未发现的生产案例。
+
+建议采用“early refresh + grace-period final close”：
 
 | Job | 建议触发 | 命令 | 说明 |
 |---|---|---|---|
-| `sdp-monthly-submit` | 每月 3 日 09:00 | `run_automation_stage.py --workflow monthly --phase submit --execute` | 提交/发现 Sales & Traffic / Orders / Ads / Settlement / FBA Reimbursements / Promotion-Coupon。 |
-| `sdp-monthly-collect-ingest-1` | 每月 3 日 11:00 | `run_automation_stage.py --workflow monthly --phase collect_ingest --execute` | 第一次 collect + ingest + audit。 |
-| `sdp-monthly-collect-ingest-2` | 每月 3 日 11:30 | 同上 | 唯一一次重试。 |
-| `sdp-monthly-report-delivery` | 每月 3 日 12:00 | `run_automation_stage.py --workflow monthly --phase report_delivery --send-email --execute` | 生成 Monthly Financial Close 并发送。 |
+| `sdp-monthly-submit` | 每月 3 日 09:00 | `run_automation_stage.py --workflow monthly --phase submit --execute` | 提交常规月度 reports，并 discovery 当前可见 Settlement。 |
+| `sdp-monthly-collect-ingest-1` | 每月 3 日 11:00 | `run_automation_stage.py --workflow monthly --phase collect_ingest --execute` | early refresh；v1.88 会先重新 discovery Settlement，再 collect + ingest。 |
+| `sdp-monthly-collect-ingest-2` | 每月 3 日 11:30 | 同上 | early retry；不作为 final Settlement completeness 证明。 |
+| `sdp-monthly-collect-ingest-final` | 建议每月 10–12 日 | 同上 | grace-period final refresh；再次 discovery late-generated Settlement 后再做 final close。具体日期在 2026-05/06/07 recovery 后冻结。 |
+| `sdp-monthly-report-delivery` | final refresh 成功后 | `run_automation_stage.py --workflow monthly --phase report_delivery --send-email --execute` | 生成并发送 Monthly Financial Close；不要在 final Settlement refresh 前正式发送。 |
+
+Monthly collect 的 Settlement rediscovery 使用 fail-on-error；API discovery 失败时 stage 必须失败，不能静默继续并把不完整数据当作 final close。
 
 ---
 

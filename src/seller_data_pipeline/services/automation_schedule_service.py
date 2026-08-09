@@ -356,6 +356,20 @@ def _monthly_commands(
         return tuple(command for command in commands if command is not None)
     if phase == "collect_ingest":
         return (
+            # Settlement reports are Amazon-generated and can appear several days after
+            # month-end transactions are posted/released. Rediscover on every monthly
+            # collect run so a rerun can pick up late settlements before final close.
+            _run_sampling_plan(
+                marketplace_id,
+                (rt.SETTLEMENT_V2,),
+                extra=(
+                    "--discovery-page-size",
+                    "100",
+                    "--discovery-max-pages",
+                    "10",
+                    "--fail-on-error",
+                ),
+            ),
             _command(
                 "Collect ready SP-API reports",
                 ("scripts/collect_ready_reports.py", "--limit", "100"),

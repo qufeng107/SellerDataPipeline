@@ -3,8 +3,8 @@
 > 文档状态：Implemented / in production observation  
 > 负责人：AI + Feng  
 > 更新时间：2026-08-09  
-> 功能状态：Implemented / v1.3 landed COGS executive P&L 已完成本地实现，待 Azure 成本补录与月报复核  
-> 设计版本：v1.3-landed-cogs-executive-pnl  
+> 功能状态：Implemented / v1.4 Settlement correctness query guard 已完成本地实现，待 v1.88 Azure 历史修复与月报复核  
+> 设计版本：v1.4-settlement-correctness  
 > 相关数据接入文档：`docs/data_access/sp_api_reports_catalog.md`, `docs/data_access/amazon_ads_reports_catalog.md`, `docs/data_access/seller_central_manual_exports.md`  
 > 相关数据库 spec：`docs/database/database_current_schema_spec.md`  
 > 相关功能：`docs/features/feature_profit_calculation.md`, `docs/features/feature_sku_cost_management.md`, `docs/operations/manual_refresh_plan_workflow.md`, `docs/operations/historical_backfill_workflow.md`  
@@ -37,6 +37,8 @@ v1.2 新增双利润口径和 Ads Timing Reconciliation：月报首页必须并�
 
 v1.3 / v1.87 进一步把经营视角改成 CEO-first：`Management Operating Profit` 成为首页主利润指标，并把 `internal_cogs` 展开为商品货款、头程、包装和其他单位成本。Settlement-led profit 保留为 `Settlement Close Profit` 会计/月结参考；旧 JSON 字段继续保留兼容，但 XLSX 首页不再把 legacy `Estimated Operating Profit` 重复展示成经营主利润。详细设计见 `feature_monthly_executive_pnl_landed_cogs.md`。
 
+v1.4 / v1.88 不修改 P&L 业务公式，专门收紧 Settlement 输入口径：报表查询改用显式 ISO / `DD.MM.YYYY` 日期 SQL helper，对已验证的 Amazon US marketplace 只纳入 `USD` Settlement。历史 foreign-currency / 重复 report repair 与 late-generated Settlement recovery 详见 `feature_settlement_correctness_late_discovery.md`。
+
 ---
 
 ## 2. 功能状态
@@ -59,6 +61,12 @@ v1.3 / v1.87 进一步把经营视角改成 CEO-first：`Management Operating Pr
 ## 2.1 2026-08-08 Monthly recovery dependency
 
 2026-08-05 自动化暴露的 Settlement duplicate-key 与 Promotion/Coupon schema review 不属于月报计算公式错误，而是上游 ingestion 可靠性问题。补发 2026-06 / 2026-07 月报前必须先完成 `feature_monthly_ingestion_recovery.md`：Settlement exact duplicate repair、canonical-key MERGE/rollback 验证，以及 Promotion/Coupon additive-drift non-blocking 验证。旧 weekly 报告不做历史补发。
+
+## 2.2 2026-08-09 Settlement correctness dependency (v1.88)
+
+Seller Central 2026-05/06/07 Monthly Transaction 人工对账确认，历史 Settlement normalized 数据存在三类 correctness 风险：同一 Amazon report 跨 collection path 重复、`DD.MM.YYYY` 被 SQL Server 无 style 日期解析误判月份、Amazon-generated late Settlement 在后续 collect-only rerun 中未重新 discovery。另发现 US 路径中混入 CAD Settlement。
+
+因此 v1.4 报表读取层增加 explicit-date + expected-currency guard，但**只靠查询 guard 不等同于历史数据已经修复**。2026-05/06/07 正式财务数字必须等待 `feature_settlement_correctness_late_discovery.md` 的 repair + late discovery Azure 验收完成后重新生成；此前董事会修正版只作废稿，不作为正式经营结论。
 
 ## 3. 业务目标
 

@@ -367,6 +367,37 @@ class SettlementRepo:
             for row in cursor.fetchall()
         ]
 
+    def fetch_marketplace_integrity_rows(
+        self, *, marketplace_id: str
+    ) -> list[dict[str, Any]]:
+        sql = """
+            SELECT
+                [id],
+                [marketplace_id],
+                [source_report_id],
+                [currency],
+                [marketplace_name],
+                [source_raw_file_path],
+                [amount]
+            FROM dbo.[amazon_settlement_transaction]
+            WHERE [marketplace_id] = ?
+            ORDER BY [source_report_id], [id];
+        """
+        cursor = self.connection.cursor()
+        cursor.execute(sql, (marketplace_id,))
+        return [
+            {
+                "id": int(row[0]),
+                "marketplace_id": row[1],
+                "source_report_id": row[2],
+                "currency": row[3],
+                "marketplace_name": row[4],
+                "source_raw_file_path": row[5],
+                "amount": row[6],
+            }
+            for row in cursor.fetchall()
+        ]
+
     def delete_transaction_rows_by_ids(
         self, row_ids: list[int], *, batch_size: int = 1000
     ) -> int:
@@ -460,6 +491,16 @@ class NullSettlementRepo:
             updated_rows=0,
             skipped_rows=0,
         )
+
+    def fetch_marketplace_integrity_rows(
+        self, *, marketplace_id: str
+    ) -> list[dict[str, Any]]:  # noqa: ARG002
+        return []
+
+    def delete_transaction_rows_by_ids(
+        self, row_ids: list[int], *, batch_size: int = 1000
+    ) -> int:  # noqa: ARG002
+        return len(row_ids)
 
     def commit(self) -> None:
         return None

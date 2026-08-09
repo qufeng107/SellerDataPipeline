@@ -60,6 +60,8 @@ def test_discover_available_reports_saves_report_request_manifest(
     assert manifest["download_status"] == "NOT_STARTED"
     assert manifest["report_document_id"] == "doc-1"
     assert manifest["amazon_get_reports_response_item"]["reportId"] == "settlement-1"
+    assert manifest["marketplace_ids_source"] == "amazon_response"
+    assert manifest["response_marketplace_ids"] == ["ATVPDKIKX0DER"]
 
 
 def test_discover_available_reports_caps_lookback_to_safe_window(
@@ -107,3 +109,37 @@ def test_discover_preserves_downloaded_manifest(tmp_path) -> None:  # type: igno
     assert manifest["download_status"] == "DOWNLOADED"
     assert manifest["raw_file_path"] == "reports/raw/already-downloaded.txt"
     assert manifest["report_document_id"] == "old-doc"
+
+
+def test_discover_marks_marketplace_fallback_as_unverified_when_amazon_omits_marketplace_ids(
+    tmp_path,
+) -> None:  # type: ignore[no-untyped-def]
+    class MissingMarketplaceReportsClient(FakeReportsClient):
+        def get_reports(self, **kwargs):  # type: ignore[no-untyped-def]
+            self.calls.append(kwargs)
+            return {
+                "reports": [
+                    {
+                        "reportId": "settlement-no-marketplace",
+                        "reportType": "GET_V2_SETTLEMENT_REPORT_DATA_FLAT_FILE_V2",
+                        "processingStatus": "DONE",
+                        "reportDocumentId": "doc-no-marketplace",
+                        "createdTime": "2026-08-09T00:00:00Z",
+                    }
+                ]
+            }
+
+    client = MissingMarketplaceReportsClient()
+    store = LocalManifestStore(root_dir=tmp_path / "runtime" / "sampling")
+    service = DiscoverAvailableReportsService(
+        settings=_settings(tmp_path),
+        sp_api_client=client,  # type: ignore[arg-type]
+        manifest_store=store,
+    )
+
+    service.run(days=7, today=date(2026, 8, 9), page_size=20, max_pages=1)
+
+    manifest = store.read_report_request("settlement-no-marketplace")
+    assert manifest["marketplace_ids"] == ["ATVPDKIKX0DER"]
+    assert manifest["response_marketplace_ids"] == []
+    assert manifest["marketplace_ids_source"] == "request_filter_fallback_unverified"

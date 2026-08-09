@@ -22,7 +22,8 @@
 | [`feature_listing_snapshot_ingestion.md`](feature_listing_snapshot_ingestion.md) | Implemented | SP-API `GET_MERCHANT_LISTINGS_ALL_DATA` -> `amazon_listing_snapshot`；dry-run、schema guard、repository、CLI、真实 Azure SQL execute 和幂等性验证已完成。 |
 | [`feature_inventory_ingestion.md`](feature_inventory_ingestion.md) | Implemented v1.1 / Azure verification pending | Inventory snapshot v1.1 已采用 minimal required contract；Amazon additive fields 仅 warning，不再阻断。 |
 | [`feature_sales_traffic_ingestion.md`](feature_sales_traffic_ingestion.md) | Implemented v1.1 / Azure verification pending | Sales & Traffic v1.1 已采用 minimal required contract；2026-08-03 的 24 个 additive path 回归不再阻断。 |
-| [`feature_settlement_ingestion.md`](feature_settlement_ingestion.md) | Implemented | SP-API `GET_V2_SETTLEMENT_REPORT_DATA_FLAT_FILE_V2` -> `amazon_settlement_transaction`；006、dry-run、execute 和第二次 execute 幂等性验证已完成。 |
+| [`feature_settlement_ingestion.md`](feature_settlement_ingestion.md) | Implemented / v1.88 correctness hardening pending Azure verification | SP-API `GET_V2_SETTLEMENT_REPORT_DATA_FLAT_FILE_V2` -> `amazon_settlement_transaction`；v1.88 增加显式日期解析、US/USD 内容 guard、同 report raw copy 去重与 late discovery recovery。 |
+| [`feature_settlement_correctness_late_discovery.md`](feature_settlement_correctness_late_discovery.md) | Implemented locally / Azure verification pending | v1.88：修复 Settlement 跨月日期误解析、foreign-currency attribution、同 report 多 raw path 重复与月末 late-generated Settlement 漏发现。 |
 | [`feature_orders_ingestion.md`](feature_orders_ingestion.md) | Implemented | SP-API `GET_FLAT_FILE_ALL_ORDERS_DATA_BY_ORDER_DATE_GENERAL` -> `amazon_order_item`；007、dry-run、execute 和第二次 execute 幂等性验证已完成。 |
 | [`feature_fba_reimbursements_ingestion.md`](feature_fba_reimbursements_ingestion.md) | Implemented | SP-API `GET_FBA_REIMBURSEMENTS_DATA` -> `amazon_fba_reimbursement`；008、dry-run、execute 和第二次 execute 幂等性验证已完成。 |
 | [`feature_fba_fee_preview_ingestion.md`](feature_fba_fee_preview_ingestion.md) | Implemented | SP-API `GET_FBA_ESTIMATED_FBA_FEES_TXT_DATA` -> `amazon_fba_fee_preview`；009、dry-run、execute 和第二次 execute 幂等性验证已完成。 |
@@ -31,7 +32,7 @@
 | [`feature_ingestion_job_config.md`](feature_ingestion_job_config.md) | Implemented | 数据下载/入库/加工/报表任务周期配置表；012 migration 和 seed 001 已执行，seed 002 用于同步重叠窗口刷新策略。 |
 | [`feature_profit_calculation.md`](feature_profit_calculation.md) | Preview implemented | 利润核算口径已冻结为 Settlement-led Financial Profit v1.0；第一版 `calculate_profit_report.py` 已实现文件型 preview，不落利润结果表。 |
 | [`feature_sku_cost_management.md`](feature_sku_cost_management.md) | Implemented | SKU 成本 xlsx 模板导出与导入；默认 dry-run、按 marketplace + SKU + effective_from 幂等写入 `amazon_sku_cost`。 |
-| [`feature_monthly_financial_close_report.md`](feature_monthly_financial_close_report.md) | Implemented v1.3 / Azure cost update pending | 月度财务结算报表；v1.3 将 Management Operating Profit 升为首页主指标，拆分 landed COGS components，同时保留 Settlement Close Profit 与 Ads Timing Reconciliation / 会计辅助包。 |
+| [`feature_monthly_financial_close_report.md`](feature_monthly_financial_close_report.md) | Implemented v1.4 locally / Azure correctness recovery pending | 月度财务结算报表；v1.4 在 v1.3 Executive P&L / landed COGS 上增加 Settlement explicit-date + expected-currency query guard，等待 v1.88 历史修复后重新关闭 2026-05/06/07。 |
 | [`feature_monthly_executive_pnl_landed_cogs.md`](feature_monthly_executive_pnl_landed_cogs.md) | Implemented locally / Azure verification pending | v1.87：月报经营口径升级；Management Operating Profit 作为首页主指标，拆分商品/头程/包装/其他到岸COGS，并更新邮件利润口径。 |
 | [`feature_monthly_ingestion_recovery.md`](feature_monthly_ingestion_recovery.md) | Implemented locally / Azure recovery pending | v1.81：Settlement canonical-key MERGE、rollback 语义、exact duplicate repair；Promotion/Coupon additive drift 回归；用于恢复 2026-06 / 2026-07 月报。 |
 | [`feature_monthly_chunk_completeness_recovery.md`](feature_monthly_chunk_completeness_recovery.md) | Implemented locally / Azure verification pending | v1.83：修复 Monthly Sales/Orders/Ads 多分片只入最新文件、历史月份 coverage window 过宽、Ads timing 误阻断邮件。 |
@@ -49,13 +50,13 @@
 
 ## 3. 下一批建议
 
-当前优先级已切换到 v1.87 月报经营利润 / landed COGS 生产验收：
+当前优先级已切换到 v1.88 Settlement correctness / late discovery 生产恢复：
 
-1. 先只读确认 4 个正式 SKU 当前 `amazon_sku_cost` 行、effective dates 和现有 first-mile 值。
-2. 用白名单 + 原值检查把 `0.5275 USD/unit` first-mile estimate 写入覆盖 2026-05/06/07 的成本记录，并保留计算来源 remark。
-3. v1.87 CI/main image 通过后更新 monthly report-delivery job。
-4. 不重新 submit/collect Amazon 数据，直接重新生成 2026-05、2026-06、2026-07 Monthly Financial Close preview。
-5. 验收 first-mile COGS、Total Landed COGS、Management Operating Profit/Margin、email subject 和 send guard 均正确。
+1. CI 通过后构建 v1.88 main image，并同步 monthly submit / collect-ingest / report-delivery 镜像。
+2. 先 dry-run / execute `repair_settlement_marketplace_integrity.py`，清理可证明属于外币市场的历史 Settlement；任何 mixed/missing-currency conflict 必须 fail closed。
+3. 再 dry-run / execute既有 `repair_settlement_idempotency.py`，修复 2026-05 已确认的同一 Amazon report 多 raw path exact duplicates。
+4. 重新运行 2026-07 monthly collect_ingest；第一步 late rediscovery 应发现 `settlement_id=27207351391`，随后 collect + ingest。
+5. 重新生成 2026-05/06/07 Monthly Financial Close preview，不发送历史邮件；用 Seller Central Monthly Transaction CSV 做逐月 reconciliation，通过后再恢复董事会数字。
 
 不补发历史 weekly；weekly 从当前周期继续。
 

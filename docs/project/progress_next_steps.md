@@ -1,7 +1,7 @@
 # SellerDataPipeline 当前进展与下一步计划
 
 > 更新时间：2026-08-09  
-> 当前版本：v1.86 Settlement FBA fee classification coverage implemented locally; v1.85 Azure production verified  
+> 当前版本：v1.88 Settlement Correctness & Late Discovery Recovery implemented locally; Azure verification pending  
 > 文档定位：记录项目真实进展、已完成里程碑、当前非阻塞问题和下一步开发顺序。本文不承载详细字段设计；功能细节见 `docs/features/`。
 
 ## 1. 当前一句话状态
@@ -192,6 +192,28 @@ v1.85 本地改为：
 - 不新增 migration / live schema。
 
 Azure 生产验收已通过：2026-06 Settlement `3921 -> 2868 unique keys`，6 个 JSON MERGE 约 7 秒完成、Settlement 全阶段约 11 秒并提交，stage `commands=9 failed=0`；2026-07 再次以 1491 unique rows / 3 batches 成功。6 月 Financial Close 已 `status=ok` 并正式发送。
+
+
+## 1.0.9 2026-08-09 Settlement Correctness & Late Discovery Recovery v1.88
+
+Seller Central 2026-05/06/07 Monthly Transaction 与 Azure normalized Settlement 对账确认，v1.87 报表公式本身不是当前主要问题；上游历史 Settlement correctness 仍有缺口：
+
+- 2026-05 `source_report_id=115300020602` 从 `2026-05-30` 与 `2026-08-05` 两个 raw path 重复进入 normalized table，造成 sales / refund / FBA / Ads 等被放大。
+- 2026-07 `settlement_id=27207351391` 在 Seller Central 已出现，但 8 月 5 日 discovery 时尚未生成/可见，后续 collect-only rerun 未重新 discovery，因此数据库为 0 rows。
+- 已确认历史 CAD raw Settlement 使用 `DD.MM.YYYY`（例如 `07.03.2026`）并被 SQL Server 无 style `TRY_CONVERT` 误读为 July；这些 foreign-currency rows 进入 US 月报。
+- 2026-06 未发现 multi-path / duplicate-hash 结构性异常，633 rows = 633 distinct hashes；与手工 Monthly Transaction 的差异优先按 release/posted timing 解释并继续 reconciliation。
+
+v1.88 本地实现：
+
+- 新增 explicit Settlement date parser / SQL helper，只接受无歧义 ISO 与 `DD.MM.YYYY`。
+- US `ATVPDKIKX0DER` 建立 USD content contract；ingestion 非 USD / missing / mixed currency fail closed，报表读取层同时过滤 expected currency。
+- 同一 Amazon report ID 的相同 bytes raw copies 只处理最新 collection path；同 report ID 不同 bytes fail closed。
+- Monthly `collect_ingest` 第一条 command 重新 discovery Settlement V2，让 late-generated Settlement 可在 grace-period rerun 中补齐。
+- discovery manifest 区分 `amazon_response` 与 `request_filter_fallback_unverified` marketplace 来源。
+- 新增 `repair_settlement_marketplace_integrity.py`；exact source duplicates 继续使用既有 `repair_settlement_idempotency.py`。
+- Monthly report version 升级为 `v1.4-settlement-correctness`；无 migration。
+
+当前恢复顺序：CI/main image -> marketplace integrity repair -> idempotency repair -> 2026-07 collect_ingest late rediscovery -> 2026-05/06/07 preview -> Seller Central Monthly Transaction reconciliation -> 重建董事会报表。历史邮件不补发。
 
 ## 1.0.7 2026-08-09 Settlement FBA fee classification coverage v1.86
 

@@ -78,6 +78,14 @@ def main() -> None:
         default=3,
         help="Max getReports pages for discovery items. Default: 3.",
     )
+    parser.add_argument(
+        "--fail-on-error",
+        action="store_true",
+        help=(
+            "Return a non-zero exit code when any plan item fails. Use this for "
+            "financial-close discovery where silent partial success is unsafe."
+        ),
+    )
     args = parser.parse_args()
 
     settings = get_settings()
@@ -156,6 +164,8 @@ def main() -> None:
     print(f"Failed item(s): {len(failed)}")
     for item, message in failed:
         print(f"FAILED {item.report_type}: {message}")
+    if failed and args.fail_on_error:
+        raise SystemExit(1)
 
 
 def _format_plan_line(*, index: int, item: ReportSamplingPlanItem) -> str:
