@@ -5,6 +5,7 @@ from datetime import date
 from typing import Any
 
 from seller_data_pipeline.db.repositories.finance_repo import rows_to_dicts
+from seller_data_pipeline.db.settlement_sql import settlement_date_sql
 
 
 @dataclass(frozen=True)
@@ -89,15 +90,8 @@ CORE_COVERAGE_SOURCE_SPECS: tuple[CoverageSourceSpec, ...] = (
     CoverageSourceSpec(
         data_domain="Settlement transaction",
         source_table="amazon_settlement_transaction",
-        business_date_expression=(
-            "COALESCE("
-            "TRY_CONVERT(date, NULLIF([posted_date_time_raw], ''), 127), "
-            "TRY_CONVERT(date, NULLIF([posted_date_time_raw], '')), "
-            "TRY_CONVERT(date, NULLIF([posted_date_raw], ''), 127), "
-            "TRY_CONVERT(date, NULLIF([posted_date_raw], '')), "
-            "TRY_CONVERT(date, NULLIF([deposit_date_raw], ''), 127), "
-            "TRY_CONVERT(date, NULLIF([deposit_date_raw], ''))"
-            ")"
+        business_date_expression=settlement_date_sql(
+            "[posted_date_time_raw]", "[posted_date_raw]", "[deposit_date_raw]"
         ),
         business_date_semantics="posted_date/posted_date_time/deposit_date",
         entity_expression="[seller_sku]",

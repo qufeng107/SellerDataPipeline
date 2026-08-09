@@ -162,6 +162,11 @@ def test_monthly_collect_ingest_commands_are_period_bound() -> None:
     )
 
     printable = "\n".join(command.printable() for command in commands)
+    assert commands[0].argv[0] == "scripts/run_sampling_plan.py"
+    assert "GET_V2_SETTLEMENT_REPORT_DATA_FLAT_FILE_V2" in commands[0].argv
+    assert "--discovery-page-size" in commands[0].argv
+    assert "--discovery-max-pages" in commands[0].argv
+    assert "--fail-on-error" in commands[0].argv
     for script in (
         "scripts/ingest_sales_traffic_report.py",
         "scripts/ingest_orders_report.py",

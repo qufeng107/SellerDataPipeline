@@ -1,11 +1,16 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from seller_data_pipeline.integrations.amazon.marketplaces import (
+    expected_marketplace_currency,
+    expected_marketplace_names,
+)
 from seller_data_pipeline.ingestion.ads_ingestion_dry_run import (
     build_schema_validation_event_row,
 )
@@ -17,6 +22,8 @@ from seller_data_pipeline.ingestion.settlement_table_mapping import (
 from seller_data_pipeline.parsers.amazon.settlement_report_parser import (
     SETTLEMENT_V2_REPORT_TYPE,
     SettlementReportParser,
+    SettlementV2TransactionRecord,
+    parse_settlement_raw_date,
 )
 from seller_data_pipeline.sampling.report_analyzer import analyze_report_file
 from seller_data_pipeline.sampling.schema_drift import (
@@ -201,6 +208,46 @@ class SettlementIngestionDryRunService:
             marketplace_id=marketplace_id,
             source_report_id=raw_file_path.stem,
         )
+        foreign_reason = identify_foreign_settlement_file(
+            marketplace_id=marketplace_id,
+            records=records,
+        )
+        if foreign_reason:
+            # A single, explicit foreign currency is enough to prove that this
+            # Amazon-generated report does not belong to the requested marketplace.
+            # Quarantine only that file and continue with valid US reports; otherwise
+            # one historical CAD artifact would block every future US Settlement run.
+            return SettlementPreparedFileResult(
+                report_type=SETTLEMENT_V2_REPORT_TYPE,
+                target_table=SETTLEMENT_TARGET_TABLE_SPEC.target_table,
+                raw_file_path=str(raw_file_path),
+                schema_validation_status=schema_result.status,
+                requires_review=False,
+                skipped=True,
+                skip_reason=f"foreign_marketplace_report: {foreign_reason}",
+                parsed_row_count=len(records),
+                prepared_row_count=0,
+                schema_validation_event=schema_event,
+            )
+        content_issues = validate_settlement_file_content(
+            marketplace_id=marketplace_id,
+            records=records,
+        )
+        if content_issues:
+            return SettlementPreparedFileResult(
+                report_type=SETTLEMENT_V2_REPORT_TYPE,
+                target_table=SETTLEMENT_TARGET_TABLE_SPEC.target_table,
+                raw_file_path=str(raw_file_path),
+                schema_validation_status=schema_result.status,
+                requires_review=True,
+                skipped=True,
+                skip_reason=(
+                    "content_validation_requires_review: " + "; ".join(content_issues[:5])
+                ),
+                parsed_row_count=len(records),
+                prepared_row_count=0,
+                schema_validation_event=schema_event,
+            )
         start_len = len(rows_out)
         for source_row_index, record in enumerate(records, start=1):
             rows_out.append(
@@ -372,13 +419,148 @@ def _resolve_raw_file_paths(
     marketplace_id: str,
     raw_file_paths: list[str | Path] | None,
 ) -> list[Path]:
-    if raw_file_paths:
-        return [Path(path) for path in raw_file_paths]
-    return find_all_sp_api_raw_files(
-        raw_reports_root=raw_reports_root,
-        marketplace_id=marketplace_id,
-        report_type=SETTLEMENT_V2_REPORT_TYPE,
+    paths = (
+        [Path(path) for path in raw_file_paths]
+        if raw_file_paths
+        else find_all_sp_api_raw_files(
+            raw_reports_root=raw_reports_root,
+            marketplace_id=marketplace_id,
+            report_type=SETTLEMENT_V2_REPORT_TYPE,
+        )
     )
+    return deduplicate_settlement_raw_files(paths)
+
+
+def deduplicate_settlement_raw_files(paths: list[Path]) -> list[Path]:
+    """Keep one immutable raw document per Amazon report ID.
+
+    Artifact restore can surface the same Amazon report under more than one collection
+    date directory. Reprocessing both is unnecessary and historically allowed legacy
+    non-canonical rows to reappear. Identical copies are collapsed by report ID. If
+    the same report ID has different bytes, fail closed because an Amazon report ID is
+    expected to identify one immutable document.
+    """
+
+    by_report_id: dict[str, list[Path]] = {}
+    for path in paths:
+        by_report_id.setdefault(path.stem, []).append(path)
+
+    selected: list[Path] = []
+    for report_id in sorted(by_report_id):
+        copies = by_report_id[report_id]
+        if len(copies) == 1:
+            selected.append(copies[0])
+            continue
+
+        checksums: dict[str, list[Path]] = {}
+        for path in copies:
+            digest = hashlib.sha256(path.read_bytes()).hexdigest()
+            checksums.setdefault(digest, []).append(path)
+        if len(checksums) != 1:
+            conflicting = ", ".join(str(path) for path in sorted(copies))
+            raise ValueError(
+                "Conflicting Settlement raw files share the same report ID "
+                f"{report_id}: {conflicting}"
+            )
+        selected.append(max(copies, key=_raw_file_recency_rank))
+
+    return sorted(selected, key=lambda path: str(path))
+
+
+def _raw_file_recency_rank(path: Path) -> tuple[str, int, str]:
+    collection_date = path.parent.name
+    try:
+        mtime_ns = path.stat().st_mtime_ns
+    except OSError:
+        mtime_ns = 0
+    return collection_date, mtime_ns, str(path)
+
+
+def identify_foreign_settlement_file(
+    *,
+    marketplace_id: str,
+    records: list[SettlementV2TransactionRecord],
+) -> str | None:
+    """Return a quarantine reason when a report is provably for another currency.
+
+    Only a single, non-empty observed currency that differs from a verified marketplace
+    contract is treated as a safe foreign-file skip. Missing or mixed currency is not
+    provably foreign and remains a fail-closed content validation issue.
+    """
+
+    expected_currency = expected_marketplace_currency(marketplace_id)
+    if not expected_currency:
+        return None
+    observed_currencies = sorted(
+        {str(record.currency).strip().upper() for record in records if record.currency}
+    )
+    if len(observed_currencies) == 1 and observed_currencies[0] != expected_currency:
+        return (
+            f"marketplace {marketplace_id} expects {expected_currency} but report uses "
+            f"{observed_currencies[0]}"
+        )
+    return None
+
+
+def validate_settlement_file_content(
+    *,
+    marketplace_id: str,
+    records: list[SettlementV2TransactionRecord],
+) -> tuple[str, ...]:
+    issues: list[str] = []
+    expected_currency = expected_marketplace_currency(marketplace_id)
+    observed_currencies = sorted(
+        {str(record.currency).strip().upper() for record in records if record.currency}
+    )
+    if expected_currency:
+        if not observed_currencies:
+            issues.append(
+                f"known marketplace {marketplace_id} has no settlement currency; "
+                f"expected {expected_currency}"
+            )
+        elif observed_currencies != [expected_currency]:
+            issues.append(
+                f"marketplace {marketplace_id} expects {expected_currency} but report contains "
+                f"currencies={observed_currencies}"
+            )
+
+    expected_names = {name.casefold() for name in expected_marketplace_names(marketplace_id)}
+    observed_names = sorted(
+        {str(record.marketplace_name).strip() for record in records if record.marketplace_name}
+    )
+    unexpected_names = sorted(
+        name for name in observed_names if expected_names and name.casefold() not in expected_names
+    )
+    if unexpected_names:
+        issues.append(
+            f"marketplace {marketplace_id} report contains unexpected marketplace names="
+            f"{unexpected_names}; expected one of={sorted(expected_marketplace_names(marketplace_id))}"
+        )
+
+    invalid_dates: list[str] = []
+    for record in records:
+        for field_name in (
+            "settlement_start_date_raw",
+            "settlement_end_date_raw",
+            "deposit_date_raw",
+            "posted_date_raw",
+            "posted_date_time_raw",
+        ):
+            value = getattr(record, field_name)
+            if not value:
+                continue
+            try:
+                parse_settlement_raw_date(value)
+            except ValueError:
+                invalid_dates.append(f"{field_name}={value!r}")
+                if len(invalid_dates) >= 5:
+                    break
+        if len(invalid_dates) >= 5:
+            break
+    if invalid_dates:
+        issues.append("unsupported settlement date format(s): " + ", ".join(invalid_dates))
+
+    return tuple(issues)
 
 
 def _build_task_message(file_results: tuple[SettlementPreparedFileResult, ...]) -> str:
@@ -419,5 +601,8 @@ __all__ = [
     "SettlementPreparedFileResult",
     "build_settlement_expected_schema",
     "build_task_audit_event",
+    "deduplicate_settlement_raw_files",
     "find_all_sp_api_raw_files",
+    "identify_foreign_settlement_file",
+    "validate_settlement_file_content",
 ]

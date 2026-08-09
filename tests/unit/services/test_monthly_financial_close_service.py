@@ -73,7 +73,7 @@ def test_calculate_monthly_financial_close_core_metrics() -> None:
     )
 
     payload = result.to_dict()
-    assert payload["version"] == "v1.3-landed-cogs-executive-pnl"
+    assert payload["version"] == "v1.4-settlement-correctness"
     assert payload["financial_summary"]["management_operating_profit"] == "10.00"
     assert payload["financial_summary"]["landed_cogs"] == "50.00"
     assert "accountant_pack" in payload

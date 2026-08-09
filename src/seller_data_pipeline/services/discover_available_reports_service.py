@@ -110,7 +110,11 @@ class DiscoverAvailableReportsService:
             raise ValueError(f"Discovered report did not contain reportId: {report!r}")
 
         report_type = str(report.get("reportType") or requested_report_type)
-        marketplace_ids = _as_string_list(report.get("marketplaceIds")) or requested_marketplace_ids
+        response_marketplace_ids = _as_string_list(report.get("marketplaceIds"))
+        marketplace_ids = response_marketplace_ids or requested_marketplace_ids
+        marketplace_ids_source = (
+            "amazon_response" if response_marketplace_ids else "request_filter_fallback_unverified"
+        )
         processing_status = str(report.get("processingStatus") or "DONE")
         report_document_id = report.get("reportDocumentId")
 
@@ -131,6 +135,8 @@ class DiscoverAvailableReportsService:
                 {
                     "report_type": report_type,
                     "marketplace_ids": marketplace_ids,
+                    "marketplace_ids_source": marketplace_ids_source,
+                    "response_marketplace_ids": response_marketplace_ids,
                     "data_start_time": report.get("dataStartTime"),
                     "data_end_time": report.get("dataEndTime"),
                     "created_time": report.get("createdTime"),
@@ -153,6 +159,8 @@ class DiscoverAvailableReportsService:
             "report_id": report_id,
             "report_type": report_type,
             "marketplace_ids": marketplace_ids,
+            "marketplace_ids_source": marketplace_ids_source,
+            "response_marketplace_ids": response_marketplace_ids,
             "data_start_time": report.get("dataStartTime"),
             "data_end_time": report.get("dataEndTime"),
             "created_time": report.get("createdTime"),

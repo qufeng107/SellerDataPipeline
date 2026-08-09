@@ -4,6 +4,8 @@ from datetime import date
 from typing import Any
 
 from seller_data_pipeline.db.repositories.finance_repo import one_row_to_dict, rows_to_dicts
+from seller_data_pipeline.db.settlement_sql import settlement_date_sql
+from seller_data_pipeline.integrations.amazon.marketplaces import expected_marketplace_currency
 
 
 class WeeklyAdsOptimizationRepo:
@@ -228,25 +230,32 @@ class WeeklyAdsOptimizationRepo:
     ) -> dict[str, Any]:
         cursor = self.connection.cursor()
         try:
+            posted_date_expression = settlement_date_sql(
+                "[posted_date_time_raw]",
+                "[posted_date_raw]",
+                "[deposit_date_raw]",
+            )
+            expected_currency = expected_marketplace_currency(marketplace_id)
+            currency_filter = ""
+            params: tuple[Any, ...]
+            if expected_currency:
+                currency_filter = " AND UPPER(NULLIF([currency], '')) = ?"
+                params = (marketplace_id, expected_currency, start_date, end_date)
+            else:
+                params = (marketplace_id, start_date, end_date)
             cursor.execute(
-                """
+                f"""
                 WITH normalized AS (
                     SELECT
                         [amount],
                         [currency],
                         [profit_bucket],
-                        COALESCE(
-                            TRY_CONVERT(date, NULLIF([posted_date_time_raw], ''), 127),
-                            TRY_CONVERT(date, NULLIF([posted_date_time_raw], '')),
-                            TRY_CONVERT(date, NULLIF([posted_date_raw], ''), 127),
-                            TRY_CONVERT(date, NULLIF([posted_date_raw], '')),
-                            TRY_CONVERT(date, NULLIF([deposit_date_raw], ''), 127),
-                            TRY_CONVERT(date, NULLIF([deposit_date_raw], ''))
-                        ) AS [posted_date]
+                        {posted_date_expression} AS [posted_date]
                     FROM dbo.[amazon_settlement_transaction]
                     WHERE [marketplace_id] = ?
                       AND [is_settlement_summary] = 0
                       AND [amount] IS NOT NULL
+                      {currency_filter}
                 )
                 SELECT
                     COALESCE(SUM(CASE
@@ -259,7 +268,7 @@ class WeeklyAdsOptimizationRepo:
                 WHERE [posted_date] >= ?
                   AND [posted_date] <= ?;
                 """,
-                (marketplace_id, start_date, end_date),
+                params,
             )
             return one_row_to_dict(cursor)
         finally:

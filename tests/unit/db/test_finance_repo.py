@@ -68,8 +68,10 @@ def test_fetch_settlement_profit_rows_filters_marketplace_and_period() -> None:
     sql, params = cursor.executed[0]
     assert "amazon_settlement_transaction" in sql
     assert "TRY_CONVERT(date" in sql
+    assert ", 104)" in sql
+    assert "UPPER(NULLIF([currency], '')) = ?" in sql
     assert "[is_settlement_summary] = 0" in sql
-    assert params == ("ATVPDKIKX0DER", date(2026, 5, 1), date(2026, 5, 7))
+    assert params == ("ATVPDKIKX0DER", "USD", date(2026, 5, 1), date(2026, 5, 7))
     assert cursor.closed is True
 
 

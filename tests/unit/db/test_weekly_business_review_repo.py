@@ -121,4 +121,6 @@ def test_fetch_settlement_preview_rows_uses_posted_date_logic() -> None:
     assert "amazon_settlement_transaction" in sql
     assert "[is_settlement_summary] = 0" in sql
     assert "posted_date_time_raw" in sql
-    assert params == ("ATVPDKIKX0DER", date(2026, 4, 6), date(2026, 4, 12))
+    assert ", 104)" in sql
+    assert "UPPER(NULLIF([currency], '')) = ?" in sql
+    assert params == ("ATVPDKIKX0DER", "USD", date(2026, 4, 6), date(2026, 4, 12))

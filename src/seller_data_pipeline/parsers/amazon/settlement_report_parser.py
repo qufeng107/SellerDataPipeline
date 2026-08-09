@@ -4,6 +4,7 @@ import csv
 import hashlib
 import json
 from dataclasses import asdict, dataclass
+from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any
@@ -215,6 +216,29 @@ class SettlementReportParser:
                 )
             )
         return records
+
+
+def parse_settlement_raw_date(value: str | None) -> date | None:
+    """Parse observed Settlement V2 date formats without locale ambiguity.
+
+    Supported forms intentionally match production evidence: ISO YYYY-MM-DD and
+    Amazon-generated DD.MM.YYYY. Time suffixes are ignored after the first ten
+    characters. Unknown non-empty formats raise ValueError so ingestion can fail
+    closed instead of silently moving money into the wrong month.
+    """
+
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    prefix = text[:10]
+    for fmt in ("%Y-%m-%d", "%d.%m.%Y"):
+        try:
+            return datetime.strptime(prefix, fmt).date()
+        except ValueError:
+            continue
+    raise ValueError(f"Unsupported Settlement date format: {value!r}")
 
 
 def classify_settlement_amount(

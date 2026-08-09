@@ -363,3 +363,25 @@ def test_classifies_fba_customer_returns_fee_with_dynamic_suffix() -> None:
     assert record.amount_description == "Base fee"
     assert record.amount_category == "fba_customer_returns_fee"
     assert record.profit_bucket == "fba_fee"
+
+
+def test_parse_settlement_raw_date_supports_iso_and_dd_dot_mm_dot_yyyy() -> None:
+    from datetime import date
+
+    from seller_data_pipeline.parsers.amazon.settlement_report_parser import (
+        parse_settlement_raw_date,
+    )
+
+    assert parse_settlement_raw_date("2026-07-31 10:00:00 UTC") == date(2026, 7, 31)
+    assert parse_settlement_raw_date("07.03.2026 16:48:30 UTC") == date(2026, 3, 7)
+
+
+def test_parse_settlement_raw_date_rejects_unknown_nonempty_format() -> None:
+    import pytest
+
+    from seller_data_pipeline.parsers.amazon.settlement_report_parser import (
+        parse_settlement_raw_date,
+    )
+
+    with pytest.raises(ValueError, match="Unsupported Settlement date format"):
+        parse_settlement_raw_date("03/07/2026")

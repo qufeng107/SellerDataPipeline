@@ -514,3 +514,19 @@ v1.84 Azure performance test confirmed temp staging with ~1950 parameters per ba
 ## v1.86 FBA fee classification coverage
 
 2026-07 Financial Close preview 暴露 `-35.45 USD` unknown/unclassified。生产只读诊断确认由两条正常 FBA fee 组成：`FBA Inventory Storage Fee / Base fee = -32.75` 与 `FBA Customer Returns Fee (...) / Base fee = -2.70`。v1.86 仅补 parser 分类：前者归 `storage_fee / fba_storage_fee`，后者在 `transaction=FBAFees` 且 normalized amount type 以 `fbacustomerreturnsfee` 开头时归 `fba_customer_returns_fee / fba_fee`。未命中新组合仍 fail closed 到 `unclassified / unknown`。不修改数据库、金额、business key 或 v1.85 JSON MERGE。详细设计：`feature_settlement_fba_fee_classification.md`。
+
+## 22. 2026-08-09 v1.88 Settlement correctness / late discovery
+
+生产人工对账发现三类新 integrity 风险：同 report ID 多 collection path 历史重复、Amazon-generated Settlement 延迟生成、以及 `DD.MM.YYYY` 被 SQL Server 无 style 日期转换误读。另确认 Settlement discovery response 可能缺 `marketplaceIds`，旧逻辑会把 request-filter marketplace 当作已验证归属，导致 CAD raw report 进入 US 路径。
+
+v1.88 因此增加：
+
+- Settlement raw file 按 report ID + bytes 去重；同 report ID 不同 bytes fail closed。
+- known marketplace currency/content guard；当前 `ATVPDKIKX0DER -> USD / Amazon.com`。单一明确 CAD 等 foreign-currency raw file 作为 `foreign_marketplace_report` 隔离，不阻断同批有效 USD reports；missing/mixed currency 或 marketplace-name conflict 仍 fail closed。
+- non-empty Settlement date raw 必须匹配 `YYYY-MM-DD` 或 `DD.MM.YYYY`；未知格式 fail closed。
+- 所有主要财务 Settlement SQL 统一 explicit style date parser，不再用 session-dependent unstyled `TRY_CONVERT`。
+- Monthly `collect_ingest` 每次先重新 discovery Settlement V2，以支持 late-generated month-end settlement。
+- discovery manifest 增加 `marketplace_ids_source` / `response_marketplace_ids`，明确 request-filter fallback 并非 Amazon response 的 marketplace 证明。
+- 新增 `repair_settlement_marketplace_integrity.py` 处理历史 foreign-currency source reports；existing `repair_settlement_idempotency.py` 继续负责 exact source identity duplicate。
+
+详细设计见 `feature_settlement_correctness_late_discovery.md`。无 migration，不改变 Settlement transaction business key，也不按 raw file 内重复 `source_row_hash` 粗暴去重。

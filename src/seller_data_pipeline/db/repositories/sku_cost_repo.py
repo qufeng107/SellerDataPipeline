@@ -5,6 +5,8 @@ from datetime import date
 from decimal import Decimal
 from typing import Any
 
+from seller_data_pipeline.db.settlement_sql import settlement_date_sql
+
 SKU_COST_TABLE = "amazon_sku_cost"
 
 
@@ -139,7 +141,7 @@ class SkuCostRepo:
         self.connection.commit()
 
 
-FETCH_SKU_CANDIDATES_SQL = """
+FETCH_SKU_CANDIDATES_SQL = f"""
 WITH sku_sources AS (
     SELECT
         [marketplace_id],
@@ -185,7 +187,7 @@ WITH sku_sources AS (
         NULLIF(LTRIM(RTRIM([seller_sku])), '') AS [seller_sku],
         NULL AS [asin],
         NULL AS [product_name],
-        TRY_CONVERT(date, LEFT(COALESCE([posted_date_time_raw], [posted_date_raw]), 10))
+        {settlement_date_sql("[posted_date_time_raw]", "[posted_date_raw]")}
             AS [source_date],
         CAST('settlement' AS nvarchar(40)) AS [source_name],
         CAST(4 AS int) AS [source_rank]
