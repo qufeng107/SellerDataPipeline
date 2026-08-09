@@ -31,7 +31,7 @@ MONEY_QUANT = Decimal("0.01")
 RATIO_QUANT = Decimal("0.0001")
 ZERO = Decimal("0")
 REPORT_TYPE = "monthly_financial_close"
-REPORT_VERSION = "v1.4-settlement-correctness"
+REPORT_VERSION = "v1.5-natural-month-finances"
 DEFAULT_OUTPUT_ROOT = "runtime/analysis_reports/monthly_financial_close"
 REVIEW_BUCKETS = {"unknown", "unclassified"}
 REVIEW_CATEGORIES = {"unknown", "unclassified"}
@@ -44,8 +44,9 @@ SETTLEMENT_LED_POLICY_NOTE = (
     "are used for management analysis and timing reconciliation."
 )
 MANAGEMENT_PNL_POLICY_NOTE = (
-    "Management P&L replaces settlement posted-date advertising fees with Ads API report-date "
-    "spend so month-level operating decisions are not distorted by ads invoice timing."
+    "Management P&L uses the Finances API marketplace-local natural-month ledger for operating "
+    "transactions, excludes cash Transfer rows, replaces Finances/Amazon posted advertising "
+    "charges with Ads API report-date spend, and deducts natural-month landed COGS."
 )
 
 
@@ -306,6 +307,80 @@ class MonthlyFinancialSummary:
 
 
 @dataclass(frozen=True)
+class NaturalMonthFinancialSummary:
+    source_status: str
+    marketplace_timezone: str | None
+    ledger_row_count: int
+    review_required_count: int
+    review_required_amount: Decimal
+    product_sales_amount: Decimal
+    order_total: Decimal
+    refund_total: Decimal
+    liquidation_total: Decimal
+    service_fee_total: Decimal
+    subscription_fee: Decimal
+    coupon_fee: Decimal
+    deal_fee: Decimal
+    storage_fee: Decimal
+    customer_return_fee: Decimal
+    other_service_fee: Decimal
+    reimbursement_total: Decimal
+    adjustment_total: Decimal
+    finances_ads_charge_reference: Decimal
+    transfer_reference: Decimal
+    operating_net_before_ads_replacement: Decimal
+    product_sales_units: int
+    liquidation_units: int
+    costed_units: int
+    missing_cost_skus: tuple[str, ...]
+    product_cost_cogs: Decimal
+    first_mile_cogs: Decimal
+    packaging_cogs: Decimal
+    other_unit_cogs: Decimal
+    landed_cogs: Decimal
+    ads_api_report_date_spend: Decimal
+    management_operating_profit: Decimal
+    management_operating_margin: Decimal | None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "source_status": self.source_status,
+            "marketplace_timezone": self.marketplace_timezone,
+            "ledger_row_count": self.ledger_row_count,
+            "review_required_count": self.review_required_count,
+            "review_required_amount": _decimal_to_string(self.review_required_amount),
+            "product_sales_amount": _decimal_to_string(self.product_sales_amount),
+            "order_total": _decimal_to_string(self.order_total),
+            "refund_total": _decimal_to_string(self.refund_total),
+            "liquidation_total": _decimal_to_string(self.liquidation_total),
+            "service_fee_total": _decimal_to_string(self.service_fee_total),
+            "subscription_fee": _decimal_to_string(self.subscription_fee),
+            "coupon_fee": _decimal_to_string(self.coupon_fee),
+            "deal_fee": _decimal_to_string(self.deal_fee),
+            "storage_fee": _decimal_to_string(self.storage_fee),
+            "customer_return_fee": _decimal_to_string(self.customer_return_fee),
+            "other_service_fee": _decimal_to_string(self.other_service_fee),
+            "reimbursement_total": _decimal_to_string(self.reimbursement_total),
+            "adjustment_total": _decimal_to_string(self.adjustment_total),
+            "finances_ads_charge_reference": _decimal_to_string(self.finances_ads_charge_reference),
+            "transfer_reference": _decimal_to_string(self.transfer_reference),
+            "operating_net_before_ads_replacement": _decimal_to_string(self.operating_net_before_ads_replacement),
+            "product_sales_units": self.product_sales_units,
+            "liquidation_units": self.liquidation_units,
+            "costed_units": self.costed_units,
+            "missing_cost_skus": list(self.missing_cost_skus),
+            "product_cost_cogs": _decimal_to_string(self.product_cost_cogs),
+            "first_mile_cogs": _decimal_to_string(self.first_mile_cogs),
+            "packaging_cogs": _decimal_to_string(self.packaging_cogs),
+            "other_unit_cogs": _decimal_to_string(self.other_unit_cogs),
+            "landed_cogs": _decimal_to_string(self.landed_cogs),
+            "ads_api_report_date_spend": _decimal_to_string(self.ads_api_report_date_spend),
+            "management_operating_profit": _decimal_to_string(self.management_operating_profit),
+            "management_operating_margin": _optional_ratio_to_string(self.management_operating_margin),
+        }
+
+
+@dataclass(frozen=True)
 class MonthlyFinancialCloseResult:
     marketplace_id: str
     profile_id: str | None
@@ -325,6 +400,7 @@ class MonthlyFinancialCloseResult:
     warnings: tuple[WarningEntry, ...]
     output_files: dict[str, str] = field(default_factory=dict)
     raw_metadata: dict[str, Any] = field(default_factory=dict)
+    natural_month_finance: NaturalMonthFinancialSummary | None = None
 
     def to_dict(self) -> dict[str, Any]:
         payload = {
@@ -343,6 +419,9 @@ class MonthlyFinancialCloseResult:
             "settlement_row_count": self.settlement_row_count,
             "executive_summary": self.executive_summary(),
             "financial_summary": self.financial_summary.to_dict(),
+            "natural_month_finance": (
+                self.natural_month_finance.to_dict() if self.natural_month_finance else None
+            ),
             "settlement_bucket_breakdown": [
                 row.to_dict() for row in self.settlement_bucket_breakdown
             ],
@@ -385,6 +464,7 @@ class MonthlyFinancialCloseResult:
             warnings=self.warnings,
             raw_metadata=self.raw_metadata,
             output_files=dict(output_files),
+            natural_month_finance=self.natural_month_finance,
         )
 
     def executive_summary(self) -> dict[str, Any]:
@@ -397,15 +477,30 @@ class MonthlyFinancialCloseResult:
             f"{_format_money(management_profit, self.currency)}; settlement close profit was "
             f"{_format_money(settlement_profit, self.currency)}."
         )
+        management_sales = (
+            self.natural_month_finance.product_sales_amount
+            if self.natural_month_finance
+            else fs.product_sales_amount
+        )
+        management_cogs = (
+            self.natural_month_finance.landed_cogs
+            if self.natural_month_finance
+            else fs.internal_cogs
+        )
+        management_first_mile = (
+            self.natural_month_finance.first_mile_cogs
+            if self.natural_month_finance
+            else fs.first_mile_cogs
+        )
         key_points = [
             (
-                "Product sales amount was "
-                f"{_format_money(fs.product_sales_amount, self.currency)}."
+                "Management natural-month product sales amount was "
+                f"{_format_money(management_sales, self.currency)}."
             ),
             (
-                "Total landed COGS was "
-                f"{_format_money(fs.internal_cogs, self.currency)}, including first-mile freight "
-                f"of {_format_money(fs.first_mile_cogs, self.currency)}."
+                "Management natural-month landed COGS was "
+                f"{_format_money(management_cogs, self.currency)}, including first-mile freight "
+                f"of {_format_money(management_first_mile, self.currency)}."
             ),
             (
                 "Ads timing difference was "
@@ -440,6 +535,14 @@ class MonthlyFinancialCloseResult:
 
 class MonthlyFinancialCloseDataRepo(Protocol):
     def fetch_settlement_profit_rows(
+        self,
+        *,
+        marketplace_id: str,
+        start_date: date,
+        end_date: date,
+    ) -> list[dict[str, Any]]: ...
+
+    def fetch_finances_natural_month_rows(
         self,
         *,
         marketplace_id: str,
@@ -532,6 +635,15 @@ class MonthlyFinancialCloseService:
                 start_date=start_date,
                 end_date=end_date,
             ),
+            finances_natural_month_rows=(
+                self.repo.fetch_finances_natural_month_rows(
+                    marketplace_id=marketplace_id,
+                    start_date=start_date,
+                    end_date=end_date,
+                )
+                if hasattr(self.repo, "fetch_finances_natural_month_rows")
+                else None
+            ),
             sku_cost_rows=self.repo.fetch_sku_cost_rows(
                 marketplace_id=marketplace_id,
                 start_date=start_date,
@@ -583,7 +695,8 @@ class MonthlyFinancialCloseService:
         start_date: date,
         end_date: date,
         settlement_rows: Iterable[Mapping[str, Any]],
-        sku_cost_rows: Iterable[Mapping[str, Any]],
+        finances_natural_month_rows: Iterable[Mapping[str, Any]] | None = None,
+        sku_cost_rows: Iterable[Mapping[str, Any]] = (),
         orders_summary: Mapping[str, Any] | None = None,
         ads_summary: Mapping[str, Any] | None = None,
         sales_traffic_summary: Mapping[str, Any] | None = None,
@@ -597,6 +710,8 @@ class MonthlyFinancialCloseService:
             raise ValueError("month must match start_date")
         generated_at = generated_at_utc or datetime.now(UTC).replace(microsecond=0)
         settlement_row_mappings = list(settlement_rows)
+        finance_natural_input_provided = finances_natural_month_rows is not None
+        finance_natural_rows = list(finances_natural_month_rows or [])
         settlement_lines = [
             SettlementProfitLine.from_mapping(row) for row in settlement_row_mappings
         ]
@@ -694,9 +809,23 @@ class MonthlyFinancialCloseService:
             settlement_net_amount - settlement_advertising_fee
         )
         ads_timing_difference = _money(ads_api_report_date_spend - settlement_advertising_fee_abs)
-        management_estimated_profit = _money(
-            settlement_net_excluding_posted_ads - ads_api_report_date_spend - internal_cogs
+        natural_month_finance = _build_natural_month_financial_summary(
+            finance_rows=finance_natural_rows,
+            cost_index=cost_index,
+            marketplace_id=marketplace_id,
+            ads_api_report_date_spend=ads_api_report_date_spend,
+            fallback_currency=currency,
         )
+        if natural_month_finance is not None:
+            management_estimated_profit = natural_month_finance.management_operating_profit
+            management_profit_margin = natural_month_finance.management_operating_margin
+        else:
+            management_estimated_profit = _money(
+                settlement_net_excluding_posted_ads - ads_api_report_date_spend - internal_cogs
+            )
+            management_profit_margin = _safe_ratio(
+                management_estimated_profit, product_sales_amount
+            )
         financial_summary = MonthlyFinancialSummary(
             settlement_net_amount=settlement_net_amount,
             product_sales_amount=product_sales_amount,
@@ -728,9 +857,7 @@ class MonthlyFinancialCloseService:
                 ads_timing_difference, settlement_advertising_fee_abs
             ),
             management_estimated_profit_report_date_ads=management_estimated_profit,
-            management_profit_margin_report_date_ads=_safe_ratio(
-                management_estimated_profit, product_sales_amount
-            ),
+            management_profit_margin_report_date_ads=management_profit_margin,
         )
         bucket_rows = _build_bucket_rows(
             bucket_totals=bucket_totals,
@@ -766,6 +893,51 @@ class MonthlyFinancialCloseService:
             ads_summary=ads_summary or {},
             fba_reimbursement_summary=fba_reimbursement_summary or {},
         )
+        if finance_natural_input_provided and natural_month_finance is None:
+            reconciliation_checks.append(
+                ReconciliationCheck(
+                    check_name="finances_natural_month_coverage",
+                    status="needs_review",
+                    severity="error",
+                    expected="non-empty natural-month ledger",
+                    actual="0 rows",
+                    message=(
+                        "v1.90 Management P&L requires amazon_finance_transaction for the "
+                        "marketplace-local month. Run ingest_finances_natural_month.py first."
+                    ),
+                )
+            )
+        elif natural_month_finance is not None and natural_month_finance.source_status != "ok":
+            reconciliation_checks.append(
+                ReconciliationCheck(
+                    check_name="finances_natural_month_coverage",
+                    status="needs_review",
+                    severity="error",
+                    expected="recognized lifecycle rows and full SKU cost coverage",
+                    actual=natural_month_finance.source_status,
+                    message=(
+                        f"review_rows={natural_month_finance.review_required_count}; "
+                        f"review_amount={natural_month_finance.review_required_amount}; "
+                        f"costed_units={natural_month_finance.costed_units}; "
+                        f"expected_units={natural_month_finance.product_sales_units + natural_month_finance.liquidation_units}; "
+                        f"missing_cost_skus={list(natural_month_finance.missing_cost_skus)}"
+                    ),
+                )
+            )
+        elif natural_month_finance is not None:
+            reconciliation_checks.append(
+                ReconciliationCheck(
+                    check_name="finances_natural_month_coverage",
+                    status="ok",
+                    severity="info",
+                    expected="ok",
+                    actual="ok",
+                    message=(
+                        f"Natural-month ledger rows={natural_month_finance.ledger_row_count}; "
+                        f"timezone={natural_month_finance.marketplace_timezone}."
+                    ),
+                )
+            )
         warnings = _build_warnings(
             settlement_row_count=len(settlement_lines),
             missing_cost_skus=missing_cost_skus,
@@ -790,6 +962,12 @@ class MonthlyFinancialCloseService:
             promotion_summary=promotion_summary or {},
             fba_reimbursement_summary=fba_reimbursement_summary or {},
         )
+        raw_metadata["finances_natural_month_row_count"] = len(finance_natural_rows)
+        raw_metadata["management_pnl_source"] = (
+            "finances_api_natural_month"
+            if natural_month_finance is not None
+            else "legacy_settlement_fallback"
+        )
         return MonthlyFinancialCloseResult(
             marketplace_id=marketplace_id,
             profile_id=profile_id,
@@ -808,6 +986,7 @@ class MonthlyFinancialCloseService:
             reconciliation_checks=tuple(reconciliation_checks),
             warnings=tuple(warnings),
             raw_metadata=raw_metadata,
+            natural_month_finance=natural_month_finance,
         )
 
     def write_report_files(
@@ -862,8 +1041,8 @@ def build_monthly_financial_close_workbook(result: MonthlyFinancialCloseResult) 
         title_zh="月度财务结算报表",
         period=result.month,
         status=result.status,
-        scope_en="Settlement is the financial source of truth; operational data is context only.",
-        scope_zh="Settlement 是财务主口径；运营数据只用于解释和交叉校验。",
+        scope_en="Management P&L uses Finances API natural-month transactions + Ads API; Settlement remains the close/cash reconciliation source.",
+        scope_zh="经营利润采用 Finances API 自然月交易 + Ads API；Settlement 保留为结算/现金对账主口径。",
     )
     _write_rows_sheet(workbook, "01_Summary", _summary_rows(result))
     _format_executive_metric_sheet(workbook["01_Summary"], summary=True)
@@ -904,8 +1083,18 @@ def build_monthly_financial_close_workbook(result: MonthlyFinancialCloseResult) 
 
 def _summary_rows(result: MonthlyFinancialCloseResult) -> list[dict[str, Any]]:
     fs = result.financial_summary
+    nm = result.natural_month_finance
+    management_sales = nm.product_sales_amount if nm else fs.product_sales_amount
+    management_units = (
+        nm.product_sales_units + nm.liquidation_units if nm else fs.product_sales_units
+    )
+    management_product_cogs = nm.product_cost_cogs if nm else fs.product_cost_cogs
+    management_first_mile = nm.first_mile_cogs if nm else fs.first_mile_cogs
+    management_packaging = nm.packaging_cogs if nm else fs.packaging_cogs
+    management_other_unit = nm.other_unit_cogs if nm else fs.other_unit_cogs
+    management_landed = nm.landed_cogs if nm else fs.internal_cogs
     return [
-        _metric_row("Report Type", REPORT_TYPE, None, "Monthly Financial Close Report v1.3"),
+        _metric_row("Report Type", REPORT_TYPE, None, "Monthly Financial Close Report v1.5"),
         _metric_row("Marketplace ID", result.marketplace_id, None, ""),
         _metric_row(
             "Ads Profile ID",
@@ -933,45 +1122,45 @@ def _summary_rows(result: MonthlyFinancialCloseResult) -> list[dict[str, Any]]:
         ),
         _metric_row(
             "Product Sales Amount",
-            fs.product_sales_amount,
+            management_sales,
             result.currency,
-            "Settlement product-sales categories; reference denominator for margin.",
+            "Finances API marketplace-local natural-month product sales; management margin denominator.",
         ),
         _metric_row(
             "Product Sales Units",
-            fs.product_sales_units,
+            management_units,
             None,
-            "Deduplicated by settlement/order/item/SKU.",
+            "Natural-month Shipment + liquidation units used for landed COGS allocation.",
         ),
         _metric_row(
             "Total Landed COGS",
-            fs.internal_cogs,
+            management_landed,
             result.currency,
-            "Product + first-mile + packaging + other unit costs from amazon_sku_cost.",
+            "Natural-month Product + first-mile + packaging + other unit costs from amazon_sku_cost.",
         ),
         _metric_row(
             "Product Cost COGS",
-            fs.product_cost_cogs,
+            management_product_cogs,
             result.currency,
-            "Factory/product purchase cost allocated to sold units.",
+            "Factory/product purchase cost allocated to natural-month units.",
         ),
         _metric_row(
             "First-Mile Freight COGS",
-            fs.first_mile_cogs,
+            management_first_mile,
             result.currency,
-            "First-mile/ocean freight/customs/inbound allocation recorded in amazon_sku_cost.",
+            "First-mile/ocean freight/customs/inbound allocation for natural-month units.",
         ),
         _metric_row(
             "Packaging COGS",
-            fs.packaging_cogs,
+            management_packaging,
             result.currency,
-            "Packaging unit cost allocated to sold units.",
+            "Packaging unit cost allocated to natural-month units.",
         ),
         _metric_row(
             "Other Unit COGS",
-            fs.other_unit_cogs,
+            management_other_unit,
             result.currency,
-            "Other stable unit cost allocated to sold units.",
+            "Other stable unit cost allocated to natural-month units.",
         ),
         _metric_row(
             "Ads API Report-date Spend",
@@ -1032,7 +1221,7 @@ def _summary_rows(result: MonthlyFinancialCloseResult) -> list[dict[str, Any]]:
         ),
         _metric_row(
             "First-Mile Cost Included",
-            "yes" if fs.first_mile_cogs != ZERO else "no_or_zero",
+            "yes" if management_first_mile != ZERO else "no_or_zero",
             None,
             "Informational only: zero can be valid, but should be reviewed when first-mile is material.",
         ),
@@ -1059,6 +1248,67 @@ def _summary_rows(result: MonthlyFinancialCloseResult) -> list[dict[str, Any]]:
 
 def _management_pnl_rows(result: MonthlyFinancialCloseResult) -> list[dict[str, Any]]:
     fs = result.financial_summary
+    nm = result.natural_month_finance
+    if nm is not None:
+        contribution_after_ads = _money(
+            nm.operating_net_before_ads_replacement - nm.ads_api_report_date_spend
+        )
+        return [
+            _metric_row(
+                "Product Sales Amount", nm.product_sales_amount, result.currency,
+                "Finances API natural-month Shipment product charges in marketplace local time.",
+            ),
+            _metric_row("Order Total", nm.order_total, result.currency, "DEFERRED_RELEASED Shipment natural-month total."),
+            _metric_row("Refund Total", nm.refund_total, result.currency, "RELEASED Refund natural-month total."),
+            _metric_row("Liquidation Total", nm.liquidation_total, result.currency, "DEFERRED + DEFERRED_RELEASED RemovalShipment total."),
+            _metric_row("Subscription Fee", nm.subscription_fee, result.currency, "Component of RELEASED ServiceFee."),
+            _metric_row("Coupon Fees", nm.coupon_fee, result.currency, "Coupon participation/performance fees within RELEASED ServiceFee."),
+            _metric_row("Deal Fees", nm.deal_fee, result.currency, "Deal participation/performance fees within RELEASED ServiceFee."),
+            _metric_row("Storage Fee", nm.storage_fee, result.currency, "FBA storage fees within RELEASED ServiceFee."),
+            _metric_row("Customer Returns Fee", nm.customer_return_fee, result.currency, "FBA customer-return/HRR fees within RELEASED ServiceFee."),
+            _metric_row("Other Service Fees", nm.other_service_fee, result.currency, "Residual RELEASED ServiceFee amount not mapped to the named components."),
+            _metric_row("Service Fees Total", nm.service_fee_total, result.currency, "Subtotal of all RELEASED ServiceFee transactions; component rows above are informational and not added again."),
+            _metric_row("Reimbursements", nm.reimbursement_total, result.currency, "RELEASED FBAInventoryReimbursement total."),
+            _metric_row("Other Adjustments", nm.adjustment_total, result.currency, "Recognized RELEASED MiscellaneousLedgerAdjustment total."),
+            _metric_row(
+                "Operating Net Before Ads Replacement",
+                nm.operating_net_before_ads_replacement,
+                result.currency,
+                "Natural-month operating transactions; Transfer and Finances posted advertising excluded.",
+            ),
+            _metric_row(
+                "Finances Posted Advertising Reference",
+                nm.finances_ads_charge_reference,
+                result.currency,
+                "ProductAdsPayment reference only; excluded from Management P&L and replaced by Ads API spend.",
+            ),
+            _metric_row(
+                "Less Ads API Report-date Spend",
+                -nm.ads_api_report_date_spend,
+                result.currency,
+                "Calendar-month advertising cost by Ads API report_date.",
+            ),
+            _metric_row(
+                "Contribution After Ads Before Landed COGS",
+                contribution_after_ads,
+                result.currency,
+                "Natural-month operating net less Ads API spend.",
+            ),
+            _metric_row("Less Product Cost COGS", -nm.product_cost_cogs, result.currency, "Natural-month unit product cost."),
+            _metric_row("Less First-Mile Freight COGS", -nm.first_mile_cogs, result.currency, "Natural-month unit first-mile allocation."),
+            _metric_row("Less Packaging COGS", -nm.packaging_cogs, result.currency, "Natural-month packaging allocation."),
+            _metric_row("Less Other Unit COGS", -nm.other_unit_cogs, result.currency, "Natural-month other unit-cost allocation."),
+            _metric_row("Total Landed COGS", -nm.landed_cogs, result.currency, "Natural-month landed COGS."),
+            _metric_row("Management Operating Profit", nm.management_operating_profit, result.currency, MANAGEMENT_PNL_POLICY_NOTE),
+            _metric_row("Management Operating Margin", nm.management_operating_margin, None, "Management operating profit / natural-month product sales."),
+            _metric_row(
+                "Finances API Transfer Reference (API Sign)",
+                nm.transfer_reference,
+                result.currency,
+                "Cash/settlement reference only; excluded from operating profit. API sign is preserved and may be opposite to Seller Central export presentation.",
+            ),
+            _metric_row("Settlement Close Profit", fs.settlement_led_estimated_profit, result.currency, "Separate posted-date accounting/close reference."),
+        ]
     rows = [
         _metric_row(
             "Product Sales Amount",
@@ -1379,6 +1629,192 @@ def _format_sheet(sheet: Any) -> None:
         if header in {"seller_sku", "metric", "check_name", "warning_code"}:
             width = max(width, 24)
         sheet.column_dimensions[column_cells[0].column_letter].width = width
+
+
+def _build_natural_month_financial_summary(
+    *,
+    finance_rows: Sequence[Mapping[str, Any]],
+    cost_index: Mapping[tuple[str, str], Sequence[SkuCostRecord]],
+    marketplace_id: str,
+    ads_api_report_date_spend: Decimal,
+    fallback_currency: str | None,
+) -> NaturalMonthFinancialSummary | None:
+    if not finance_rows:
+        return None
+
+    operating_net = ZERO
+    order_total = ZERO
+    refund_total = ZERO
+    liquidation_total = ZERO
+    service_fee_total = ZERO
+    subscription_fee = ZERO
+    coupon_fee = ZERO
+    deal_fee = ZERO
+    storage_fee = ZERO
+    customer_return_fee = ZERO
+    other_service_fee = ZERO
+    reimbursement_total = ZERO
+    adjustment_total = ZERO
+    finances_ads_reference = ZERO
+    transfer_reference = ZERO
+    product_sales_amount = ZERO
+    review_required_count = 0
+    review_required_amount = ZERO
+    timezone_name: str | None = None
+    currency = fallback_currency
+    events_by_sku: dict[str, list[dict[str, Any]]] = {}
+    product_sales_units = 0
+    liquidation_units = 0
+
+    for row in finance_rows:
+        amount = _money(_to_decimal(row.get("amount")))
+        transaction_type = str(row.get("transaction_type") or "")
+        management_include = _truthy(row.get("management_include"))
+        replace_ads = _truthy(row.get("management_replace_with_ads_api"))
+        if _truthy(row.get("review_required")):
+            review_required_count += 1
+            review_required_amount += amount
+        timezone_name = timezone_name or _empty_to_none(row.get("marketplace_timezone"))
+        currency = currency or _empty_to_none(row.get("currency"))
+
+        if management_include:
+            operating_net += amount
+        if replace_ads:
+            finances_ads_reference += amount
+        if str(row.get("management_role") or "") == "cash_transfer_reference":
+            transfer_reference += amount
+
+        if management_include and transaction_type == "Shipment":
+            order_total += amount
+            product_sales_amount += _to_decimal(row.get("product_sales_amount"))
+        elif management_include and transaction_type == "Refund":
+            refund_total += amount
+        elif management_include and transaction_type == "RemovalShipment":
+            liquidation_total += amount
+        elif management_include and transaction_type == "ServiceFee":
+            service_fee_total += amount
+            subscription_fee += _to_decimal(row.get("subscription_fee"))
+            coupon_fee += _to_decimal(row.get("coupon_fee"))
+            deal_fee += _to_decimal(row.get("deal_fee"))
+            storage_fee += _to_decimal(row.get("storage_fee"))
+            customer_return_fee += _to_decimal(row.get("customer_return_fee"))
+            other_service_fee += _to_decimal(row.get("other_service_fee"))
+        elif management_include and transaction_type == "FBAInventoryReimbursement":
+            reimbursement_total += amount
+        elif management_include and transaction_type == "MiscellaneousLedgerAdjustment":
+            adjustment_total += amount
+
+        if not management_include or transaction_type not in {"Shipment", "RemovalShipment"}:
+            continue
+        raw_events = row.get("unit_events_json")
+        if isinstance(raw_events, str):
+            try:
+                raw_events = json.loads(raw_events)
+            except json.JSONDecodeError:
+                raw_events = []
+        if not isinstance(raw_events, list):
+            continue
+        for event in raw_events:
+            if not isinstance(event, Mapping):
+                continue
+            seller_sku = str(event.get("seller_sku") or "").strip()
+            quantity = _optional_int(event.get("quantity")) or 0
+            if not seller_sku or quantity <= 0:
+                continue
+            raw_event_date = event.get("posted_date")
+            if isinstance(raw_event_date, date):
+                event_date = raw_event_date
+            else:
+                try:
+                    event_date = date.fromisoformat(str(raw_event_date)) if raw_event_date else None
+                except ValueError:
+                    event_date = None
+            normalized = {"posted_date": event_date, "quantity": quantity}
+            events_by_sku.setdefault(seller_sku, []).append(normalized)
+            if transaction_type == "Shipment":
+                product_sales_units += quantity
+            else:
+                liquidation_units += quantity
+
+    product_cogs = ZERO
+    first_mile_cogs = ZERO
+    packaging_cogs = ZERO
+    other_unit_cogs = ZERO
+    landed_cogs = ZERO
+    costed_units = 0
+    missing_cost_skus: set[str] = set()
+    for seller_sku, unit_events in sorted(events_by_sku.items()):
+        cogs = _calculate_sku_cogs(
+            cost_index=cost_index,
+            marketplace_id=marketplace_id,
+            seller_sku=seller_sku,
+            unit_events=unit_events,
+            settlement_currency=currency,
+        )
+        if cogs.status != "ok":
+            missing_cost_skus.add(seller_sku)
+        product_cogs += cogs.product_cost_cogs
+        first_mile_cogs += cogs.first_mile_cogs
+        packaging_cogs += cogs.packaging_cogs
+        other_unit_cogs += cogs.other_unit_cogs
+        landed_cogs += cogs.total_cogs
+        costed_units += cogs.costed_units
+
+    product_cogs = _money(product_cogs)
+    first_mile_cogs = _money(first_mile_cogs)
+    packaging_cogs = _money(packaging_cogs)
+    other_unit_cogs = _money(other_unit_cogs)
+    landed_cogs = _money(landed_cogs)
+    operating_net = _money(operating_net)
+    management_profit = _money(
+        operating_net - ads_api_report_date_spend - landed_cogs
+    )
+    expected_cost_units = product_sales_units + liquidation_units
+    source_status = "ok"
+    if review_required_count or missing_cost_skus or costed_units != expected_cost_units:
+        source_status = "needs_review"
+
+    return NaturalMonthFinancialSummary(
+        source_status=source_status,
+        marketplace_timezone=timezone_name,
+        ledger_row_count=len(finance_rows),
+        review_required_count=review_required_count,
+        review_required_amount=_money(review_required_amount),
+        product_sales_amount=_money(product_sales_amount),
+        order_total=_money(order_total),
+        refund_total=_money(refund_total),
+        liquidation_total=_money(liquidation_total),
+        service_fee_total=_money(service_fee_total),
+        subscription_fee=_money(subscription_fee),
+        coupon_fee=_money(coupon_fee),
+        deal_fee=_money(deal_fee),
+        storage_fee=_money(storage_fee),
+        customer_return_fee=_money(customer_return_fee),
+        other_service_fee=_money(other_service_fee),
+        reimbursement_total=_money(reimbursement_total),
+        adjustment_total=_money(adjustment_total),
+        finances_ads_charge_reference=_money(finances_ads_reference),
+        transfer_reference=_money(transfer_reference),
+        operating_net_before_ads_replacement=operating_net,
+        product_sales_units=product_sales_units,
+        liquidation_units=liquidation_units,
+        costed_units=costed_units,
+        missing_cost_skus=tuple(sorted(missing_cost_skus)),
+        product_cost_cogs=product_cogs,
+        first_mile_cogs=first_mile_cogs,
+        packaging_cogs=packaging_cogs,
+        other_unit_cogs=other_unit_cogs,
+        landed_cogs=landed_cogs,
+        ads_api_report_date_spend=ads_api_report_date_spend,
+        management_operating_profit=management_profit,
+        management_operating_margin=_safe_ratio(management_profit, _money(product_sales_amount)),
+    )
+
+
+def _truthy(value: Any) -> bool:
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "y"}
+    return bool(value)
 
 
 def _build_sku_accumulator(

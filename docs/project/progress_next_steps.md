@@ -1,7 +1,7 @@
 # SellerDataPipeline 当前进展与下一步计划
 
 > 更新时间：2026-08-09  
-> 当前版本：v1.88 Settlement Correctness & Late Discovery Recovery implemented locally; Azure verification pending  
+> 当前版本：v1.90 Natural-Month Financial Ledger implemented locally; Azure migration/backfill verification pending  
 > 文档定位：记录项目真实进展、已完成里程碑、当前非阻塞问题和下一步开发顺序。本文不承载详细字段设计；功能细节见 `docs/features/`。
 
 ## 1. 当前一句话状态
@@ -685,3 +685,20 @@ ruff -> 当前本地环境未安装；CI blocking gate 保持不绕过
 ```
 
 下一步：CI -> 部署 monthly image -> 用 report-delivery job 做一次只读 `sample_finances_transactions.py --month 2026-07` live sample -> 只取 `FINANCES_SAMPLE_*` 日志 -> 与 Seller Central July Monthly Transaction 逐项 reconciliation。
+
+## 1.0.10 2026-08-09 Natural-Month Financial Ledger v1.90
+
+v1.89 live sampling/reconciliation 已完成 May / June / July 三个月回归。Finances API 在 Amazon US `America/Los_Angeles` 本地月份 + explicit lifecycle normalization 下，可精确还原 Seller Central Monthly Transaction 的 Orders / Refunds / Liquidation 核心自然月金额；July UTC/PDT boundary 差额也逐笔闭合。
+
+v1.90 本地已实现：
+
+- 新增 migration 016：`amazon_finance_transaction`；`marketplace_id + transaction_id` SHA256 幂等 upsert。
+- marketplace metadata 增加 verified timezone；US=`America/Los_Angeles`。
+- 新增 guarded `ingest_finances_natural_month.py`，API padded UTC fetch -> local month filter -> lifecycle normalization -> raw audit -> SQL MERGE。
+- known prior-period release lifecycle 显式排除；unknown non-zero lifecycle fail closed。
+- monthly collect_ingest 增加 Finances natural-month ledger ingestion。
+- Monthly Financial Close 升级 `v1.5-natural-month-finances`：Management P&L 采用 Natural-Month Finances + Ads API report-date spend + natural-month landed COGS；Settlement Close 保持独立。
+- 增加 `finances_natural_month_coverage` reconciliation guard。
+- 本地测试 `362 passed`；compileall passed；本地未安装 Ruff，CI Safety lint 继续 blocking。
+
+Azure 下一步严格按 `docs/features/feature_finances_api_natural_month_ledger.md`：先 migration 016，再对 May/Jun/Jul dry-run + execute backfill；只生成历史 report preview，不 force-resend 邮件。

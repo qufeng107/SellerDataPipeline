@@ -398,6 +398,18 @@ def _monthly_commands(
                 start_date=window.start,
                 end_date=window.end,
             ),
+            _command(
+                "Ingest Finances natural-month ledger",
+                (
+                    "scripts/ingest_finances_natural_month.py",
+                    "--marketplace-id",
+                    marketplace_id,
+                    "--month",
+                    window.month,
+                    "--execute",
+                ),
+                writes=True,
+            ),
             _ingest("Settlement", "scripts/ingest_settlement_report.py", marketplace_id),
             _ingest(
                 "FBA reimbursements", "scripts/ingest_fba_reimbursements_report.py", marketplace_id

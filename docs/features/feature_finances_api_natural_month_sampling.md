@@ -1,6 +1,6 @@
 # Feature: Finances API Natural-Month Sampling
 
-> 状态：Implemented locally / production live sample pending  
+> 状态：Completed / production live reconciliation passed; superseded by v1.90 ledger  
 > 版本：v1.89  
 > 更新时间：2026-08-09  
 > 数据库影响：无 migration；只新增 read-only Finances API client + raw sampling/analyzer。  
@@ -209,3 +209,8 @@ v1.89 新 regression 覆盖：
 - max_pages fail closed；
 - recursive breakdown leaf summary；
 - duplicate transactionId visibility。
+
+
+## 9. Production reconciliation result (2026-08-09)
+
+US live sampling passed. May/June/July Orders, Refunds and Liquidations reconciled exactly after `America/Los_Angeles` local-month filtering and lifecycle split. v1.90 productionization is documented in `feature_finances_api_natural_month_ledger.md`.

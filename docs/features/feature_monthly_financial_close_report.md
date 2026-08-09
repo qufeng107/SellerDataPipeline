@@ -1892,3 +1892,7 @@ Default presentation artifacts must be bilingual:
 - Settlement-led profit 保留为 `Settlement Close Profit`，继续服务会计/月结解释。
 
 当前本地全量测试：`337 passed`；compileall 成功。
+
+## 2.3 v1.5 / v1.90 Natural-Month Management P&L
+
+Management P&L 已从 Settlement posted-date operating rows 切换为 `amazon_finance_transaction` 的 marketplace-local natural-month ledger。Amazon US 使用 `America/Los_Angeles`。Ads 仍使用 Ads API report-date spend；Finances `ProductAdsPayment` 只作 posted-charge reconciliation reference。Settlement Close Profit 保留为独立 accounting/close reference。详细 lifecycle policy、migration 016 与三个月 live reconciliation 证据见 `feature_finances_api_natural_month_ledger.md`。
