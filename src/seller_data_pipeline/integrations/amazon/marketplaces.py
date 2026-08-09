@@ -9,6 +9,7 @@ class AmazonMarketplaceMetadata:
     country_code: str
     currency: str
     marketplace_names: tuple[str, ...] = ()
+    timezone_name: str | None = None
 
 
 # Keep this list intentionally conservative. Add a marketplace only after its
@@ -19,6 +20,7 @@ _MARKETPLACES: dict[str, AmazonMarketplaceMetadata] = {
         country_code="US",
         currency="USD",
         marketplace_names=("Amazon.com",),
+        timezone_name="America/Los_Angeles",
     ),
 }
 
@@ -32,6 +34,11 @@ def expected_marketplace_currency(marketplace_id: str) -> str | None:
     return metadata.currency if metadata else None
 
 
+def expected_marketplace_timezone(marketplace_id: str) -> str | None:
+    metadata = get_marketplace_metadata(marketplace_id)
+    return metadata.timezone_name if metadata else None
+
+
 def expected_marketplace_names(marketplace_id: str) -> tuple[str, ...]:
     metadata = get_marketplace_metadata(marketplace_id)
     return metadata.marketplace_names if metadata else ()
@@ -41,5 +48,6 @@ __all__ = [
     "AmazonMarketplaceMetadata",
     "expected_marketplace_currency",
     "expected_marketplace_names",
+    "expected_marketplace_timezone",
     "get_marketplace_metadata",
 ]

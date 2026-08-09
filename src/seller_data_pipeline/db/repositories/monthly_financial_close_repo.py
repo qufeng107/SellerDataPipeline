@@ -99,6 +99,42 @@ class MonthlyFinancialCloseRepo:
         finally:
             cursor.close()
 
+
+    def fetch_finances_natural_month_rows(
+        self,
+        *,
+        marketplace_id: str,
+        start_date: date,
+        end_date: date,
+    ) -> list[dict[str, Any]]:
+        cursor = self.connection.cursor()
+        try:
+            cursor.execute(
+                """
+                SELECT
+                    [marketplace_id], [transaction_id], [transaction_status],
+                    [transaction_type], [description], [posted_at_utc], [posted_at_local],
+                    [posted_date_local], [marketplace_timezone], [amount], [currency],
+                    [settlement_id], [order_id], [management_role], [management_include],
+                    [management_replace_with_ads_api], [review_required],
+                    [product_sales_amount], [shipping_amount], [promotion_amount],
+                    [fba_fulfillment_fee], [shipping_chargeback], [refund_product_amount],
+                    [refund_shipping_amount], [refund_promotion_amount],
+                    [liquidation_revenue], [liquidation_fee], [subscription_fee],
+                    [coupon_fee], [deal_fee], [storage_fee], [customer_return_fee],
+                    [other_service_fee], [unit_events_json]
+                FROM dbo.[amazon_finance_transaction]
+                WHERE [marketplace_id] = ?
+                  AND [posted_date_local] >= ?
+                  AND [posted_date_local] <= ?
+                ORDER BY [posted_at_utc], [transaction_id];
+                """,
+                (marketplace_id, start_date, end_date),
+            )
+            return rows_to_dicts(cursor)
+        finally:
+            cursor.close()
+
     def fetch_sku_cost_rows(
         self,
         *,

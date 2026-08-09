@@ -96,6 +96,7 @@ class MonthlyFinancialCloseEmailTemplate:
         period = report.get("period") or {}
         month = _text(period.get("month"), _period_key(report))
         summary = report.get("financial_summary") or {}
+        natural = report.get("natural_month_finance") or {}
         executive = report.get("executive_summary") or {}
         operating_profit_value = (
             summary.get("management_operating_profit")
@@ -107,15 +108,23 @@ class MonthlyFinancialCloseEmailTemplate:
             or summary.get("management_profit_margin_report_date_ads")
             or summary.get("profit_margin")
         )
-        landed_cogs_value = summary.get("landed_cogs") or summary.get("internal_cogs")
+        landed_cogs_value = (
+            natural.get("landed_cogs")
+            or summary.get("landed_cogs")
+            or summary.get("internal_cogs")
+        )
+        product_sales_value = natural.get("product_sales_amount") or summary.get("product_sales_amount")
+        product_sales_units_value = natural.get("product_sales_units") or summary.get("product_sales_units")
+        product_cost_cogs_value = natural.get("product_cost_cogs") or summary.get("product_cost_cogs")
+        first_mile_cogs_value = natural.get("first_mile_cogs") or summary.get("first_mile_cogs")
         profit = _money(operating_profit_value, currency)
         subject = f"[月结 Monthly Close] Amazon US {month} | Operating Profit {profit} | Status {status}"
         rows = [
-            ("Product sales amount", _money(summary.get("product_sales_amount"), currency)),
-            ("Product sales units", _text(summary.get("product_sales_units"), "0")),
+            ("Product sales amount", _money(product_sales_value, currency)),
+            ("Product sales units", _text(product_sales_units_value, "0")),
             ("Ads spend", _money(summary.get("ads_api_report_date_spend"), currency)),
-            ("Product cost COGS", _money(summary.get("product_cost_cogs"), currency)),
-            ("First-mile freight COGS", _money(summary.get("first_mile_cogs"), currency)),
+            ("Product cost COGS", _money(product_cost_cogs_value, currency)),
+            ("First-mile freight COGS", _money(first_mile_cogs_value, currency)),
             ("Total landed COGS", _money(landed_cogs_value, currency)),
             ("Management operating profit", profit),
             ("Management operating margin", _percent(operating_margin_value)),
@@ -135,17 +144,18 @@ class MonthlyFinancialCloseEmailTemplate:
         headline_zh = f"{month} 月结报表已生成，经营利润为 {profit}，状态 {status}。"
         intro = (
             f"Monthly Financial Close for {month} ({marketplace_id}) is ready. "
-            "Management operating profit uses report-date Ads spend and landed COGS; "
-            "Settlement remains the accounting/close source of truth."
+            "Management operating profit uses Finances API marketplace-local natural-month "
+            "transactions, report-date Ads spend and landed COGS; Settlement remains the "
+            "accounting/close source of truth."
         )
         intro_zh = (
             f"{month} 月度财务结算报表已生成，市场为 {marketplace_id}。"
-            "经营利润采用 Ads API 月度广告发生口径并扣除到岸COGS；"
+            "经营利润采用 Finances API 美国站本地自然月交易、Ads API 月度广告发生口径并扣除到岸COGS；"
             "Settlement 继续作为会计月结与对账主口径。"
         )
         key_points_zh = [
             f"报表状态：{status}。",
-            f"商品销售额：{_money(summary.get('product_sales_amount'), currency)}。",
+            f"商品销售额：{_money(product_sales_value, currency)}。",
             f"到岸COGS：{_money(landed_cogs_value, currency)}。",
             f"经营利润：{profit}。",
             f"Settlement净额：{_money(summary.get('settlement_net_amount'), currency)}。",

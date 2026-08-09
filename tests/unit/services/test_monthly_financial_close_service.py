@@ -73,7 +73,7 @@ def test_calculate_monthly_financial_close_core_metrics() -> None:
     )
 
     payload = result.to_dict()
-    assert payload["version"] == "v1.4-settlement-correctness"
+    assert payload["version"] == "v1.5-natural-month-finances"
     assert payload["financial_summary"]["management_operating_profit"] == "10.00"
     assert payload["financial_summary"]["landed_cogs"] == "50.00"
     assert "accountant_pack" in payload
@@ -435,3 +435,106 @@ def test_large_ads_timing_difference_is_warning_not_delivery_blocker() -> None:
     assert timing.status == "warning"
     assert timing.severity == "warning"
     assert result.status == "ok"
+
+
+def test_natural_month_finances_drive_management_profit_when_present() -> None:
+    finance_rows = [
+        {
+            "marketplace_id": "ATVPDKIKX0DER",
+            "transaction_id": "order-1",
+            "transaction_status": "DEFERRED_RELEASED",
+            "transaction_type": "Shipment",
+            "posted_date_local": date(2026, 3, 5),
+            "marketplace_timezone": "America/Los_Angeles",
+            "amount": Decimal("100.00"),
+            "currency": "USD",
+            "management_role": "operating",
+            "management_include": True,
+            "management_replace_with_ads_api": False,
+            "review_required": False,
+            "product_sales_amount": Decimal("120.00"),
+            "unit_events_json": '[{"seller_sku":"SKU-1","quantity":2,"posted_date":"2026-03-05"}]',
+        },
+        {
+            "marketplace_id": "ATVPDKIKX0DER",
+            "transaction_id": "refund-1",
+            "transaction_status": "RELEASED",
+            "transaction_type": "Refund",
+            "posted_date_local": date(2026, 3, 10),
+            "marketplace_timezone": "America/Los_Angeles",
+            "amount": Decimal("-20.00"),
+            "currency": "USD",
+            "management_role": "operating",
+            "management_include": True,
+            "management_replace_with_ads_api": False,
+            "review_required": False,
+            "product_sales_amount": Decimal("0.00"),
+            "unit_events_json": "[]",
+        },
+        {
+            "marketplace_id": "ATVPDKIKX0DER",
+            "transaction_id": "fee-1",
+            "transaction_status": "RELEASED",
+            "transaction_type": "ServiceFee",
+            "posted_date_local": date(2026, 3, 11),
+            "marketplace_timezone": "America/Los_Angeles",
+            "amount": Decimal("-5.00"),
+            "currency": "USD",
+            "management_role": "operating",
+            "management_include": True,
+            "management_replace_with_ads_api": False,
+            "review_required": False,
+            "product_sales_amount": Decimal("0.00"),
+            "subscription_fee": Decimal("-3.00"),
+            "coupon_fee": Decimal("-1.00"),
+            "deal_fee": Decimal("0.00"),
+            "storage_fee": Decimal("-1.00"),
+            "customer_return_fee": Decimal("0.00"),
+            "other_service_fee": Decimal("0.00"),
+            "unit_events_json": "[]",
+        },
+        {
+            "marketplace_id": "ATVPDKIKX0DER",
+            "transaction_id": "ads-1",
+            "transaction_status": "RELEASED",
+            "transaction_type": "ProductAdsPayment",
+            "posted_date_local": date(2026, 3, 12),
+            "marketplace_timezone": "America/Los_Angeles",
+            "amount": Decimal("-30.00"),
+            "currency": "USD",
+            "management_role": "ads_charge_reference",
+            "management_include": False,
+            "management_replace_with_ads_api": True,
+            "review_required": False,
+            "product_sales_amount": Decimal("0.00"),
+            "unit_events_json": "[]",
+        },
+    ]
+    result = MonthlyFinancialCloseService().calculate_from_rows(
+        marketplace_id="ATVPDKIKX0DER",
+        profile_id="3917953989967300",
+        month="2026-03",
+        start_date=date(2026, 3, 1),
+        end_date=date(2026, 3, 31),
+        settlement_rows=[
+            _settlement_row(1, "SKU-1", Decimal("200.00"), "product_sales", "revenue", 2),
+        ],
+        finances_natural_month_rows=finance_rows,
+        sku_cost_rows=[_cost_row("SKU-1", Decimal("20.00"), Decimal("5.00"), date(2026, 1, 1))],
+        ads_summary={"ads_cost": Decimal("10.00"), "ads_row_count": 1},
+        sales_traffic_summary={"ordered_product_sales_amount": Decimal("200.00")},
+    )
+
+    assert result.natural_month_finance is not None
+    assert result.natural_month_finance.product_sales_amount == Decimal("120.00")
+    assert result.natural_month_finance.operating_net_before_ads_replacement == Decimal("75.00")
+    assert result.natural_month_finance.subscription_fee == Decimal("-3.00")
+    assert result.natural_month_finance.coupon_fee == Decimal("-1.00")
+    assert result.natural_month_finance.storage_fee == Decimal("-1.00")
+    assert result.natural_month_finance.service_fee_total == Decimal("-5.00")
+    assert result.natural_month_finance.landed_cogs == Decimal("50.00")
+    assert result.natural_month_finance.management_operating_profit == Decimal("15.00")
+    assert result.financial_summary.management_estimated_profit_report_date_ads == Decimal("15.00")
+    assert next(
+        c for c in result.reconciliation_checks if c.check_name == "finances_natural_month_coverage"
+    ).status == "ok"
