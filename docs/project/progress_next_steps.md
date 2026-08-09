@@ -620,3 +620,21 @@ Arguments override = -c, python scripts/run_automation_stage.py ...
 ```
 
 Do not use `Command=python` with the whole script command in Arguments.
+
+
+## 1.0.8 2026-08-09 Monthly Executive P&L + Landed COGS v1.87
+
+6 月/7 月 recovery 已完成后，对三个月董事会利润复核发现：当前 `amazon_sku_cost` 的 `product_cost=4.17 USD/unit` 已对应 30 RMB 工厂货款，但 `first_mile_cost` 尚未补录。用户确认三次海运总成本为 `10,201.46 RMB`，对应累计 FBA 实际入库 `2,688` 件，平均 `3.7952 RMB/unit`。沿用当前 30 RMB = 4.17 USD 的成本换算口径，first-mile manual estimate 约 `0.5275 USD/unit`。
+
+v1.87 本地已实现月报经营口径升级：
+
+- 不新增 migration；复用 `amazon_sku_cost.first_mile_cost`。
+- 月报 JSON/内部聚合拆分 Product / First-Mile / Packaging / Other Unit COGS，`internal_cogs` 继续作为 Total Landed COGS 兼容字段。
+- `01_Summary` 将 Management Operating Profit / Margin 升为经营主指标，Settlement-led profit 改称 Settlement Close Profit。
+- `02_Management_PnL` 展开 Settlement buckets、report-date Ads replacement、Landed COGS components 与最终经营利润。
+- `06_SKU_Profit` 增加单位 product / first-mile / packaging / other / landed cost 与对应 COGS。
+- 邮件 subject/body 优先使用 Management Operating Profit，避免再把 Settlement-led profit 当成“真正经营利润”。
+- JSON legacy 字段保留，新增清晰 alias，避免 downstream break。
+- 本地验证：`PYTHONPATH=src pytest -q` -> `337 passed`；`python -m compileall -q src scripts tests` -> success。
+
+Azure 下一步：先只读查询 4 个正式 SKU 的现有成本行/effective dates；再用白名单 + 原值检查将 first-mile estimate 写入覆盖 2026-05/06/07 的成本记录，remark 保留 `10,201.46 RMB / 2,688 units = 3.7952 RMB/unit` 来源。之后只需重新生成 5/6/7 月报 preview，不需要重新 submit/collect Amazon 数据。

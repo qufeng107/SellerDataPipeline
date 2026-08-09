@@ -507,7 +507,7 @@ def _build_accounting_summary_rows(result: MonthlyFinancialCloseResult) -> list[
         ),
         _accounting_summary_row(
             8,
-            "Internal COGS / 内部商品成本",
+            "Total Landed COGS / 到岸COGS合计",
             "Cost of Goods Sold / 主营业务成本",
             "Cost / 成本",
             "Debit / 借方",
@@ -537,18 +537,21 @@ def _build_accounting_summary_rows(result: MonthlyFinancialCloseResult) -> list[
         ),
         _accounting_summary_row(
             10,
-            "Estimated Operating Profit / 估算经营利润",
+            "Settlement Close Profit / Settlement结算口径利润",
             "Management KPI Only / 管理口径指标",
             "Informational / 备查",
             "Memo / 备查",
-            fs.estimated_operating_profit,
+            fs.settlement_led_estimated_profit,
             currency,
             "derived",
-            "settlement_net_minus_internal_cogs",
+            "settlement_net_minus_landed_cogs",
             "01_Summary",
-            "Settlement net amount minus internal COGS",
+            "Settlement net amount minus total landed COGS",
             needs_review=True,
-            notes="管理口径利润，不等同于企业所得税应纳税所得额或法定利润。",
+            notes=(
+                "Settlement posted-date 月结参考利润，不等同于经营发生口径利润、"
+                "企业所得税应纳税所得额或法定利润。"
+            ),
         ),
     ]
     return rows
@@ -877,14 +880,14 @@ def _build_source_doc_rows(result: MonthlyFinancialCloseResult) -> list[dict[str
             "To be uploaded manually / 待人工上传",
             "Freight Forwarder / 货代",
             "amazon_sku_cost first_mile_cost",
-            None,
+            result.financial_summary.first_mile_cogs,
             currency,
             "No / 否",
             "Yes / 是",
             "Yes / 是",
             "Pending / 待补充",
             "Operations or Accountant / 运营或会计",
-            "用于确认头程物流成本是否已进入库存成本或期间费用。",
+            "金额为月报按已售件数确认的头程成本；仍需货代发票/付款资料支持会计归档。",
         ),
         _source_doc_row(
             "SKU Cost Sheet / SKU成本表",
