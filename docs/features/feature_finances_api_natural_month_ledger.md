@@ -1,7 +1,7 @@
 # Feature: Finances API Natural-Month Ledger + Management P&L
 
-> 状态：Implemented locally / Azure migration + backfill verification pending  
-> 版本：v1.90  
+> 状态：v1.90 migration 016 Azure verified；v1.90.1 zero-value shipment COGS fix implemented locally / Gate 2 revalidation pending  
+> 版本：v1.90.1  
 > 更新时间：2026-08-09  
 > 数据库影响：新增 migration `016_create_finances_natural_month_ledger.sql`。  
 > 报表影响：Monthly Financial Close 升级到 `v1.5-natural-month-finances`；Settlement Close 保留独立口径。
@@ -12,6 +12,7 @@ v1.89 live reconciliation 已在 Amazon US 真实账户上完成 2026-05 / 2026-
 
 ```text
 Orders       = DEFERRED_RELEASED Shipment
+Zero-$ units = RELEASED Shipment(amount=0)（COGS unit only；不进 revenue/order total）
 Refunds      = RELEASED Refund
 Liquidation  = DEFERRED + DEFERRED_RELEASED RemovalShipment
 Ads charge   = RELEASED ProductAdsPayment（只作 Amazon posted-charge reference）
@@ -118,15 +119,17 @@ ProductAdsPayment              -> Amazon posted Ads reference only
 unknown non-zero combination   -> review_required + SQL execute blocked
 ```
 
-已知但不进入当前自然月经营口径的组合包括：
+已知但不进入当前自然月经营金额口径的组合包括：
 
 ```text
-RELEASED Shipment
+RELEASED Shipment (non-zero)
 DEFERRED_RELEASED Refund
 RELEASED RemovalShipment
 ```
 
-这些在三个月真实对账中对应 previous-period release timing，不应重复计入当前自然月。
+这些在三个月真实对账中对应 previous-period release timing，不应重复计入当前自然月金额。
+
+v1.90 Gate 2 又发现一个必须单独处理的零金额商品事件：2026-06 Seller Central 有 120 个 Order units，但 Finances 的 `DEFERRED_RELEASED Shipment` 只有 118 units。逐单核查确认剩余 2 units 分别来自两笔 `RELEASED Shipment amount=0`，Finances API 本身保留了正确 SKU + `quantityShipped=1`。因此 v1.90.1 冻结规则为：**零金额 RELEASED Shipment 不加入 revenue/order total，但其完整 ProductContext unit event 进入 natural-month landed COGS**。若 SKU/quantity 不完整，仍 `review_required` 并阻止 SQL execute。
 
 ## 5. Management P&L
 
@@ -146,7 +149,7 @@ Management Operating Profit
   - Natural-month landed COGS
 ```
 
-其中 COGS unit events 来自 selected `Shipment` / `RemovalShipment` 的 item ProductContext SKU + quantity，并继续使用 `amazon_sku_cost` 的 effective-date 成本。
+其中 COGS unit events 来自 selected `Shipment` / `RemovalShipment` 的 item ProductContext SKU + quantity，并额外包含 v1.90.1 已验证的 `RELEASED Shipment amount=0` COGS-only unit；继续使用 `amazon_sku_cost` 的 effective-date 成本。金额 inclusion 与 COGS-unit inclusion 明确分离。
 
 Settlement 继续独立输出：
 
@@ -188,7 +191,7 @@ finances_natural_month_coverage
 1. CI green
 2. 执行 migration 016
 3. 先 dry-run 2026-05 / 06 / 07
-4. 确认 review_required=0 + natural-month totals
+4. 确认 review_required=0 + natural-month totals + units（May 94+5 / Jun 120+2 / Jul 58+4）
 5. execute backfill 2026-05 / 06 / 07
 6. SQL postcheck transaction IDs / local month / unit counts
 7. 更新 monthly jobs 镜像
@@ -200,7 +203,7 @@ finances_natural_month_coverage
 ## 8. 本地验收
 
 ```text
-PYTHONPATH=src pytest -q -> 362 passed
+PYTHONPATH=src pytest -q -> 366 passed
 python -m compileall -q src scripts tests -> passed
 ruff -> 本地环境未安装；CI Safety lint 不绕过
 ```

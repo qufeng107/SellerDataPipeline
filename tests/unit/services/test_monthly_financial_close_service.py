@@ -538,3 +538,63 @@ def test_natural_month_finances_drive_management_profit_when_present() -> None:
     assert next(
         c for c in result.reconciliation_checks if c.check_name == "finances_natural_month_coverage"
     ).status == "ok"
+
+
+def test_zero_value_released_shipment_units_are_costed_without_adding_revenue() -> None:
+    finance_rows = [
+        {
+            "marketplace_id": "ATVPDKIKX0DER",
+            "transaction_id": "order-paid",
+            "transaction_status": "DEFERRED_RELEASED",
+            "transaction_type": "Shipment",
+            "posted_date_local": date(2026, 6, 3),
+            "marketplace_timezone": "America/Los_Angeles",
+            "amount": Decimal("20.00"),
+            "currency": "USD",
+            "management_role": "operating",
+            "management_include": True,
+            "management_replace_with_ads_api": False,
+            "review_required": False,
+            "product_sales_amount": Decimal("25.00"),
+            "unit_events_json": '[{"seller_sku":"SKU-1","quantity":1,"posted_date":"2026-06-03"}]',
+        },
+        {
+            "marketplace_id": "ATVPDKIKX0DER",
+            "transaction_id": "order-zero",
+            "transaction_status": "RELEASED",
+            "transaction_type": "Shipment",
+            "posted_date_local": date(2026, 6, 4),
+            "marketplace_timezone": "America/Los_Angeles",
+            "amount": Decimal("0.00"),
+            "currency": "USD",
+            "management_role": "zero_value_unit_cogs_reference",
+            "management_include": False,
+            "management_replace_with_ads_api": False,
+            "review_required": False,
+            "product_sales_amount": Decimal("0.00"),
+            "unit_events_json": '[{"seller_sku":"SKU-1","quantity":1,"posted_date":"2026-06-04"}]',
+        },
+    ]
+
+    result = MonthlyFinancialCloseService().calculate_from_rows(
+        marketplace_id="ATVPDKIKX0DER",
+        profile_id="3917953989967300",
+        month="2026-06",
+        start_date=date(2026, 6, 1),
+        end_date=date(2026, 6, 30),
+        settlement_rows=[
+            _settlement_row(1, "SKU-1", Decimal("20.00"), "product_sales", "revenue", 1),
+        ],
+        finances_natural_month_rows=finance_rows,
+        sku_cost_rows=[_cost_row("SKU-1", Decimal("4.00"), Decimal("1.00"), date(2026, 1, 1))],
+        ads_summary={"ads_cost": Decimal("0.00"), "ads_row_count": 1},
+        sales_traffic_summary={"ordered_product_sales_amount": Decimal("25.00")},
+    )
+
+    assert result.natural_month_finance is not None
+    assert result.natural_month_finance.product_sales_amount == Decimal("25.00")
+    assert result.natural_month_finance.order_total == Decimal("20.00")
+    assert result.natural_month_finance.product_sales_units == 2
+    assert result.natural_month_finance.costed_units == 2
+    assert result.natural_month_finance.landed_cogs == Decimal("10.00")
+    assert result.natural_month_finance.management_operating_profit == Decimal("10.00")

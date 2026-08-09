@@ -1,7 +1,7 @@
 # SellerDataPipeline 当前进展与下一步计划
 
 > 更新时间：2026-08-09  
-> 当前版本：v1.90 Natural-Month Financial Ledger implemented locally; Azure migration/backfill verification pending  
+> 当前版本：v1.90.1 Zero-Value Shipment COGS Correctness implemented locally; Azure Gate 2 revalidation pending  
 > 文档定位：记录项目真实进展、已完成里程碑、当前非阻塞问题和下一步开发顺序。本文不承载详细字段设计；功能细节见 `docs/features/`。
 
 ## 1. 当前一句话状态
@@ -702,3 +702,20 @@ v1.90 本地已实现：
 - 本地测试 `362 passed`；compileall passed；本地未安装 Ruff，CI Safety lint 继续 blocking。
 
 Azure 下一步严格按 `docs/features/feature_finances_api_natural_month_ledger.md`：先 migration 016，再对 May/Jun/Jul dry-run + execute backfill；只生成历史 report preview，不 force-resend 邮件。
+
+
+## 1.0.11 2026-08-10 Zero-Value Shipment COGS Correctness v1.90.1
+
+v1.90 migration 016 已在 Azure 成功执行并 postcheck：`amazon_finance_transaction` 存在，business-key unique index 与 local-date index 正常，初始 rows=0。
+
+随后 May/Jun/Jul Gate 2 dry-run 的自然月金额与 lifecycle 全部继续闭合，`review_required=0`；May units=94+5、Jul units=58+4 正确，但 June Shipment units=118，较 Seller Central 120 少 2。逐单诊断排除 quantity extractor 问题：三笔 quantity=2 订单均正确提取。最终定位到两笔 June `$0` FBA shipped orders：Finances API 返回 `RELEASED Shipment amount=0`，各自 ProductContext 均含正确 SKU + `quantityShipped=1`；Orders DB 也一一对应。
+
+v1.90.1 因此只修正 COGS unit inclusion，不改变已验证的金额 lifecycle：
+
+- non-zero `RELEASED Shipment` 继续作为 prior-period release reference，金额与 units 都不纳入当前月；
+- zero-value `RELEASED Shipment` 保持 `management_include=false`，不增加 revenue/order total；
+- 其 SKU/quantity unit event 以 `zero_value_unit_cogs_reference` 角色进入 natural-month COGS；
+- unit context 缺失仍 fail closed，`review_required` 阻止 execute；
+- 无新增 migration，016 继续有效。
+
+下一步：CI green 后用 v1.90.1 image 重跑 May/Jun/Jul Gate 2；期望 units May=94+5、Jun=120+2、Jul=58+4，三个月 `review_required=0` 后才进入 execute backfill。

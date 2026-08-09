@@ -30,6 +30,7 @@ from seller_data_pipeline.services.report_bilingual import (
 MONEY_QUANT = Decimal("0.01")
 RATIO_QUANT = Decimal("0.0001")
 ZERO = Decimal("0")
+ZERO_VALUE_UNIT_COGS_ROLE = "zero_value_unit_cogs_reference"
 REPORT_TYPE = "monthly_financial_close"
 REPORT_VERSION = "v1.5-natural-month-finances"
 DEFAULT_OUTPUT_ROOT = "runtime/analysis_reports/monthly_financial_close"
@@ -1704,7 +1705,10 @@ def _build_natural_month_financial_summary(
         elif management_include and transaction_type == "MiscellaneousLedgerAdjustment":
             adjustment_total += amount
 
-        if not management_include or transaction_type not in {"Shipment", "RemovalShipment"}:
+        cogs_unit_include = management_include or (
+            str(row.get("management_role") or "") == ZERO_VALUE_UNIT_COGS_ROLE
+        )
+        if not cogs_unit_include or transaction_type not in {"Shipment", "RemovalShipment"}:
             continue
         raw_events = row.get("unit_events_json")
         if isinstance(raw_events, str):

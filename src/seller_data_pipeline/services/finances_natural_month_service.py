@@ -15,6 +15,7 @@ from seller_data_pipeline.integrations.amazon.marketplaces import (
 )
 
 ZERO = Decimal("0")
+ZERO_VALUE_UNIT_COGS_ROLE = "zero_value_unit_cogs_reference"
 
 # Empirically reconciled against Seller Central Monthly Transaction exports for
 # 2026-05, 2026-06 and 2026-07 on the US marketplace. Keep the policy explicit
@@ -170,7 +171,9 @@ class FinanceNaturalMonthPrepared:
                 transfer_reference += row.amount
             if row.management_include and row.transaction_type == "Shipment":
                 product_sales += row.product_sales_amount
-            if row.management_include and row.transaction_type in {"Shipment", "RemovalShipment"}:
+            if (
+                row.management_include or row.management_role == ZERO_VALUE_UNIT_COGS_ROLE
+            ) and row.transaction_type in {"Shipment", "RemovalShipment"}:
                 row_units = sum(int(event.get("quantity") or 0) for event in row.unit_events)
                 unit_count += row_units
                 if row.transaction_type == "Shipment":
@@ -178,7 +181,7 @@ class FinanceNaturalMonthPrepared:
                 else:
                     liquidation_unit_count += row_units
         return {
-            "schema_version": "v1.90-natural-month-finances",
+            "schema_version": "v1.90.1-natural-month-finances",
             "marketplace_id": self.marketplace_id,
             "month": self.month,
             "start_date": self.start_date.isoformat(),
@@ -291,6 +294,25 @@ def prepare_natural_month_transactions(
             )
 
         identifiers = _identifier_map(transaction.get("relatedIdentifiers"))
+
+        # Seller Central Monthly Transaction reconciliation found a distinct zero-value
+        # shipment case: the shipment is already RELEASED (so its financial amount must
+        # not be treated as current-period revenue), but its ProductContext still carries
+        # a real SKU/quantity that must consume landed COGS in the current local month.
+        # Keep monetary inclusion and unit/COGS inclusion deliberately separate.
+        cogs_unit_include = management_include and transaction_type in {
+            "Shipment",
+            "RemovalShipment",
+        }
+        if (
+            transaction_type == "Shipment"
+            and transaction_status == "RELEASED"
+            and amount == ZERO
+            and not review_required
+        ):
+            role = ZERO_VALUE_UNIT_COGS_ROLE
+            cogs_unit_include = True
+
         leaf_totals = _transaction_leaf_totals(transaction.get("breakdowns"))
         raw_json = _json_dumps(transaction)
         raw_hash = hashlib.sha256(raw_json.encode("utf-8")).hexdigest()
@@ -300,10 +322,10 @@ def prepare_natural_month_transactions(
                 transaction,
                 posted_date=posted_at_local.date(),
                 transaction_type=transaction_type,
-                management_include=management_include,
+                include_units=cogs_unit_include,
             )
         )
-        if management_include and transaction_type in {"Shipment", "RemovalShipment"}:
+        if cogs_unit_include:
             item_count = len(_list_of_mappings(transaction.get("items")))
             if item_count == 0 or len(unit_events) != item_count:
                 review_required = True
@@ -424,9 +446,9 @@ def _extract_unit_events(
     *,
     posted_date: date,
     transaction_type: str,
-    management_include: bool,
+    include_units: bool,
 ) -> list[dict[str, Any]]:
-    if not management_include or transaction_type not in {"Shipment", "RemovalShipment"}:
+    if not include_units or transaction_type not in {"Shipment", "RemovalShipment"}:
         return []
     events: list[dict[str, Any]] = []
     for item_index, item in enumerate(_list_of_mappings(transaction.get("items")), start=1):
