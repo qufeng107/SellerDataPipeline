@@ -15,6 +15,8 @@ from seller_data_pipeline.config.settings import Settings, get_settings
 logger = logging.getLogger(__name__)
 
 REPORTS_API_VERSION = "2021-06-30"
+FINANCES_API_VERSION = "2024-06-19"
+FINANCES_TRANSACTION_STATUSES = {"DEFERRED", "RELEASED", "DEFERRED_RELEASED"}
 
 
 @dataclass(frozen=True)
@@ -181,6 +183,57 @@ class AmazonSpApiClient:
         return self._request_json(
             "GET",
             f"/reports/{REPORTS_API_VERSION}/documents/{report_document_id}",
+        )
+
+    def list_finance_transactions(
+        self,
+        *,
+        posted_after: datetime | None = None,
+        posted_before: datetime | None = None,
+        marketplace_id: str | None = None,
+        transaction_status: str | None = None,
+        related_identifier_name: str | None = None,
+        related_identifier_value: str | None = None,
+        next_token: str | None = None,
+    ) -> dict[str, Any]:
+        """Return Finances API v2024-06-19 transactions for the requested filters.
+
+        Amazon requires ``postedAfter`` when a related identifier is not supplied.
+        Pagination calls preserve the original filters and add ``nextToken`` because the
+        Finances API documents that the same arguments should accompany subsequent pages.
+        """
+
+        if posted_after is None and not related_identifier_name:
+            raise ValueError("posted_after or related_identifier_name is required")
+        if bool(related_identifier_name) != bool(related_identifier_value):
+            raise ValueError(
+                "related_identifier_name and related_identifier_value must be provided together"
+            )
+        if transaction_status and transaction_status not in FINANCES_TRANSACTION_STATUSES:
+            raise ValueError(
+                "transaction_status must be one of: "
+                + ", ".join(sorted(FINANCES_TRANSACTION_STATUSES))
+            )
+
+        params: dict[str, Any] = {}
+        if posted_after is not None:
+            params["postedAfter"] = _format_sp_api_datetime(posted_after)
+        if posted_before is not None:
+            params["postedBefore"] = _format_sp_api_datetime(posted_before)
+        if marketplace_id:
+            params["marketplaceId"] = marketplace_id
+        if transaction_status:
+            params["transactionStatus"] = transaction_status
+        if related_identifier_name:
+            params["relatedIdentifierName"] = related_identifier_name
+            params["relatedIdentifierValue"] = related_identifier_value
+        if next_token:
+            params["nextToken"] = next_token
+
+        return self._request_json(
+            "GET",
+            f"/finances/{FINANCES_API_VERSION}/transactions",
+            params=params,
         )
 
     def download_report_document(
