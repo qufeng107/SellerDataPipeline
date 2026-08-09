@@ -257,3 +257,108 @@ def test_included_unit_transaction_with_incomplete_item_context_requires_review(
     assert prepared.rows[0].management_include is True
     assert prepared.rows[0].unit_events == ()
     assert any("unit-event coverage incomplete" in warning for warning in prepared.warnings)
+
+
+def test_zero_value_released_shipment_is_cogs_only_unit_reference() -> None:
+    prepared = prepare_natural_month_transactions(
+        [
+            _tx(
+                "zero-value-order",
+                status="RELEASED",
+                typ="Shipment",
+                posted="2026-06-03T19:13:19Z",
+                amount="0.00",
+                breakdowns=_shipment_breakdowns("0.00"),
+                items=[
+                    {
+                        "contexts": [
+                            {
+                                "contextType": "ProductContext",
+                                "sku": "SKU-ZERO",
+                                "asin": "B000ZERO",
+                                "quantityShipped": 1,
+                            }
+                        ]
+                    }
+                ],
+            )
+        ],
+        marketplace_id="ATVPDKIKX0DER",
+        start_date=date(2026, 6, 1),
+        end_date=date(2026, 6, 30),
+    )
+
+    row = prepared.rows[0]
+    assert row.management_include is False
+    assert row.management_role == "zero_value_unit_cogs_reference"
+    assert row.review_required is False
+    assert len(row.unit_events) == 1
+    assert row.unit_events[0]["seller_sku"] == "SKU-ZERO"
+    assert row.unit_events[0]["quantity"] == 1
+
+    summary = prepared.compact_summary()
+    assert summary["management_operating_before_ads_replacement"] == "0.00"
+    assert summary["product_sales_amount"] == "0.00"
+    assert summary["shipment_unit_count"] == 1
+    assert summary["management_unit_count"] == 1
+
+
+def test_nonzero_released_shipment_remains_prior_period_reference_without_units() -> None:
+    prepared = prepare_natural_month_transactions(
+        [
+            _tx(
+                "released-prior-period",
+                status="RELEASED",
+                typ="Shipment",
+                posted="2026-06-10T12:00:00Z",
+                amount="25.00",
+                breakdowns=_shipment_breakdowns("30.00"),
+                items=[
+                    {
+                        "contexts": [
+                            {
+                                "contextType": "ProductContext",
+                                "sku": "SKU-OLD",
+                                "quantityShipped": 1,
+                            }
+                        ]
+                    }
+                ],
+            )
+        ],
+        marketplace_id="ATVPDKIKX0DER",
+        start_date=date(2026, 6, 1),
+        end_date=date(2026, 6, 30),
+    )
+
+    row = prepared.rows[0]
+    assert row.management_role == "prior_period_release_reference"
+    assert row.management_include is False
+    assert row.unit_events == ()
+    assert prepared.compact_summary()["management_unit_count"] == 0
+
+
+def test_zero_value_released_shipment_with_missing_unit_context_requires_review() -> None:
+    prepared = prepare_natural_month_transactions(
+        [
+            _tx(
+                "zero-value-missing-unit",
+                status="RELEASED",
+                typ="Shipment",
+                posted="2026-06-10T12:00:00Z",
+                amount="0.00",
+                breakdowns=_shipment_breakdowns("0.00"),
+                items=[{"contexts": [{"contextType": "ProductContext", "asin": "B000ZERO"}]}],
+            )
+        ],
+        marketplace_id="ATVPDKIKX0DER",
+        start_date=date(2026, 6, 1),
+        end_date=date(2026, 6, 30),
+    )
+
+    row = prepared.rows[0]
+    assert row.management_role == "zero_value_unit_cogs_reference"
+    assert row.review_required is True
+    assert row.unit_events == ()
+    assert prepared.review_required_count == 1
+    assert any("unit-event coverage incomplete" in warning for warning in prepared.warnings)

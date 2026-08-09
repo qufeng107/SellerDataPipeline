@@ -10,7 +10,7 @@
 | 数据源 | 主要获取方式 | 原始文件/响应结构 | 当前状态 | 正式子文档 |
 |---|---|---|---|---|
 | SP-API Reports | `createReport` / `getReports` / `getReportDocument`；settlement 使用 Amazon-generated report discovery | TSV/TXT flat file 或 report-specific JSON | 核心经营、库存、订单、财务、促销和库存流水类报告已完成取样；其中主要报告已真实入库并通过幂等验证 | [`sp_api_reports_catalog.md`](sp_api_reports_catalog.md) |
-| SP-API Finances v2024-06-19 | `listTransactions` | JSON transactions / items / contexts / recursive breakdowns | v1.89 read-only sampler implemented；production live sample + Seller Central Monthly Transaction reconciliation pending；尚未进入 normalized SQL / Management P&L | [`../features/feature_finances_api_natural_month_sampling.md`](../features/feature_finances_api_natural_month_sampling.md) |
+| SP-API Finances v2024-06-19 | `listTransactions` | JSON transactions / items / contexts / recursive breakdowns | v1.89 live reconciliation completed；v1.90 normalized SQL + Management P&L implemented；v1.90.1 zero-value Shipment COGS-unit correction pending Azure Gate 2 revalidation | [`../features/feature_finances_api_natural_month_sampling.md`](../features/feature_finances_api_natural_month_sampling.md) |
 | Amazon Ads API | Profiles API + Reporting v3 create/status/download | JSON top-level array；profile response JSON | US Ads profile 已发现；4 类 Sponsored Products 日报已真实入库并验证幂等性；`spPurchasedProduct` 当前样例为空 | [`amazon_ads_reports_catalog.md`](amazon_ads_reports_catalog.md) |
 | Seller Central 手动导出 | 后台页面手工下载 CSV/TSV/XLSX | 取决于页面和报表 | 当前仅作为 fallback 和人工补充路径，不作为第一优先自动化路径 | [`seller_central_manual_exports.md`](seller_central_manual_exports.md) |
 

@@ -32,7 +32,7 @@ def main() -> None:
     parser.add_argument(
         "--allow-review",
         action="store_true",
-        help="Allow execution when non-zero unrecognized lifecycle/type rows require review.",
+        help="Allow execution when any normalized row is marked review_required.",
     )
     args = parser.parse_args()
 
@@ -109,7 +109,7 @@ def main() -> None:
         return
     if prepared.review_required_count and not args.allow_review:
         raise SystemExit(
-            "Blocked Finances natural-month SQL write: non-zero unrecognized lifecycle/type rows require review"
+            "Blocked Finances natural-month SQL write: one or more rows require review"
         )
 
     with get_connection(settings=settings, autocommit=False) as connection:
