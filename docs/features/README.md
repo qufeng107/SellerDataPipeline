@@ -1,6 +1,6 @@
 # 功能设计文档索引
 
-> 更新时间：2026-08-08  
+> 更新时间：2026-08-09  
 > 文档定位：本目录记录 SellerDataPipeline 的单功能设计、实现状态、验收标准和相关代码路径。每个功能文档必须以 `FEATURE_TEMPLATE.md` 为标准，不应把多个功能混在同一份文档里。
 
 ## 1. 功能文档维护规则
@@ -36,7 +36,8 @@
 | [`feature_monthly_chunk_completeness_recovery.md`](feature_monthly_chunk_completeness_recovery.md) | Implemented locally / Azure verification pending | v1.83：修复 Monthly Sales/Orders/Ads 多分片只入最新文件、历史月份 coverage window 过宽、Ads timing 误阻断邮件。 |
 | [`feature_settlement_repair_scalability.md`](feature_settlement_repair_scalability.md) | Implemented locally / Azure verification pending | v1.82：针对 3,878 个历史 Settlement duplicate groups，将 repair 从 N+1 SQL 改为 single-scan + bounded batch DML，并限制默认日志输出。 |
 | [`feature_settlement_ingestion_batch_upsert.md`](feature_settlement_ingestion_batch_upsert.md) | Superseded | v1.84：Azure 验证发现 1950-parameter staging INSERT 和 duplicate fallback 仍过慢，已由 v1.85 替代。 |
-| [`feature_settlement_ingestion_json_upsert.md`](feature_settlement_ingestion_json_upsert.md) | Implemented locally / Azure verification pending | v1.85：exact duplicate collapse + typed OPENJSON bounded batches + set-based MERGE；conflicting identity fail closed。 |
+| [`feature_settlement_ingestion_json_upsert.md`](feature_settlement_ingestion_json_upsert.md) | Implemented / Azure verified | v1.85：exact duplicate collapse + typed OPENJSON bounded batches + set-based MERGE；2026-06/07 recovery 已通过 Azure 生产验收。 |
+| [`feature_settlement_fba_fee_classification.md`](feature_settlement_fba_fee_classification.md) | Implemented locally / Azure verification pending | v1.86：补齐 `FBA Inventory Storage Fee` 与 `FBA Customer Returns Fee (...)` 的保守分类，消除已确认的 2026-07 `-35.45` unknown/unclassified。 |
 | [`feature_weekly_business_review.md`](feature_weekly_business_review.md) | Implemented v1.1 / pending live verification | 每周经营周报；默认 Saturday-Friday，贡献指标明确为“广告和货本后贡献，未扣完整 Amazon 平台费”，默认输出 JSON + 单个 XLSX 多 sheet。 |
 | [`feature_weekly_ads_optimization_report.md`](feature_weekly_ads_optimization_report.md) | Implemented v1.1 / pending live verification | 每周广告优化报表；已支持 active action / historical paused lessons 拆分、negative keyword snapshot 去重和 `--negative-keyword-csv`，默认输出 JSON + 单个 XLSX 多 sheet，不调用 Ads 写接口。 |
 | [`feature_report_delivery_email.md`](feature_report_delivery_email.md) | Implemented v1.3 | 统一报表交付/邮件草稿包；已支持从三类报表 JSON 生成不同模板邮件正文、manifest 和 XLSX 附件包。SMTP 发送已实现，收件人从 `report_email_recipient_config` 读取；v1.3 增加中英文双语邮件正文和 XLSX 固定标签/说明。 |
@@ -47,13 +48,13 @@
 
 ## 3. 下一批建议
 
-当前优先级已切换到 v1.83 + v1.84 合并后的 Monthly recovery Azure 验收：
+当前优先级已切换到 v1.86 2026-07 Financial Close 分类补丁验收：
 
-1. CI/main image 通过后，仅更新 monthly jobs。
-2. 直接重跑 `2026-06 collect_ingest`，不重新 submit；确认 Sales & Traffic / Orders 各处理 3 个 chunk，Ads table-ready report types 各处理 3 个 chunk，stage `failed=0`。
-3. 重新生成 2026-06 Monthly Financial Close preview；Ads timing 差异只作为 warning，若无真实财务阻断项则 send guard 应允许发送。
-4. 发送 2026-06 月报后恢复 2026-07。
-5. Settlement normal ingestion 性能优化已提前在 v1.84 实现；6 月 collect 重跑同时验证 chunk completeness 与 batch upsert，随后恢复 7 月。
+1. v1.86 CI/main image 通过后更新 monthly jobs。
+2. 不重新 submit，直接重跑 `2026-07 collect_ingest`；确认 Settlement、Sales & Traffic、Orders、Ads、FBA、Promotion/Coupon 全部 success，stage `commands=9 failed=0`。
+3. 重新生成 2026-07 Monthly Financial Close preview；确认 `unknown_bucket_amount=0`、`unclassified_amount=0`，且无其他真实财务阻断项。
+4. `status=ok`、`send_allowed=True` 后发送 2026-07 月报。
+5. 6 月月报已经恢复并正式发送；v1.85 Settlement JSON upsert 已完成 2026-06/07 Azure 生产性能验收。
 
 不补发历史 weekly；weekly 从当前周期继续。
 

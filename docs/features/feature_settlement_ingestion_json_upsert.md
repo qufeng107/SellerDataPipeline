@@ -1,7 +1,7 @@
 # Settlement JSON Set-Based Upsert
 
-> 文档状态：Implemented locally / Azure verification pending  
-> 更新时间：2026-08-08  
+> 文档状态：Implemented / Azure verified  
+> 更新时间：2026-08-09  
 > 迭代版本：v1.85  
 > 相关功能：`feature_settlement_ingestion.md`、`feature_settlement_ingestion_batch_upsert.md`、`feature_monthly_chunk_completeness_recovery.md`
 
@@ -178,3 +178,23 @@ Automation stage ... failed=0
 ```
 
 验收重点是 Settlement 阶段由几十分钟降到可接受范围，同时最终 2026-06 Financial Close 不出现数据完整性回退。
+
+
+## 生产验收结果（2026-08-08）
+
+2026-06 `collect_ingest` 已在 main image `ef6941c97322c717fb86872baac16530271fbe55` 通过 Azure 验收：
+
+```text
+Settlement input_rows=3921
+unique_business_keys=2868
+collapsed_duplicate_rows=1053
+batch_size=500
+batches=6
+JSON MERGE start 23:22:22
+JSON MERGE completed 23:22:29
+Settlement committed 23:22:33
+inserted=0 updated=3921 skipped=0
+commands=9 failed=0
+```
+
+相比 v1.84 约 20 分钟仍未完成 staging、最终 30 分钟 timeout，v1.85 的 6 个 JSON MERGE 在约 7 秒内完成，Settlement 全阶段约 11 秒完成并提交。随后 2026-07 recovery 再次以 `1491` unique rows / 3 batches 成功执行，证明生产路径稳定。

@@ -1,7 +1,7 @@
 # SellerDataPipeline 当前进展与下一步计划
 
-> 更新时间：2026-08-08  
-> 当前版本：v1.85 Settlement typed OPENJSON set-based upsert implemented locally; v1.84 Azure performance test superseded  
+> 更新时间：2026-08-09  
+> 当前版本：v1.86 Settlement FBA fee classification coverage implemented locally; v1.85 Azure production verified  
 > 文档定位：记录项目真实进展、已完成里程碑、当前非阻塞问题和下一步开发顺序。本文不承载详细字段设计；功能细节见 `docs/features/`。
 
 ## 1. 当前一句话状态
@@ -191,7 +191,35 @@ v1.85 本地改为：
 - 3921 unique-row 回归目标为 8 个 JSON MERGE round trips。
 - 不新增 migration / live schema。
 
-Azure 下一步：停止当前 v1.84 长跑 execution；main build v1.85 后仅重跑 2026-06 collect_ingest（不重新 submit），验收 Settlement runtime 和 `commands=9 failed=0`，再生成并发送 6 月 Financial Close。
+Azure 生产验收已通过：2026-06 Settlement `3921 -> 2868 unique keys`，6 个 JSON MERGE 约 7 秒完成、Settlement 全阶段约 11 秒并提交，stage `commands=9 failed=0`；2026-07 再次以 1491 unique rows / 3 batches 成功。6 月 Financial Close 已 `status=ok` 并正式发送。
+
+## 1.0.7 2026-08-09 Settlement FBA fee classification coverage v1.86
+
+2026-06 recovery 已完成：v1.85 main image `ef6941c97322c717fb86872baac16530271fbe55` 在 Azure 上将 3,921 Settlement input rows 折叠为 2,868 unique business keys，6 个 JSON MERGE 约 7 秒完成，Settlement 全阶段约 11 秒完成并提交；Monthly collect `commands=9 failed=0`。随后 6 月 Financial Close `status=ok`、`send_allowed=True`，月报已正式发送给 3 个收件人。
+
+2026-07 collect 也已成功恢复：Sales & Traffic 3 chunks、Orders 3 chunks、Ads 12 files、Settlement 1,491 rows / 3 JSON batches、FBA、Promotion/Coupon、coverage audit 均成功，stage `commands=9 failed=0`。
+
+7 月 Financial Close preview 当前唯一真实阻断为：
+
+```text
+unknown_bucket_amount=-35.45
+unclassified_amount=-35.45
+
+FBA Inventory Storage Fee / Base fee             -32.75
+FBA Customer Returns Fee (...) / Base fee         -2.70
+                                                  ------
+                                                  -35.45
+```
+
+v1.86 本地补丁：
+
+- `FBA Inventory Storage Fee` -> `storage_fee / fba_storage_fee`。
+- `FBA Customer Returns Fee (...)` 仅在 `transaction_type=FBAFees` 且 normalized amount type 以 `fbacustomerreturnsfee` 开头时 -> `fba_customer_returns_fee / fba_fee`。
+- 不使用宽泛 fee fallback；未知组合继续 `unclassified / unknown`。
+- 不新增 migration，不改金额、business key、v1.85 JSON MERGE 或 send guard。
+- 新增两条真实生产字符串 parser regression。
+
+Azure 下一步：v1.86 CI/main -> 更新 monthly jobs -> 不重新 submit，重跑 `2026-07 collect_ingest` -> 重新生成 July Financial Close preview；只有 `unknown/unclassified=0` 且无其他真实阻断时才发送 7 月月报。
 
 ## 1.1 2026-05-25 Azure Jobs handoff status
 

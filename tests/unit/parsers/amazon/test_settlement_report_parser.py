@@ -266,3 +266,100 @@ def test_classifies_advertiser_refund_as_advertising_cost() -> None:
 
     assert record.amount_category == "advertising_refund"
     assert record.profit_bucket == "advertising_cost"
+
+
+def test_classifies_fba_inventory_storage_fee_from_amount_type() -> None:
+    content = (
+        HEADER
+        + "\n"
+        + _row(
+            [
+                "settlement-july",
+                "2026-07-01T00:00:00Z",
+                "2026-07-31T00:00:00Z",
+                "2026-08-01T00:00:00Z",
+                "0.00",
+                "USD",
+                "FBAFees",
+                "",
+                "",
+                "",
+                "",
+                "Amazon.com",
+                "FBA Inventory Storage Fee",
+                "Base fee",
+                "-32.75",
+                "",
+                "2026-07-31",
+                "2026-07-31T12:00:00Z",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+            ]
+        )
+        + "\n"
+    )
+
+    record = SettlementReportParser().parse_text(
+        text=content,
+        marketplace_id="ATVPDKIKX0DER",
+        source_report_id="settlement-report-july-storage",
+    )[0]
+
+    assert record.amount_type == "FBA Inventory Storage Fee"
+    assert record.amount_description == "Base fee"
+    assert record.amount_category == "storage_fee"
+    assert record.profit_bucket == "fba_storage_fee"
+
+
+def test_classifies_fba_customer_returns_fee_with_dynamic_suffix() -> None:
+    content = (
+        HEADER
+        + "\n"
+        + _row(
+            [
+                "settlement-july",
+                "2026-07-01T00:00:00Z",
+                "2026-07-31T00:00:00Z",
+                "2026-08-01T00:00:00Z",
+                "0.00",
+                "USD",
+                "FBAFees",
+                "",
+                "",
+                "",
+                "",
+                "Amazon.com",
+                (
+                    "FBA Customer Returns Fee (Non-Apparel and Non-Shoes) "
+                    "for ASIN: B0G1YF2W1D (2026-04-01 to 2026-06-30)"
+                ),
+                "Base fee",
+                "-2.70",
+                "",
+                "2026-07-31",
+                "2026-07-31T12:00:00Z",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+            ]
+        )
+        + "\n"
+    )
+
+    record = SettlementReportParser().parse_text(
+        text=content,
+        marketplace_id="ATVPDKIKX0DER",
+        source_report_id="settlement-report-july-returns",
+    )[0]
+
+    assert record.amount_type.startswith("FBA Customer Returns Fee")
+    assert record.amount_description == "Base fee"
+    assert record.amount_category == "fba_customer_returns_fee"
+    assert record.profit_bucket == "fba_fee"

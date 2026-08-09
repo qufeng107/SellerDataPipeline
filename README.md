@@ -72,7 +72,9 @@ Amazon SP-API / Amazon Ads API / Seller Central raw exports
 | [`docs/features/feature_monthly_ingestion_recovery.md`](docs/features/feature_monthly_ingestion_recovery.md) | v1.81 monthly 恢复：Settlement 幂等/事务加固 + Promotion/Coupon schema drift 回归。 |
 | [`docs/features/feature_monthly_chunk_completeness_recovery.md`](docs/features/feature_monthly_chunk_completeness_recovery.md) | v1.83 Monthly 多分片完整性恢复：manifest-bound chunk ingestion、精确月度 coverage、Ads timing 非阻断 reconciliation。 |
 | [`docs/features/feature_settlement_repair_scalability.md`](docs/features/feature_settlement_repair_scalability.md) | v1.82 Settlement repair 性能加固：single-scan planning、bounded batch DML、日志有界输出。 |
-| [`docs/features/feature_settlement_ingestion_batch_upsert.md`](docs/features/feature_settlement_ingestion_batch_upsert.md) | v1.84 Settlement 正常入库性能优化：typed temp staging、bounded multi-row INSERT、single set-based MERGE。 |
+| [`docs/features/feature_settlement_ingestion_batch_upsert.md`](docs/features/feature_settlement_ingestion_batch_upsert.md) | v1.84 Settlement temp staging 方案；Azure 性能验收未通过，已由 v1.85 替代。 |
+| [`docs/features/feature_settlement_ingestion_json_upsert.md`](docs/features/feature_settlement_ingestion_json_upsert.md) | v1.85 Settlement typed OPENJSON set-based MERGE；2026-06/07 Azure 生产验收通过。 |
+| [`docs/features/feature_settlement_fba_fee_classification.md`](docs/features/feature_settlement_fba_fee_classification.md) | v1.86 补齐真实 FBA Inventory Storage Fee / Customer Returns Fee 分类，等待 2026-07 月报生产验收。 |
 | [`docs/features/feature_weekly_business_review.md`](docs/features/feature_weekly_business_review.md) | 每周经营周报设计；销售、流量、广告、SKU、库存和风险行动建议。 |
 | [`docs/features/feature_weekly_ads_optimization_report.md`](docs/features/feature_weekly_ads_optimization_report.md) | 每周广告优化报表设计；输出 campaign/keyword/search term/SKU 广告动作清单。 |
 | [`docs/database/database_current_schema_spec.md`](docs/database/database_current_schema_spec.md) | 当前真实 Azure SQL 表结构、字段、索引与数据来源。 |

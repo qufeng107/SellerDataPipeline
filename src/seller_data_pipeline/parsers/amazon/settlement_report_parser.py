@@ -273,8 +273,11 @@ def classify_settlement_amount(
         if amount_kind == "itemfees":
             return SettlementAmountClassification("liquidation_fee", "liquidation_fee")
 
-    if "storagefee" in description:
+    if amount_kind == "fbainventorystoragefee" or "storagefee" in description:
         return SettlementAmountClassification("storage_fee", "fba_storage_fee")
+
+    if transaction == "fbafees" and amount_kind.startswith("fbacustomerreturnsfee"):
+        return SettlementAmountClassification("fba_customer_returns_fee", "fba_fee")
 
     if "inboundplacementservicefee" in description:
         return SettlementAmountClassification("fba_inbound_placement_fee", "fba_fee")
