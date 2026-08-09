@@ -660,3 +660,28 @@ v1.87 本地已实现月报经营口径升级：
 - 本地验证：`PYTHONPATH=src pytest -q` -> `337 passed`；`python -m compileall -q src scripts tests` -> success。
 
 Azure 下一步：先只读查询 4 个正式 SKU 的现有成本行/effective dates；再用白名单 + 原值检查将 first-mile estimate 写入覆盖 2026-05/06/07 的成本记录，remark 保留 `10,201.46 RMB / 2,688 units = 3.7952 RMB/unit` 来源。之后只需重新生成 5/6/7 月报 preview，不需要重新 submit/collect Amazon 数据。
+
+
+## 1.0.9 2026-08-09 Finances API Natural-Month Sampling v1.89
+
+5/6/7 月 Seller Central Monthly Transaction 与 Settlement V2 对账确认：Settlement posted/released timing 与自然月经营月份不是同一口径。v1.88 已修复 Settlement 数据正确性（foreign-currency guard、explicit date parsing、multi-path duplicate repair、late discovery），但 Management P&L 不能继续长期使用“Settlement sales/refund/FBA/promotion + report-date Ads”的混合月份模型。
+
+v1.89 先新增 **read-only Finances API v2024-06-19 sampling**，不直接切换报表：
+
+- `AmazonSpApiClient.list_finance_transactions()` 支持 postedAfter/postedBefore/marketplace/status/related identifier/nextToken。
+- 新增 `scripts/sample_finances_transactions.py`，保存 raw pages、combined transactions 和 schema/breakdown summary。
+- analyzer 递归展开 transaction/item breakdown leaf，但不预设会计 mapping。
+- CLI 日志仅输出 compact summary，避免把完整财务明细打进 Log Analytics。
+- 不新增 migration、不写 SQL、不修改 Monthly Financial Close report version。
+- 不接入正式 monthly collect_ingest；先验证 Finance and Accounting role 和 2026-07 live response。
+- live sample 必须先与 `2026JulMonthlyTransaction.csv` 对账，再决定 normalized natural-month ledger schema。
+
+本地验证：
+
+```text
+PYTHONPATH=src pytest -q -> 357 passed
+python -m compileall -q src scripts tests -> passed
+ruff -> 当前本地环境未安装；CI blocking gate 保持不绕过
+```
+
+下一步：CI -> 部署 monthly image -> 用 report-delivery job 做一次只读 `sample_finances_transactions.py --month 2026-07` live sample -> 只取 `FINANCES_SAMPLE_*` 日志 -> 与 Seller Central July Monthly Transaction 逐项 reconciliation。

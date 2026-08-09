@@ -24,6 +24,7 @@
 | [`feature_sales_traffic_ingestion.md`](feature_sales_traffic_ingestion.md) | Implemented v1.1 / Azure verification pending | Sales & Traffic v1.1 已采用 minimal required contract；2026-08-03 的 24 个 additive path 回归不再阻断。 |
 | [`feature_settlement_ingestion.md`](feature_settlement_ingestion.md) | Implemented / v1.88 correctness hardening pending Azure verification | SP-API `GET_V2_SETTLEMENT_REPORT_DATA_FLAT_FILE_V2` -> `amazon_settlement_transaction`；v1.88 增加显式日期解析、US/USD 内容 guard、同 report raw copy 去重与 late discovery recovery。 |
 | [`feature_settlement_correctness_late_discovery.md`](feature_settlement_correctness_late_discovery.md) | Implemented locally / Azure verification pending | v1.88：修复 Settlement 跨月日期误解析、foreign-currency attribution、同 report 多 raw path 重复与月末 late-generated Settlement 漏发现。 |
+| [`feature_finances_api_natural_month_sampling.md`](feature_finances_api_natural_month_sampling.md) | Implemented locally / production live sample pending | v1.89：新增 Finances API v2024-06-19 read-only transaction sampling、raw pagination archive 与 breakdown/schema summary；先与 Seller Central Monthly Transaction 对账，不切换 Management P&L。 |
 | [`feature_orders_ingestion.md`](feature_orders_ingestion.md) | Implemented | SP-API `GET_FLAT_FILE_ALL_ORDERS_DATA_BY_ORDER_DATE_GENERAL` -> `amazon_order_item`；007、dry-run、execute 和第二次 execute 幂等性验证已完成。 |
 | [`feature_fba_reimbursements_ingestion.md`](feature_fba_reimbursements_ingestion.md) | Implemented | SP-API `GET_FBA_REIMBURSEMENTS_DATA` -> `amazon_fba_reimbursement`；008、dry-run、execute 和第二次 execute 幂等性验证已完成。 |
 | [`feature_fba_fee_preview_ingestion.md`](feature_fba_fee_preview_ingestion.md) | Implemented | SP-API `GET_FBA_ESTIMATED_FBA_FEES_TXT_DATA` -> `amazon_fba_fee_preview`；009、dry-run、execute 和第二次 execute 幂等性验证已完成。 |
@@ -50,13 +51,15 @@
 
 ## 3. 下一批建议
 
-当前优先级已切换到 v1.88 Settlement correctness / late discovery 生产恢复：
+v1.88 Settlement 数据正确性历史修复已完成，当前优先级切换到 v1.89 Finances API natural-month live sampling：
 
-1. CI 通过后构建 v1.88 main image，并同步 monthly submit / collect-ingest / report-delivery 镜像。
-2. 先 dry-run / execute `repair_settlement_marketplace_integrity.py`，清理可证明属于外币市场的历史 Settlement；任何 mixed/missing-currency conflict 必须 fail closed。
-3. 再 dry-run / execute既有 `repair_settlement_idempotency.py`，修复 2026-05 已确认的同一 Amazon report 多 raw path exact duplicates。
-4. 重新运行 2026-07 monthly collect_ingest；第一步 late rediscovery 应发现 `settlement_id=27207351391`，随后 collect + ingest。
-5. 重新生成 2026-05/06/07 Monthly Financial Close preview，不发送历史邮件；用 Seller Central Monthly Transaction CSV 做逐月 reconciliation，通过后再恢复董事会数字。
+1. CI 通过后构建 v1.89 main image；monthly 三个 Job 可同步镜像，但正式 workflow command 暂不增加 Finances sampler。
+2. 使用 `sdp-monthly-report-delivery` 临时 command override，只读运行 `sample_finances_transactions.py --marketplace-id ATVPDKIKX0DER --month 2026-07`。
+3. 若 API 返回 403，先检查 app 的 Finance and Accounting role；不得通过降低现有 Settlement/报表 guard 绕过。
+4. 只取 `FINANCES_SAMPLE_*` compact 日志，确认 transaction status/type/settlement IDs/breakdown types/currency。
+5. 与 Seller Central 2026-07 Monthly Transaction CSV 做逐项 reconciliation；若 mapping 可解释，再补 2026-05/06 sample。
+6. 只有 5/6/7 三个月稳定后，再设计 normalized Finances ledger 和 Management P&L 口径切换；Settlement Close 继续保留。
+
 
 不补发历史 weekly；weekly 从当前周期继续。
 
