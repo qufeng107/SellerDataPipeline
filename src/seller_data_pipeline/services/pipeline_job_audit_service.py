@@ -258,6 +258,12 @@ class PipelineJobAuditService:
                 payload = json.loads(path.read_text(encoding="utf-8"))
             except Exception:
                 continue
+            # Ingestion output directories may legitimately contain JSON arrays, for example
+            # Finances natural-month raw_pages.json / prepared_rows.json. Audit summary
+            # extraction is best-effort telemetry and must never block a successful pipeline run
+            # merely because an ingestion artifact is not a JSON object.
+            if not isinstance(payload, dict):
+                continue
             for summary in _table_write_summaries_from_payload(payload):
                 command_run_id = _find_command_for_table_summary(self.command_run_ids, summary)
                 item = PipelineTableWriteSummaryInsert(
@@ -373,7 +379,9 @@ class PipelineJobAuditService:
 
 # The summary parser is deliberately permissive. It only extracts safe operational counts from
 # known local JSON artifacts and never blocks the main pipeline if a file shape changes.
-def _table_write_summaries_from_payload(payload: dict[str, Any]) -> list[dict[str, Any]]:
+def _table_write_summaries_from_payload(payload: Any) -> list[dict[str, Any]]:
+    if not isinstance(payload, dict):
+        return []
     summaries: list[dict[str, Any]] = []
     upsert = payload.get("upsert_result") if isinstance(payload, dict) else None
     dry_run = payload.get("dry_run_result") if isinstance(payload, dict) else None
