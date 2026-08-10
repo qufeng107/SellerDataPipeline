@@ -132,3 +132,28 @@ def test_fetch_fba_reimbursement_period_summary_uses_approval_date() -> None:
     assert "amazon_fba_reimbursement" in sql
     assert "approval_date" in sql
     assert params == ("ATVPDKIKX0DER", date(2026, 3, 1), date(2026, 3, 31))
+
+
+def test_fetch_inventory_cost_identity_rows_is_historical_and_preserves_ambiguity() -> None:
+    cursor = FakeCursor(rows=[])
+    cursor.description = [
+        ("marketplace_id",),
+        ("fnsku",),
+        ("seller_sku",),
+        ("asin",),
+    ]
+    repo = MonthlyFinancialCloseRepo(FakeConnection(cursor))
+
+    repo.fetch_inventory_cost_identity_rows(
+        marketplace_id="ATVPDKIKX0DER",
+        as_of_date=date(2026, 7, 31),
+    )
+
+    sql, params = cursor.executed[0]
+    assert "amazon_inventory_daily" in sql
+    assert "SELECT DISTINCT" in sql
+    assert "[snapshot_date] <= ?" in sql
+    assert "[fnsku]" in sql
+    assert "[seller_sku]" in sql
+    assert params == ("ATVPDKIKX0DER", date(2026, 7, 31))
+    assert cursor.closed is True

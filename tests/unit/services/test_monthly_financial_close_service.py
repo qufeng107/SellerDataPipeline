@@ -598,3 +598,175 @@ def test_zero_value_released_shipment_units_are_costed_without_adding_revenue() 
     assert result.natural_month_finance.costed_units == 2
     assert result.natural_month_finance.landed_cogs == Decimal("10.00")
     assert result.natural_month_finance.management_operating_profit == Decimal("10.00")
+
+
+def test_natural_month_cost_uses_unique_fnsku_to_seller_sku_fallback() -> None:
+    finance_rows = [
+        {
+            "marketplace_id": "ATVPDKIKX0DER",
+            "transaction_id": "liq-1",
+            "transaction_status": "DEFERRED_RELEASED",
+            "transaction_type": "RemovalShipment",
+            "posted_date_local": date(2026, 7, 3),
+            "marketplace_timezone": "America/Los_Angeles",
+            "amount": Decimal("0.31"),
+            "currency": "USD",
+            "management_role": "operating",
+            "management_include": True,
+            "management_replace_with_ads_api": False,
+            "review_required": False,
+            "product_sales_amount": Decimal("0.00"),
+            "unit_events_json": (
+                '[{"seller_sku":"X004WU7DSH","quantity":1,'
+                '"posted_date":"2026-07-03"}]'
+            ),
+        }
+    ]
+
+    result = MonthlyFinancialCloseService().calculate_from_rows(
+        marketplace_id="ATVPDKIKX0DER",
+        profile_id=None,
+        month="2026-07",
+        start_date=date(2026, 7, 1),
+        end_date=date(2026, 7, 31),
+        settlement_rows=[],
+        finances_natural_month_rows=finance_rows,
+        sku_cost_rows=[
+            _cost_row(
+                "SC-9HC3-5TFL",
+                Decimal("4.17"),
+                Decimal("0.5271"),
+                date(2025, 1, 1),
+            )
+        ],
+        inventory_cost_identity_rows=[
+            {
+                "marketplace_id": "ATVPDKIKX0DER",
+                "fnsku": "X004WU7DSH",
+                "seller_sku": "SC-9HC3-5TFL",
+                "asin": "B0G1YF2ZBB",
+            }
+        ],
+        ads_summary={"ads_cost": Decimal("0.00"), "ads_row_count": 1},
+    )
+
+    assert result.natural_month_finance is not None
+    assert result.natural_month_finance.source_status == "ok"
+    assert result.natural_month_finance.costed_units == 1
+    assert result.natural_month_finance.missing_cost_skus == ()
+    assert result.natural_month_finance.cost_identity_resolutions == (
+        "X004WU7DSH->SC-9HC3-5TFL",
+    )
+    assert result.natural_month_finance.product_cost_cogs == Decimal("4.17")
+    assert result.natural_month_finance.first_mile_cogs == Decimal("0.53")
+    assert result.natural_month_finance.landed_cogs == Decimal("4.70")
+
+
+def test_natural_month_cost_fnsku_fallback_fails_closed_when_mapping_is_ambiguous() -> None:
+    finance_rows = [
+        {
+            "marketplace_id": "ATVPDKIKX0DER",
+            "transaction_id": "liq-ambiguous",
+            "transaction_status": "DEFERRED",
+            "transaction_type": "RemovalShipment",
+            "posted_date_local": date(2026, 5, 14),
+            "marketplace_timezone": "America/Los_Angeles",
+            "amount": Decimal("0.62"),
+            "currency": "USD",
+            "management_role": "operating",
+            "management_include": True,
+            "management_replace_with_ads_api": False,
+            "review_required": False,
+            "product_sales_amount": Decimal("0.00"),
+            "unit_events_json": (
+                '[{"seller_sku":"X004Q3AKFX","quantity":1,'
+                '"posted_date":"2026-05-14"}]'
+            ),
+        }
+    ]
+
+    result = MonthlyFinancialCloseService().calculate_from_rows(
+        marketplace_id="ATVPDKIKX0DER",
+        profile_id=None,
+        month="2026-05",
+        start_date=date(2026, 5, 1),
+        end_date=date(2026, 5, 31),
+        settlement_rows=[],
+        finances_natural_month_rows=finance_rows,
+        sku_cost_rows=[
+            _cost_row("SKU-A", Decimal("5.00"), Decimal("0.00"), date(2025, 1, 1)),
+            _cost_row("SKU-B", Decimal("6.00"), Decimal("0.00"), date(2025, 1, 1)),
+        ],
+        inventory_cost_identity_rows=[
+            {
+                "marketplace_id": "ATVPDKIKX0DER",
+                "fnsku": "X004Q3AKFX",
+                "seller_sku": "SKU-A",
+                "asin": "ASIN-A",
+            },
+            {
+                "marketplace_id": "ATVPDKIKX0DER",
+                "fnsku": "X004Q3AKFX",
+                "seller_sku": "SKU-B",
+                "asin": "ASIN-B",
+            },
+        ],
+        ads_summary={"ads_cost": Decimal("0.00"), "ads_row_count": 1},
+    )
+
+    assert result.natural_month_finance is not None
+    assert result.natural_month_finance.source_status == "needs_review"
+    assert result.natural_month_finance.costed_units == 0
+    assert result.natural_month_finance.missing_cost_skus == ("X004Q3AKFX",)
+    assert result.natural_month_finance.cost_identity_resolutions == ()
+
+
+def test_natural_month_direct_cost_wins_over_fnsku_alias() -> None:
+    finance_rows = [
+        {
+            "marketplace_id": "ATVPDKIKX0DER",
+            "transaction_id": "liq-direct",
+            "transaction_status": "DEFERRED",
+            "transaction_type": "RemovalShipment",
+            "posted_date_local": date(2026, 5, 14),
+            "marketplace_timezone": "America/Los_Angeles",
+            "amount": Decimal("0.62"),
+            "currency": "USD",
+            "management_role": "operating",
+            "management_include": True,
+            "management_replace_with_ads_api": False,
+            "review_required": False,
+            "product_sales_amount": Decimal("0.00"),
+            "unit_events_json": (
+                '[{"seller_sku":"FNSKU-1","quantity":1,'
+                '"posted_date":"2026-05-14"}]'
+            ),
+        }
+    ]
+
+    result = MonthlyFinancialCloseService().calculate_from_rows(
+        marketplace_id="ATVPDKIKX0DER",
+        profile_id=None,
+        month="2026-05",
+        start_date=date(2026, 5, 1),
+        end_date=date(2026, 5, 31),
+        settlement_rows=[],
+        finances_natural_month_rows=finance_rows,
+        sku_cost_rows=[
+            _cost_row("FNSKU-1", Decimal("8.00"), Decimal("0.00"), date(2025, 1, 1)),
+            _cost_row("CANONICAL", Decimal("5.00"), Decimal("0.00"), date(2025, 1, 1)),
+        ],
+        inventory_cost_identity_rows=[
+            {
+                "marketplace_id": "ATVPDKIKX0DER",
+                "fnsku": "FNSKU-1",
+                "seller_sku": "CANONICAL",
+                "asin": "ASIN-1",
+            }
+        ],
+        ads_summary={"ads_cost": Decimal("0.00"), "ads_row_count": 1},
+    )
+
+    assert result.natural_month_finance is not None
+    assert result.natural_month_finance.product_cost_cogs == Decimal("8.00")
+    assert result.natural_month_finance.cost_identity_resolutions == ()

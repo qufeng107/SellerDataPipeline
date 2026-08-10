@@ -1,7 +1,7 @@
 # SellerDataPipeline 当前进展与下一步计划
 
 > 更新时间：2026-08-09  
-> 当前版本：v1.90.1 Zero-Value Shipment COGS Correctness implemented locally; Azure Gate 2 revalidation pending  
+> 当前版本：v1.90.2 FNSKU Cost Identity Resolution implemented locally; Azure Gate 4 revalidation pending  
 > 文档定位：记录项目真实进展、已完成里程碑、当前非阻塞问题和下一步开发顺序。本文不承载详细字段设计；功能细节见 `docs/features/`。
 
 ## 1. 当前一句话状态
@@ -719,3 +719,25 @@ v1.90.1 因此只修正 COGS unit inclusion，不改变已验证的金额 lifecy
 - 无新增 migration，016 继续有效。
 
 下一步：CI green 后用 v1.90.1 image 重跑 May/Jun/Jul Gate 2；期望 units May=94+5、Jun=120+2、Jul=58+4，三个月 `review_required=0` 后才进入 execute backfill。
+
+
+## 1.0.12 2026-08-10 FNSKU Cost Identity Resolution v1.90.2
+
+v1.90.1 已完成 Azure Gate 2 / Gate 3A / Gate 3B：May/Jun/Jul natural-month 金额与 units 通过，首次 backfill 写入 `227 + 264 + 161 = 652` 行；第二次 execute `inserted=0`、总行数仍 652、transaction IDs 全唯一、review_required=0。
+
+Gate 4 report preview 进一步暴露的是**成本身份**而不是 Finances ledger 错误：June 完整通过；May costed 98/99、缺 `X004Q3AKFX`；July costed 61/62、缺 `X004WU7DSH`。只读诊断确认 Finances liquidation ProductContext 对这两条只返回 FNSKU 且 ASIN=None，但 `amazon_inventory_daily` 已有唯一 canonical 映射：
+
+- `X004Q3AKFX -> HU-4XAJ-PYLD -> B0FD9W53FQ`，Trading Card Binder；`amazon_sku_cost` 已有 2025-01-01 起 USD 6.94 all-in 成本。
+- `X004WU7DSH -> SC-9HC3-5TFL -> B0G1YF2ZBB`，Grey Neck Wallet；成本为 product 4.17 + first-mile 0.5271 USD。
+
+v1.90.2 冻结并实现：
+
+- source SKU 有直接 `amazon_sku_cost` 时直接成本永远优先；
+- 无直接成本时，仅允许通过 `amazon_inventory_daily.fnsku` 唯一解析到一个 canonical `seller_sku`；
+- identity 数据限定 `snapshot_date <= target month end`；
+- canonical SKU 仍使用原 effective-date cost matching；
+- 无映射、映射歧义、canonical cost 缺失继续 fail closed；
+- natural-month JSON 新增 `cost_identity_resolutions` 便于审计；
+- 无 migration、无需改已有 652 行 ledger。
+
+下一步：CI green -> build v1.90.2 image -> 仅重新运行 Gate 4 May/Jun/Jul report preview。预期三个月 `missing_cost_skus=[]`，costed units May=99、Jun=122、Jul=62；确认 Management P&L 后再更新正式 monthly jobs，历史 5/6/7 邮件不重发。

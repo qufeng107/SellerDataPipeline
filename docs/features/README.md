@@ -25,7 +25,7 @@
 | [`feature_settlement_ingestion.md`](feature_settlement_ingestion.md) | Implemented / v1.88 correctness hardening pending Azure verification | SP-API `GET_V2_SETTLEMENT_REPORT_DATA_FLAT_FILE_V2` -> `amazon_settlement_transaction`；v1.88 增加显式日期解析、US/USD 内容 guard、同 report raw copy 去重与 late discovery recovery。 |
 | [`feature_settlement_correctness_late_discovery.md`](feature_settlement_correctness_late_discovery.md) | Implemented locally / Azure verification pending | v1.88：修复 Settlement 跨月日期误解析、foreign-currency attribution、同 report 多 raw path 重复与月末 late-generated Settlement 漏发现。 |
 | [`feature_finances_api_natural_month_sampling.md`](feature_finances_api_natural_month_sampling.md) | Completed / superseded by v1.90 ledger | v1.89：Finances API live sampling 已完成 May/Jun/Jul Seller Central reconciliation。 |
-| [`feature_finances_api_natural_month_ledger.md`](feature_finances_api_natural_month_ledger.md) | v1.90.1 local fix / Azure Gate 2 revalidation pending | Natural-month Finances ledger + Management P&L；v1.90.1 补齐 `$0 RELEASED Shipment` 的 COGS-only units。 |
+| [`feature_finances_api_natural_month_ledger.md`](feature_finances_api_natural_month_ledger.md) | v1.90.2 local fix / Azure Gate 4 revalidation pending | Natural-month Finances ledger + Management P&L；Gate 2/3 已通过，v1.90.2 增加 FNSKU -> canonical Seller SKU 成本身份解析。 |
 | [`feature_orders_ingestion.md`](feature_orders_ingestion.md) | Implemented | SP-API `GET_FLAT_FILE_ALL_ORDERS_DATA_BY_ORDER_DATE_GENERAL` -> `amazon_order_item`；007、dry-run、execute 和第二次 execute 幂等性验证已完成。 |
 | [`feature_fba_reimbursements_ingestion.md`](feature_fba_reimbursements_ingestion.md) | Implemented | SP-API `GET_FBA_REIMBURSEMENTS_DATA` -> `amazon_fba_reimbursement`；008、dry-run、execute 和第二次 execute 幂等性验证已完成。 |
 | [`feature_fba_fee_preview_ingestion.md`](feature_fba_fee_preview_ingestion.md) | Implemented | SP-API `GET_FBA_ESTIMATED_FBA_FEES_TXT_DATA` -> `amazon_fba_fee_preview`；009、dry-run、execute 和第二次 execute 幂等性验证已完成。 |
@@ -52,13 +52,13 @@
 
 ## 3. 下一批建议
 
-当前优先级为 v1.90.1 Finances natural-month ledger Gate 2 revalidation：
+当前优先级为 v1.90.2 Finances cost identity Gate 4 revalidation：
 
-1. CI 通过后构建 v1.90.1 image；永久 monthly jobs 暂保持当前稳定镜像。
-2. 用一次性 execution 重跑 2026-05 / 06 / 07 `ingest_finances_natural_month.py` dry-run。
-3. 必须确认三个月 `review_required=0`，且 units 为 May 94+5、Jun 120+2、Jul 58+4。
-4. 只有 Gate 2 全通过后，才 execute backfill；随后再跑一次验证 business-key upsert 幂等。
-5. 历史月报只生成 preview，不 `force-resend`。
+1. CI 通过后构建 v1.90.2 image；永久 monthly jobs 暂保持当前稳定镜像。
+2. 已完成 Gate 2 / Gate 3A / Gate 3B；现有 652 行 Finances ledger 不需要重写。
+3. 仅重跑 2026-05 / 06 / 07 Monthly Financial Close preview。
+4. 必须确认三个月 `missing_cost_skus=[]`、costed units 为 99 / 122 / 62，并审计 `cost_identity_resolutions`。
+5. 三个月 `status=ok` 后再更新正式 monthly jobs；历史月报不 `force-resend`。
 
 
 不补发历史 weekly；weekly 从当前周期继续。
