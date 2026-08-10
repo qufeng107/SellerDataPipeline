@@ -74,7 +74,7 @@ Amazon SP-API / Amazon Ads API / Seller Central raw exports
 | [`docs/features/feature_settlement_repair_scalability.md`](docs/features/feature_settlement_repair_scalability.md) | v1.82 Settlement repair 性能加固：single-scan planning、bounded batch DML、日志有界输出。 |
 | [`docs/features/feature_settlement_ingestion_batch_upsert.md`](docs/features/feature_settlement_ingestion_batch_upsert.md) | v1.84 Settlement temp staging 方案；Azure 性能验收未通过，已由 v1.85 替代。 |
 | [`docs/features/feature_settlement_ingestion_json_upsert.md`](docs/features/feature_settlement_ingestion_json_upsert.md) | v1.85 Settlement typed OPENJSON set-based MERGE；2026-06/07 Azure 生产验收通过。 |
-| [`docs/features/feature_finances_api_natural_month_sampling.md`](docs/features/feature_finances_api_natural_month_sampling.md) | v1.89 Finances API sampling（已完成 live reconciliation）；正式 natural-month ledger / Management P&L 见 v1.90.1 feature 文档。 |
+| [`docs/features/feature_finances_api_natural_month_sampling.md`](docs/features/feature_finances_api_natural_month_sampling.md) | v1.89 Finances API sampling（已完成 live reconciliation）；正式 natural-month ledger / Management P&L 见 v1.90.2 feature 文档。 |
 | [`docs/features/feature_settlement_fba_fee_classification.md`](docs/features/feature_settlement_fba_fee_classification.md) | v1.86 补齐真实 FBA Inventory Storage Fee / Customer Returns Fee 分类，等待 2026-07 月报生产验收。 |
 | [`docs/features/feature_weekly_business_review.md`](docs/features/feature_weekly_business_review.md) | 每周经营周报设计；销售、流量、广告、SKU、库存和风险行动建议。 |
 | [`docs/features/feature_weekly_ads_optimization_report.md`](docs/features/feature_weekly_ads_optimization_report.md) | 每周广告优化报表设计；输出 campaign/keyword/search term/SKU 广告动作清单。 |

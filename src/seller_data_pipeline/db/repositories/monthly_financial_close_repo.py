@@ -170,6 +170,40 @@ class MonthlyFinancialCloseRepo:
         finally:
             cursor.close()
 
+    def fetch_inventory_cost_identity_rows(
+        self,
+        *,
+        marketplace_id: str,
+        as_of_date: date,
+    ) -> list[dict[str, Any]]:
+        """Return historical FNSKU -> Seller SKU identities known by month end.
+
+        The service only uses this as a fallback when a Finances unit event SKU
+        has no direct amazon_sku_cost row. Multiple Seller SKUs for one FNSKU are
+        preserved so the service can fail closed instead of guessing.
+        """
+        cursor = self.connection.cursor()
+        try:
+            cursor.execute(
+                """
+                SELECT DISTINCT
+                    [marketplace_id],
+                    NULLIF(LTRIM(RTRIM([fnsku])), '') AS [fnsku],
+                    NULLIF(LTRIM(RTRIM([seller_sku])), '') AS [seller_sku],
+                    NULLIF(LTRIM(RTRIM([asin])), '') AS [asin]
+                FROM dbo.[amazon_inventory_daily]
+                WHERE [marketplace_id] = ?
+                  AND [snapshot_date] <= ?
+                  AND NULLIF(LTRIM(RTRIM([fnsku])), '') IS NOT NULL
+                  AND NULLIF(LTRIM(RTRIM([seller_sku])), '') IS NOT NULL
+                ORDER BY [fnsku], [seller_sku], [asin];
+                """,
+                (marketplace_id, as_of_date),
+            )
+            return rows_to_dicts(cursor)
+        finally:
+            cursor.close()
+
     def fetch_orders_period_summary(
         self,
         *,

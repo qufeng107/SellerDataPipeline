@@ -1,8 +1,8 @@
 # Feature: Finances API Natural-Month Ledger + Management P&L
 
-> 状态：v1.90 migration 016 Azure verified；v1.90.1 zero-value shipment COGS fix implemented locally / Gate 2 revalidation pending  
-> 版本：v1.90.1  
-> 更新时间：2026-08-09  
+> 状态：v1.90.1 ledger Azure Gate 2/3A/3B verified；v1.90.2 FNSKU cost identity resolution implemented locally / Gate 4 revalidation pending  
+> 版本：v1.90.2  
+> 更新时间：2026-08-10  
 > 数据库影响：新增 migration `016_create_finances_natural_month_ledger.sql`。  
 > 报表影响：Monthly Financial Close 升级到 `v1.5-natural-month-finances`；Settlement Close 保留独立口径。
 
@@ -151,6 +151,17 @@ Management Operating Profit
 
 其中 COGS unit events 来自 selected `Shipment` / `RemovalShipment` 的 item ProductContext SKU + quantity，并额外包含 v1.90.1 已验证的 `RELEASED Shipment amount=0` COGS-only unit；继续使用 `amazon_sku_cost` 的 effective-date 成本。金额 inclusion 与 COGS-unit inclusion 明确分离。
 
+v1.90.2 增加 **FNSKU -> canonical Seller SKU cost identity resolution**。Finances 的 liquidation/removal transaction 可能把 FNSKU 放在 `ProductContext.sku`，且不返回 ASIN；此时成本解析顺序冻结为：
+
+```text
+1. source SKU 直接命中 amazon_sku_cost -> 直接使用，永远优先
+2. source SKU 无直接成本 -> 在 amazon_inventory_daily 中按 FNSKU 查历史身份
+3. 截至目标月末只有 1 个唯一 Seller SKU -> 使用该 canonical Seller SKU 的 effective-date 成本
+4. FNSKU 对应多个 Seller SKU、无映射、或 canonical SKU 无有效成本 -> fail closed / needs_review
+```
+
+identity query 只读取 `snapshot_date <= target month end` 的库存快照，不使用未来月份身份；同一 FNSKU 即使存在多个 ASIN 观察值，只要 canonical Seller SKU 唯一即可解析。报告 JSON 额外记录 `cost_identity_resolutions`（例如 `X004WU7DSH->SC-9HC3-5TFL`），便于审计。
+
 Settlement 继续独立输出：
 
 ```text
@@ -183,27 +194,37 @@ finances_natural_month_coverage
 - natural-month SKU COGS 未全覆盖；
 - extracted unit count 与 costed unit count 不一致。
 
-## 7. 部署顺序
+## 7. Azure Gate 状态与部署顺序
 
-必须按以下顺序：
+截至 2026-08-10 已完成：
 
 ```text
-1. CI green
-2. 执行 migration 016
-3. 先 dry-run 2026-05 / 06 / 07
-4. 确认 review_required=0 + natural-month totals + units（May 94+5 / Jun 120+2 / Jul 58+4）
-5. execute backfill 2026-05 / 06 / 07
-6. SQL postcheck transaction IDs / local month / unit counts
-7. 更新 monthly jobs 镜像
-8. 只生成 report preview，不重发历史邮件
-9. 对 5/6/7 新报表再次与 Seller Central CSV 对账
-10. 最后才允许董事会汇总使用新 Management P&L
+Gate 1  migration 016 + schema postcheck                         PASS
+Gate 2  May/Jun/Jul natural-month amount + unit dry-run          PASS
+Gate 3A first execute backfill: 227 + 264 + 161 = 652 rows       PASS
+Gate 3B second execute: inserted=0, all 652 rows updated          PASS
+Gate 4  June report preview                                      PASS
+Gate 4  May/July report preview                                  BLOCKED only by FNSKU cost identity
 ```
+
+Gate 4 实测缺口：
+
+```text
+May  X004Q3AKFX -> inventory canonical SKU HU-4XAJ-PYLD
+     ASIN B0FD9W53FQ / Trading Card Binder
+     existing cost = USD 6.94 all-in
+
+July X004WU7DSH -> inventory canonical SKU SC-9HC3-5TFL
+     ASIN B0G1YF2ZBB / Grey Neck Wallet
+     existing cost = product 4.17 + first-mile 0.5271 USD
+```
+
+因此 v1.90.2 不补假成本、不人工复制 FNSKU 成本行，而是在报表计算时安全解析已有 canonical cost。下一步顺序：CI green -> 构建 v1.90.2 image -> 仅重跑 Gate 4 May/Jun/Jul preview -> 三个月 `status=ok`、`missing_cost_skus=[]`、costed units 99/122/62 后，再决定更新正式 monthly jobs。历史邮件继续不 force-resend。
 
 ## 8. 本地验收
 
 ```text
-PYTHONPATH=src pytest -q -> 366 passed
+PYTHONPATH=src pytest -q -> 370 passed
 python -m compileall -q src scripts tests -> passed
 ruff -> 本地环境未安装；CI Safety lint 不绕过
 ```

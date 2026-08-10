@@ -334,6 +334,7 @@ class NaturalMonthFinancialSummary:
     liquidation_units: int
     costed_units: int
     missing_cost_skus: tuple[str, ...]
+    cost_identity_resolutions: tuple[str, ...]
     product_cost_cogs: Decimal
     first_mile_cogs: Decimal
     packaging_cogs: Decimal
@@ -370,6 +371,7 @@ class NaturalMonthFinancialSummary:
             "liquidation_units": self.liquidation_units,
             "costed_units": self.costed_units,
             "missing_cost_skus": list(self.missing_cost_skus),
+            "cost_identity_resolutions": list(self.cost_identity_resolutions),
             "product_cost_cogs": _decimal_to_string(self.product_cost_cogs),
             "first_mile_cogs": _decimal_to_string(self.first_mile_cogs),
             "packaging_cogs": _decimal_to_string(self.packaging_cogs),
@@ -559,6 +561,13 @@ class MonthlyFinancialCloseDataRepo(Protocol):
         end_date: date,
     ) -> list[dict[str, Any]]: ...
 
+    def fetch_inventory_cost_identity_rows(
+        self,
+        *,
+        marketplace_id: str,
+        as_of_date: date,
+    ) -> list[dict[str, Any]]: ...
+
     def fetch_orders_period_summary(
         self,
         *,
@@ -650,6 +659,14 @@ class MonthlyFinancialCloseService:
                 start_date=start_date,
                 end_date=end_date,
             ),
+            inventory_cost_identity_rows=(
+                self.repo.fetch_inventory_cost_identity_rows(
+                    marketplace_id=marketplace_id,
+                    as_of_date=end_date,
+                )
+                if hasattr(self.repo, "fetch_inventory_cost_identity_rows")
+                else ()
+            ),
             orders_summary=self.repo.fetch_orders_period_summary(
                 marketplace_id=marketplace_id,
                 start_date=start_date,
@@ -698,6 +715,7 @@ class MonthlyFinancialCloseService:
         settlement_rows: Iterable[Mapping[str, Any]],
         finances_natural_month_rows: Iterable[Mapping[str, Any]] | None = None,
         sku_cost_rows: Iterable[Mapping[str, Any]] = (),
+        inventory_cost_identity_rows: Iterable[Mapping[str, Any]] = (),
         orders_summary: Mapping[str, Any] | None = None,
         ads_summary: Mapping[str, Any] | None = None,
         sales_traffic_summary: Mapping[str, Any] | None = None,
@@ -719,6 +737,7 @@ class MonthlyFinancialCloseService:
         settlement_lines = [line for line in settlement_lines if not line.is_settlement_summary]
         sku_costs = [SkuCostRecord.from_mapping(row) for row in sku_cost_rows]
         cost_index = _build_cost_index(sku_costs)
+        cost_identity_index = _build_cost_identity_index(inventory_cost_identity_rows)
 
         bucket_totals, bucket_counts = _sum_by_bucket(settlement_lines)
         category_totals, category_counts, category_bucket_index = _sum_by_category(settlement_lines)
@@ -813,6 +832,7 @@ class MonthlyFinancialCloseService:
         natural_month_finance = _build_natural_month_financial_summary(
             finance_rows=finance_natural_rows,
             cost_index=cost_index,
+            cost_identity_index=cost_identity_index,
             marketplace_id=marketplace_id,
             ads_api_report_date_spend=ads_api_report_date_spend,
             fallback_currency=currency,
@@ -1636,6 +1656,7 @@ def _build_natural_month_financial_summary(
     *,
     finance_rows: Sequence[Mapping[str, Any]],
     cost_index: Mapping[tuple[str, str], Sequence[SkuCostRecord]],
+    cost_identity_index: Mapping[tuple[str, str], Sequence[str]],
     marketplace_id: str,
     ads_api_report_date_spend: Decimal,
     fallback_currency: str | None,
@@ -1747,16 +1768,25 @@ def _build_natural_month_financial_summary(
     landed_cogs = ZERO
     costed_units = 0
     missing_cost_skus: set[str] = set()
+    cost_identity_resolutions: set[str] = set()
     for seller_sku, unit_events in sorted(events_by_sku.items()):
+        resolved_sku, resolution_note = _resolve_cost_identity(
+            cost_index=cost_index,
+            cost_identity_index=cost_identity_index,
+            marketplace_id=marketplace_id,
+            source_sku=seller_sku,
+        )
         cogs = _calculate_sku_cogs(
             cost_index=cost_index,
             marketplace_id=marketplace_id,
-            seller_sku=seller_sku,
+            seller_sku=resolved_sku or seller_sku,
             unit_events=unit_events,
             settlement_currency=currency,
         )
         if cogs.status != "ok":
             missing_cost_skus.add(seller_sku)
+        elif resolution_note:
+            cost_identity_resolutions.add(resolution_note)
         product_cogs += cogs.product_cost_cogs
         first_mile_cogs += cogs.first_mile_cogs
         packaging_cogs += cogs.packaging_cogs
@@ -1804,6 +1834,7 @@ def _build_natural_month_financial_summary(
         liquidation_units=liquidation_units,
         costed_units=costed_units,
         missing_cost_skus=tuple(sorted(missing_cost_skus)),
+        cost_identity_resolutions=tuple(sorted(cost_identity_resolutions)),
         product_cost_cogs=product_cogs,
         first_mile_cogs=first_mile_cogs,
         packaging_cogs=packaging_cogs,
@@ -2007,6 +2038,44 @@ def _calculate_sku_cogs(
         notes=tuple(notes),
         costed_units=costed_units,
     )
+
+def _build_cost_identity_index(
+    rows: Iterable[Mapping[str, Any]],
+) -> dict[tuple[str, str], tuple[str, ...]]:
+    candidates: dict[tuple[str, str], set[str]] = defaultdict(set)
+    for row in rows:
+        marketplace_id = str(row.get("marketplace_id") or "").strip()
+        fnsku = str(row.get("fnsku") or "").strip()
+        seller_sku = str(row.get("seller_sku") or "").strip()
+        if not marketplace_id or not fnsku or not seller_sku:
+            continue
+        candidates[(marketplace_id, fnsku)].add(seller_sku)
+    return {key: tuple(sorted(values)) for key, values in candidates.items()}
+
+
+def _resolve_cost_identity(
+    *,
+    cost_index: Mapping[tuple[str, str], Sequence[SkuCostRecord]],
+    cost_identity_index: Mapping[tuple[str, str], Sequence[str]],
+    marketplace_id: str,
+    source_sku: str,
+) -> tuple[str | None, str | None]:
+    # Direct Seller SKU cost always wins. FNSKU fallback is only used when the
+    # transaction SKU itself has no cost row. This prevents an inventory alias
+    # from silently overriding an explicitly maintained cost identity.
+    if cost_index.get((marketplace_id, source_sku)):
+        return source_sku, None
+
+    aliases = tuple(cost_identity_index.get((marketplace_id, source_sku), ()))
+    if len(aliases) != 1:
+        return None, None
+
+    resolved_sku = aliases[0]
+    if not cost_index.get((marketplace_id, resolved_sku)):
+        return None, None
+
+    return resolved_sku, f"{source_sku}->{resolved_sku}"
+
 
 def _build_cost_index(costs: Iterable[SkuCostRecord]) -> dict[tuple[str, str], list[SkuCostRecord]]:
     index: dict[tuple[str, str], list[SkuCostRecord]] = defaultdict(list)
