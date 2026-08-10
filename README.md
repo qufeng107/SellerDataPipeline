@@ -30,6 +30,8 @@ Amazon SP-API / Amazon Ads API / Seller Central raw exports
 
 详细进展见：[`docs/project/progress_next_steps.md`](docs/project/progress_next_steps.md)。
 
+> 2026-08-10：v1.90.3 修复 automation audit 对 Finances list-root ingestion JSON 的兼容性；业务 ingestion 成功后，审计 telemetry 不再因合法 JSON array 触发 `.get()` 异常。
+
 ## 文档入口
 
 本项目从现在开始以 `docs/` 作为正式文档目录。`requirements_to_be_deprecated/` 中的历史文档只作为迁移来源或兼容参考，不再作为新设计的主要维护位置；暂不建议直接删除，详见 `docs/project/requirements_deprecation_plan.md`。

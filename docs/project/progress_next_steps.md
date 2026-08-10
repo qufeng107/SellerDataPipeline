@@ -1,7 +1,7 @@
 # SellerDataPipeline 当前进展与下一步计划
 
 > 更新时间：2026-08-09  
-> 当前版本：v1.90.2 FNSKU Cost Identity Resolution implemented locally; Azure Gate 4 revalidation pending  
+> 当前版本：v1.90.3 Automation Audit Non-Object JSON Resilience implemented locally; production smoke revalidation pending  
 > 文档定位：记录项目真实进展、已完成里程碑、当前非阻塞问题和下一步开发顺序。本文不承载详细字段设计；功能细节见 `docs/features/`。
 
 ## 1. 当前一句话状态
@@ -741,3 +741,19 @@ v1.90.2 冻结并实现：
 - 无 migration、无需改已有 652 行 ledger。
 
 下一步：CI green -> build v1.90.2 image -> 仅重新运行 Gate 4 May/Jun/Jul report preview。预期三个月 `missing_cost_skus=[]`，costed units May=99、Jun=122、Jul=62；确认 Management P&L 后再更新正式 monthly jobs，历史 5/6/7 邮件不重发。
+
+## 1.0.13 2026-08-10 Automation Audit Non-Object JSON Resilience v1.90.3
+
+v1.90.2 已完成 Azure Gate 4：May/Jun/Jul 报告均 `status=ok`，cost coverage 完整；随后三个 monthly Container Apps Jobs 已切换到 v1.90.2。July 正式 `collect_ingest` smoke 中 11 个业务命令全部成功（`commands=11 failed=0`），Finances 161 行幂等更新、Settlement 1628 行幂等更新、coverage audit 均成功。
+
+smoke 在业务命令全部完成后发生 `AttributeError: 'list' object has no attribute 'get'`。根因不是 ingestion，而是 post-stage automation audit：`PipelineJobAuditService.insert_table_write_summaries_from_saved_artifacts()` 把所有 `runtime/ingestion/**/*.json` 都当成 object-shaped summary JSON；v1.90 新增的 Finances `raw_pages.json` / `prepared_rows.json` 合法地以 JSON array 为根，因此审计解析器调用 `.get()` 时崩溃，导致“成功的数据链路被非关键 telemetry 尾处理标记失败”。
+
+v1.90.3 修复原则：
+
+- table-write summary extraction 只解析 JSON object；array/scalar ingestion artifacts 直接跳过；
+- helper 自身也对 non-dict payload 返回空 summaries，双层防御；
+- automation audit 继续只做 best-effort telemetry，不应阻断已经成功的业务 pipeline；
+- 新增 unit test 覆盖 Finances-style list-root `prepared_rows.json`；
+- 无 migration、无 ledger/data rewrite、无需重跑 May/Jun/Jul backfill；
+- 下一步 CI green -> build v1.90.3 -> monthly jobs 更新镜像 -> 仅重跑 July `collect_ingest` smoke，要求 `commands=11 failed=0` 且 execution 最终成功、artifact_save 正常完成。
+

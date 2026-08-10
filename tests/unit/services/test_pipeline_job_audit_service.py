@@ -129,6 +129,54 @@ def test_pipeline_job_audit_service_extracts_table_write_summaries(tmp_path: Pat
     assert item.source_raw_file_path == "reports/raw/amazon/orders.txt"
 
 
+def test_pipeline_job_audit_service_skips_non_object_ingestion_json(tmp_path: Path) -> None:
+    repo = _FakeAuditRepo()
+    service = PipelineJobAuditService(repo=repo)  # type: ignore[arg-type]
+    service.job_run_id = 7
+    output_dir = tmp_path / "runtime" / "ingestion" / "finances_api"
+    output_dir.mkdir(parents=True)
+    prepared_rows_path = output_dir / "prepared_rows.json"
+    prepared_rows_path.write_text(
+        json.dumps(
+            [
+                {
+                    "transaction_id": "tx-1",
+                    "transaction_type": "Shipment",
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    from seller_data_pipeline.services.pipeline_artifact_service import (
+        ArtifactSaveResult,
+        SavedArtifact,
+    )
+
+    count = service.insert_table_write_summaries_from_saved_artifacts(
+        save_result=ArtifactSaveResult(
+            artifact_scope="monthly:scope",
+            dry_run=False,
+            scanned_count=1,
+            saved_artifacts=(
+                SavedArtifact(
+                    artifact_id=1,
+                    artifact_type="ingestion_output",
+                    relative_path=str(prepared_rows_path.relative_to(tmp_path)).replace("\\", "/"),
+                    content_size_bytes=10,
+                    compressed_size_bytes=8,
+                    content_sha256="a" * 64,
+                ),
+            ),
+            skipped_paths=(),
+        ),
+        root=tmp_path,
+    )
+
+    assert count == 0
+    assert repo.table_write_summaries == []
+
+
 def test_build_config_snapshot_omits_recipient_values() -> None:
     snapshot = build_config_snapshot(
         workflow="weekly",
