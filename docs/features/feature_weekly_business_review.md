@@ -1,5 +1,8 @@
 # Feature: Weekly Business Review
 
+> **v2 redesign note (2026-08-16):** Default presentation and correctness gates are superseded by `feature_weekly_reporting_pack_redesign.md` and ADR-017. Existing v1 details remain implementation/history reference until v2 rollout.
+
+
 > 文档状态：Implemented / pending live verification  
 > 负责人：AI + Feng  
 > 更新时间：2026-06-01  

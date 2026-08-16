@@ -776,3 +776,19 @@ artifact_save scanned=169 saved=169 skipped=0
 - `docs/operations/v190_natural_month_finances_rollout.md`
 - `docs/operations/monthly_financial_troubleshooting.md`
 
+## 2026-08-16 Weekly Reporting v2 Next Step
+
+Monthly reporting v2 has completed May/June/July golden validation and production report-delivery image rollout. The next reporting iteration is Weekly Reporting v2.
+
+Frozen design: `docs/features/feature_weekly_reporting_pack_redesign.md` + `docs/adr/ADR-017-weekly-operating-and-ads-action-reporting.md`.
+
+Implementation priority:
+
+1. marketplace-local Orders date;
+2. expected sales-channel filter;
+3. Sales & Traffic vs Orders sales/units fail-closed reconciliation;
+4. WBR 4-sheet decision-first workbook;
+5. WAOR recent-spend + mature-conversion dual-window;
+6. WAOR 5-sheet action-first workbook;
+7. historical golden tests, Azure preview, production rollout.
+
