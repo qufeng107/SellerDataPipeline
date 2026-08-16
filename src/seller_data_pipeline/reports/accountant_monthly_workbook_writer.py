@@ -147,7 +147,13 @@ def _write_summary(
             ("账单月参考利润", reference_profit, "参考", "管理/会计辅助", "Amazon交易净额 - 到岸COGS；非税务法定利润"),
             ("管理经营利润（备查）", nm.management_operating_profit, "备查", "不入会计主表", "经营月报口径；广告按Ads API实际发生"),
             ("Ads API当月广告消耗（备查）", -nm.ads_api_report_date_spend, "备查", "不替代账单凭证", "解释广告扣款时点差异"),
-            ("Transfer（备查，不计损益）", nm.transfer_reference, "备查", "银行/收款账户往来", "现金划转，不是收入或费用"),
+            (
+                "Transfer（备查，不计损益）",
+                _cash_transfer_display_amount(nm.transfer_reference),
+                "备查",
+                "银行/收款账户往来",
+                "按Amazon账户资金流方向显示；打款转出为负数，不是收入或费用",
+            ),
         )
 
     start = 12
@@ -341,7 +347,14 @@ def _write_checks(
     checks = (
         ("源交易行数", len(finance_rows), len(classified_rows), "source rows = classified rows", "通过" if len(finance_rows) == len(classified_rows) else "需复核", "分类明细不得丢行"),
         ("会计损益分类金额", classified_pnl, expected_accounting, "classified P&L = operating rows + posted ads reference", "通过" if abs(classified_pnl - expected_accounting) < Decimal("0.01") else "需复核", "Transfer和历史release reference不进入损益"),
-        ("Transfer", components.get("transfer_reference", ZERO), "排除损益", "cash reference only", "通过", "不作为收入或费用"),
+        (
+            "Transfer",
+            _cash_transfer_display_amount(components.get("transfer_reference", ZERO)),
+            "排除损益",
+            "cash reference only; payout outflow shown negative",
+            "通过",
+            "按Amazon账户资金流方向显示；不作为收入或费用",
+        ),
         ("未知非零分类", len(unknown_nonzero), 0, "must be zero", "通过" if not unknown_nonzero else "需复核", "新transaction type/status不得静默忽略"),
         ("COGS成本覆盖", cost_actual, cost_expected, "costed units = sales + liquidation units", "通过" if nm and cost_actual == cost_expected and not nm.missing_cost_skus else "需复核", f"missing_cost_skus={list(nm.missing_cost_skus) if nm else []}"),
         ("Seller Central人工核验", str(result.raw_metadata.get("seller_central_monthly_transaction_reconciliation_status") or "not_provided"), "optional", "manual export missing does not block", "参考", "收到官方Monthly Transaction时可额外逐项reconcile"),
@@ -375,6 +388,21 @@ def _write_checks(
     _fill_range(sheet, f"A{note_row}:F{note_row + 3}", LIGHT_BLUE)
     _apply_widths(sheet, {"A": 28, "B": 22, "C": 22, "D": 34, "E": 14, "F": 50})
     sheet.freeze_panes = "A4"
+
+
+def _cash_transfer_display_amount(amount: Decimal) -> Decimal:
+    """Display Amazon payout transfers using Seller Central cash-flow direction.
+
+    The normalized Finances ledger keeps Transfer as a positive cash-reference amount,
+    while Seller Central Monthly Transaction represents a payout from the Amazon
+    balance as a negative amount. Accounting-facing views use the latter convention
+    so the direction is explicit; the source sheet continues to preserve the raw
+    normalized ledger amount.
+    """
+
+    if amount == ZERO:
+        return ZERO
+    return -abs(amount)
 
 
 def _classify_row(row: Mapping[str, Any]) -> dict[str, Any]:
@@ -450,6 +478,12 @@ def _classify_row(row: Mapping[str, Any]) -> dict[str, Any]:
         )
         if part
     )
+    display_amount = (
+        _cash_transfer_display_amount(amount)
+        if role == "cash_transfer_reference" or transaction_type == "Transfer"
+        else amount
+    )
+
     return {
         "财务分类": classification,
         "建议会计项目": accounting_item,
@@ -461,7 +495,7 @@ def _classify_row(row: Mapping[str, Any]) -> dict[str, Any]:
         "transaction_id": row.get("transaction_id"),
         "order_id": row.get("order_id"),
         "description": row.get("description"),
-        "amount": amount,
+        "amount": display_amount,
         "currency": row.get("currency"),
         "management_role": role,
         "source_trace": source_trace,

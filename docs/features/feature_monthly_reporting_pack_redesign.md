@@ -539,6 +539,16 @@ FX 必须：
 
 禁止仅依赖红色或括号表达负数含义。
 
+会计底稿中的 `Transfer` 采用 Amazon 账户资金流方向显示：
+
+```text
+Amazon 向银行/收款账户打款 -> negative
+```
+
+例如 Seller Central Monthly Transaction 为 `-1848.64` 时，`01_会计汇总` 与
+`02_分类明细` 必须显示 `-$1,848.64`。`03_源交易明细` 仍保留 normalized Finances
+ledger 原始金额，避免破坏 source trace。Transfer 无论符号如何均排除 P&L。
+
 ## 11. 数据质量与 send guard
 
 本功能不放宽 ADR-015 financial controls。
