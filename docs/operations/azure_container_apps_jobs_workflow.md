@@ -1,6 +1,6 @@
 # Azure Container Apps Jobs Workflow
 
-> 更新时间：2026-05-25  
+> 更新时间：2026-08-10  
 > 文档定位：定义 SellerDataPipeline 从手动流程迁移到 Azure Container Apps Jobs 的运行方案。本文是 operations runbook，不定义业务指标口径；业务口径见 `docs/features/`。
 
 ---
@@ -53,6 +53,21 @@ Arguments override = -c, python scripts/run_automation_stage.py ...
 下一步：创建 `sdp-weekly-collect-ingest-dev`，再创建 `sdp-weekly-report-delivery-dev`。
 
 ---
+
+## 0.1 2026-08-10 production baseline
+
+Monthly official jobs 已完成 v1.90.3 rollout：
+
+```text
+Image SHA: 2fa19ad316720742d1871765fa0c1149c6b9fb9a
+sdp-monthly-submit
+sdp-monthly-collect-ingest
+sdp-monthly-report-delivery
+```
+
+永久 `collect_ingest` 命令已移除 `--continue-on-error`，保持 fail-closed。July final production smoke `sdp-monthly-collect-ingest-cbacfwp` 最终 `Succeeded`，`commands=11 failed=0`，artifact save 169/169。
+
+Natural-Month Finances rollout 详见 `v190_natural_month_finances_rollout.md`；月度排错详见 `monthly_financial_troubleshooting.md`。
 
 ## 1. 总原则
 
@@ -222,12 +237,7 @@ Example command pattern is maintained in:
 docs/operations/azure_container_apps_jobs_setup_checklist.md
 ```
 
-Important argument rule:
-
-```text
---command "/bin/sh"
---args "-c" "python scripts/run_automation_stage.py ..."
-```
+Container command model remains `/bin/sh -c ...`, but Azure CLI may misparse a container argument beginning with `-c` when changing a Job permanently via `az containerapp job update --args`. For one-off smoke tests prefer `job start --yaml`. For permanent command/args changes, export `properties.template`, modify with `jq`, PATCH only the template with `az rest --body @file`, then verify with `job show`. See `monthly_financial_troubleshooting.md`.
 
 
 ## 5. 推荐命令模型

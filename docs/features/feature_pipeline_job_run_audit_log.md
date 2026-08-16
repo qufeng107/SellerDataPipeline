@@ -1,9 +1,9 @@
 # Feature: Pipeline Job Run Audit Log
 
-> 文档状态：Implemented; migration 015 executed and schema exported  
+> 文档状态：Implemented / production path verified  
 > 负责人：AI + Feng  
-> 更新时间：2026-06-01  
-> 功能状态：Implemented; migration 015 已执行，repository/service/wrapper audit hooks 已接入，等待新镜像 job 产生首批审计记录  
+> 更新时间：2026-08-10  
+> 功能状态：migration 015 已执行；repository/service/wrapper hooks 已进入 production workflow；v1.90.3 修复 list-root artifact JSON 兼容并通过 July final smoke  
 > 相关功能：`docs/features/feature_automation_jobs_workflow.md`, `docs/features/feature_pipeline_artifact_store.md`, `docs/features/feature_report_delivery_email.md`  
 > 相关数据库 spec：`docs/database/database_current_schema_spec.md`  
 > 相关原则：先文档后实现、先 migration 后 spec、审计元数据入库、raw/report 文件继续由 `pipeline_artifact_store` 保存

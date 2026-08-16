@@ -200,11 +200,15 @@ def test_write_report_files_creates_json_and_xlsx(tmp_path: Path) -> None:
 
     written = MonthlyFinancialCloseService().write_report_files(result=result, output_root=tmp_path)
 
-    assert set(written.output_files) == {"json", "xlsx"}
+    assert set(written.output_files) == {"json", "xlsx", "operating_xlsx", "accounting_xlsx"}
     json_path = tmp_path / "ATVPDKIKX0DER/2026-03/monthly_financial_close_2026-03.json"
     xlsx_path = tmp_path / "ATVPDKIKX0DER/2026-03/monthly_financial_close_2026-03.xlsx"
+    operating_path = tmp_path / "ATVPDKIKX0DER/2026-03/monthly_operating_report_2026-03.xlsx"
+    accounting_path = tmp_path / "ATVPDKIKX0DER/2026-03/accountant_monthly_workbook_2026-03.xlsx"
     assert json_path.exists()
     assert xlsx_path.exists()
+    assert operating_path.exists()
+    assert accounting_path.exists()
     workbook = load_workbook(xlsx_path, read_only=True)
     assert workbook.sheetnames == [
         "00_Readme_说明",
@@ -226,6 +230,20 @@ def test_write_report_files_creates_json_and_xlsx(tmp_path: Path) -> None:
         "14_Payout_Recon",
         "15_Adjustments",
     ]
+    operating_workbook = load_workbook(operating_path, read_only=True)
+    assert operating_workbook.sheetnames == [
+        "01_月度经营总览",
+        "02_经营损益",
+        "03_核验与口径",
+    ]
+    accounting_workbook = load_workbook(accounting_path, read_only=True)
+    assert accounting_workbook.sheetnames == [
+        "01_会计汇总",
+        "02_分类明细",
+        "03_源交易明细",
+        "04_核验与说明",
+    ]
+
     accounting_sheet = workbook["09_Accounting_Summary"]
     assert accounting_sheet["A1"].value == "Sheet Purpose / 本表用途"
     assert accounting_sheet["B1"].value.startswith("按会计做账视角汇总")

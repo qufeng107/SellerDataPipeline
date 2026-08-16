@@ -58,6 +58,44 @@ def test_include_json_attachment(tmp_path: Path) -> None:
     assert (result.output_dir / "attachments" / report_json.name).exists()
 
 
+
+
+def test_monthly_delivery_prefers_operating_and_attaches_accounting_workbook(
+    tmp_path: Path,
+) -> None:
+    operating_path = tmp_path / "monthly_operating_report_2026-04.xlsx"
+    accounting_path = tmp_path / "accountant_monthly_workbook_2026-04.xlsx"
+    legacy_path = tmp_path / "monthly_financial_close_2026-04.xlsx"
+    for path in (operating_path, accounting_path, legacy_path):
+        path.write_bytes(b"fake xlsx content")
+    report_json = tmp_path / "monthly_financial_close_2026-04.json"
+    report = _minimal_report(
+        report_type="monthly_financial_close",
+        status="ok",
+        xlsx_path=str(legacy_path),
+    )
+    report["output_files"] = {
+        "xlsx": str(legacy_path),
+        "operating_xlsx": str(operating_path),
+        "accounting_xlsx": str(accounting_path),
+    }
+    report_json.write_text(json.dumps(report), encoding="utf-8")
+
+    result = ReportDeliveryPackService().generate_pack(
+        report_json_path=report_json,
+        audience="shareholders",
+        output_root=tmp_path / "delivery",
+    )
+
+    assert [attachment.kind for attachment in result.attachments] == [
+        "xlsx",
+        "accounting_xlsx",
+    ]
+    assert Path(result.attachments[0].source_path).name == operating_path.name
+    assert Path(result.attachments[1].source_path).name == accounting_path.name
+    assert (result.output_dir / "attachments" / operating_path.name).exists()
+    assert (result.output_dir / "attachments" / accounting_path.name).exists()
+
 def test_partial_report_is_allowed_for_operations_but_blocked_for_shareholders(
     tmp_path: Path,
 ) -> None:

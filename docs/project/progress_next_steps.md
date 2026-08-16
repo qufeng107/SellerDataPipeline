@@ -1,7 +1,7 @@
 # SellerDataPipeline 当前进展与下一步计划
 
-> 更新时间：2026-08-09  
-> 当前版本：v1.90.3 Automation Audit Non-Object JSON Resilience implemented locally; production smoke revalidation pending  
+> 更新时间：2026-08-10  
+> 当前版本：v1.90.3 Natural-Month Finances production verified  
 > 文档定位：记录项目真实进展、已完成里程碑、当前非阻塞问题和下一步开发顺序。本文不承载详细字段设计；功能细节见 `docs/features/`。
 
 ## 1. 当前一句话状态
@@ -23,8 +23,8 @@
 -> Azure Container Apps Jobs 自动化设计已修订为 free-first profile（GHCR + Azure SQL artifact store，v1 不用 Azure Files/ACR）
 -> pipeline_artifact_store migration + artifact save/restore service + run_automation_stage.py 本地 wrapper 已实现并完成本地 smoke
 -> GHCR 镜像已构建成功，dev tag 可用于 Azure manual dev jobs
--> Azure Container Apps Environment / smoke job / weekly submit dev job 已创建
--> sdp-weekly-submit-dev 已在 Azure 上执行成功，下一步创建 sdp-weekly-collect-ingest-dev
+-> Azure Container Apps weekly/monthly official jobs 已运行；monthly v1.90.3 已通过 production smoke
+-> Management P&L 已切换为 Finances API marketplace-local natural-month；Settlement Close 独立保留
 ```
 
 
@@ -744,16 +744,35 @@ v1.90.2 冻结并实现：
 
 ## 1.0.13 2026-08-10 Automation Audit Non-Object JSON Resilience v1.90.3
 
-v1.90.2 已完成 Azure Gate 4：May/Jun/Jul 报告均 `status=ok`，cost coverage 完整；随后三个 monthly Container Apps Jobs 已切换到 v1.90.2。July 正式 `collect_ingest` smoke 中 11 个业务命令全部成功（`commands=11 failed=0`），Finances 161 行幂等更新、Settlement 1628 行幂等更新、coverage audit 均成功。
+v1.90.2 Gate 4 已完成：May/Jun/Jul 报告均 `status=ok`、`source_status=ok`、`missing_cost_skus=[]`、`needs_review=[]`。最终 Management Operating Profit：May `548.35` (23.67%)、June `612.70` (21.35%)、July `-114.89` (-7.85%)。
 
-smoke 在业务命令全部完成后发生 `AttributeError: 'list' object has no attribute 'get'`。根因不是 ingestion，而是 post-stage automation audit：`PipelineJobAuditService.insert_table_write_summaries_from_saved_artifacts()` 把所有 `runtime/ingestion/**/*.json` 都当成 object-shaped summary JSON；v1.90 新增的 Finances `raw_pages.json` / `prepared_rows.json` 合法地以 JSON array 为根，因此审计解析器调用 `.get()` 时崩溃，导致“成功的数据链路被非关键 telemetry 尾处理标记失败”。
+v1.90.2 July 正式 `collect_ingest` smoke 的 11 个业务命令全部成功，但 post-stage automation audit 因 Finances `raw_pages.json` / `prepared_rows.json` 为合法 JSON array root，旧 helper 假设 object 并调用 `.get()`，导致尾部 `AttributeError`。v1.90.3 对 non-object JSON 做安全跳过，不改变业务 ingestion、ledger schema 或财务口径。
 
-v1.90.3 修复原则：
+最终 production rollout 已完成：
 
-- table-write summary extraction 只解析 JSON object；array/scalar ingestion artifacts 直接跳过；
-- helper 自身也对 non-dict payload 返回空 summaries，双层防御；
-- automation audit 继续只做 best-effort telemetry，不应阻断已经成功的业务 pipeline；
-- 新增 unit test 覆盖 Finances-style list-root `prepared_rows.json`；
-- 无 migration、无 ledger/data rewrite、无需重跑 May/Jun/Jul backfill；
-- 下一步 CI green -> build v1.90.3 -> monthly jobs 更新镜像 -> 仅重跑 July `collect_ingest` smoke，要求 `commands=11 failed=0` 且 execution 最终成功、artifact_save 正常完成。
+```text
+Image SHA: 2fa19ad316720742d1871765fa0c1149c6b9fb9a
+Monthly jobs: submit / collect_ingest / report_delivery 全部使用同一 v1.90.3 image
+collect_ingest: --execute，已移除 --continue-on-error
+```
+
+July final smoke：
+
+```text
+execution=sdp-monthly-collect-ingest-cbacfwp
+status=Succeeded
+2026-08-10T09:57:38Z -> 2026-08-10T10:09:32Z
+Finances attempted=161 inserted=0 updated=161 review_required=0
+Settlement attempted=1628 inserted=0 updated=1628
+Automation commands=11 failed=0
+artifact_save scanned=169 saved=169 skipped=0
+```
+
+没有再出现 `Traceback / AttributeError / ERROR`。v1.90-v1.90.3 Natural-Month Finances 升级正式收尾。历史 2026-05/06/07 delivery pack 不 force-resend。
+
+详细决策与运维：
+
+- `docs/adr/ADR-015-natural-month-management-pnl.md`
+- `docs/operations/v190_natural_month_finances_rollout.md`
+- `docs/operations/monthly_financial_troubleshooting.md`
 

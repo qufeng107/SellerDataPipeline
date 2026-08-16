@@ -111,14 +111,14 @@ tests/
 
 ## 7. 当前真实状态
 
-截至 2026-06-01，核心数据底座已经完成，报表层和第一层 Azure Jobs dev rollout 也已进入可验证阶段。已通过真实 Azure SQL execute 和第二次 execute 幂等性验证的模块包括：
+截至 2026-08-10，核心数据底座、正式 monthly Azure Jobs 和 Natural-Month Management P&L 已完成生产验证。已通过真实 Azure SQL execute 和第二次 execute 幂等性验证的模块包括：
 
 | 模块 | 状态 | 说明 |
 |---|---|---|
 | SP-API 连接测试 | 已实现 | 可验证 `marketplaceParticipations`。 |
 | SP-API Reports sampling | 已实现一批 | 已下载和分析多类 report，历史样例在 `requirements_to_be_deprecated/data_samples/`。 |
 | Amazon Ads sampling | 已实现 | 已获取 profile，并下载 Sponsored Products 多类报表。 |
-| Azure SQL 基础设施 | 已完成 | `001`-`012` 已执行成功，当前 29 张用户表；连接层支持 retry + warm-up。 |
+| Azure SQL 基础设施 | 已完成 | `001`-`016` 已执行成功，当前 36 张用户表；连接层支持 retry + warm-up。 |
 | Ads normalized ingestion | Implemented | 4 张 Ads SP 日表首次 inserted=200，重复执行 updated=200。 |
 | Listing normalized ingestion | Implemented | 首次 inserted=6，重复执行 updated=6。 |
 | Inventory snapshot ingestion | Implemented | 首次 inserted=5，重复执行 updated=5。 |
@@ -131,30 +131,30 @@ tests/
 | Inventory Ledger ingestion | Implemented | Summary + Detail 首次 inserted=357，重复执行 updated=357。 |
 | Manual operations workflow | Planned / documented | 已建立手动执行流程和数据更新周期目录。 |
 | Job cadence config table | Implemented | `012_create_ingestion_job_config.sql` 和 seed 001 已执行；seed 002 用于同步重叠窗口刷新策略。 |
-| 利润核算 | Preview implemented | 已冻结 Settlement-led Financial Profit v1.0；第一版手动利润 preview 已实现。 |
-| 周报/月报/广告优化报表 | Implemented / pending live verification | Monthly Financial Close v1.2、WBR v1.1、WAOR v1.1 已实现；下一步用真实周期重新生成并复核。 |
-| Azure Container Apps Jobs | Manual dev rollout in progress | GHCR dev image、sdp-smoke-dev、sdp-weekly-submit-dev 已验证；下一步 collect/ingest 与 report delivery dev jobs。 |
+| 利润核算 | Production verified | Management P&L 使用 Finances API `America/Los_Angeles` natural month + Ads report-date + landed COGS；Settlement Close 独立保留。 |
+| 周报/月报/广告优化报表 | Monthly production verified / weekly backlog | Monthly Financial Close v1.5 May/Jun/Jul 已生产级复核；WBR/WAOR 继续按独立 backlog 做 live verification。 |
+| Azure Container Apps Jobs | Production running | weekly/monthly official jobs 已运行；monthly v1.90.3 final smoke `Succeeded`，collect_ingest fail-closed。 |
 
 ## 8. 下一阶段主线
 
-核心 normalized ingestion 已收尾。下一阶段采用 manual-first 策略：
+核心 normalized ingestion 与 monthly production rollout 已收尾。下一阶段采用“稳定运行 + 异常 fail-closed + 渐进扩市场”策略：
 
 ```text
-手动下载 raw data
--> 手动入库 normalized tables
--> 每 2 天核心源重叠刷新
--> 每周手动加工利润 preview 和周报
--> 手动复核并发送邮件
--> 再迁移到 Azure Container Apps Jobs
+生产 monthly jobs 稳定运行
+-> Finances natural-month / Settlement close 分层监控
+-> review_required / cost coverage 异常 fail closed
+-> weekly WBR / WAOR 独立 live verification
+-> 新 marketplace 先冻结 timezone / currency / reconciliation 样本
+-> 再渐进扩国际市场
 ```
 
 建议顺序：
 
-1. 执行 seed 002 更新 `pipeline_job_config` 刷新窗口，再运行 stable coverage audit 确认 2026 YTD 覆盖。
-2. 录入/导入 SKU 成本与头程/海运成本，并验证缺成本阻塞规则。
-3. 用真实周期数据人工复核利润 preview，分析产物最短按周。
-4. 开发手动周报/月报输出。
-5. 先人工复核和邮件发送，再自动化 Jobs。
+1. 连续观察后续 1-2 个自然月 production run，确认没有新 lifecycle/type 或成本身份缺口。
+2. 月度异常统一按 `docs/operations/monthly_financial_troubleshooting.md` 排查，不直接 repair 数据。
+3. 继续维护 `amazon_sku_cost` 与 inventory FNSKU identity coverage。
+4. 完成 WBR / WAOR 当前周期 live verification；历史 weekly 不补发。
+5. 新 marketplace 接入前先补 marketplace timezone / currency metadata 和专用自然月 reconciliation。
 
 ## 9. 文档体系关系
 

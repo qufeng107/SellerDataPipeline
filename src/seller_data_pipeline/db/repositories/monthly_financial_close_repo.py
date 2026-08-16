@@ -115,14 +115,17 @@ class MonthlyFinancialCloseRepo:
                     [marketplace_id], [transaction_id], [transaction_status],
                     [transaction_type], [description], [posted_at_utc], [posted_at_local],
                     [posted_date_local], [marketplace_timezone], [amount], [currency],
-                    [settlement_id], [order_id], [management_role], [management_include],
+                    [settlement_id], [order_id], [deferred_transaction_id],
+                    [release_transaction_id], [management_role], [management_include],
                     [management_replace_with_ads_api], [review_required],
                     [product_sales_amount], [shipping_amount], [promotion_amount],
                     [fba_fulfillment_fee], [shipping_chargeback], [refund_product_amount],
                     [refund_shipping_amount], [refund_promotion_amount],
                     [liquidation_revenue], [liquidation_fee], [subscription_fee],
                     [coupon_fee], [deal_fee], [storage_fee], [customer_return_fee],
-                    [other_service_fee], [unit_events_json]
+                    [other_service_fee], [unit_events_json],
+                    [related_identifiers_json], [raw_transaction_json],
+                    [raw_transaction_hash], [business_key_hash]
                 FROM dbo.[amazon_finance_transaction]
                 WHERE [marketplace_id] = ?
                   AND [posted_date_local] >= ?

@@ -1,6 +1,6 @@
 # Amazon 数据接入总目录
 
-> 更新时间：2026-08-09  
+> 更新时间：2026-08-10  
 > 文档定位：SellerDataPipeline 的 Amazon 数据接入总览。本文只回答“能从哪里拿到什么原始数据，以及当前取样/解析状态如何”。业务功能设计见 `docs/features/`；当前真实数据库结构见 `docs/database/database_current_schema_spec.md`。
 
 ## 1. 接入范围总览
@@ -10,7 +10,7 @@
 | 数据源 | 主要获取方式 | 原始文件/响应结构 | 当前状态 | 正式子文档 |
 |---|---|---|---|---|
 | SP-API Reports | `createReport` / `getReports` / `getReportDocument`；settlement 使用 Amazon-generated report discovery | TSV/TXT flat file 或 report-specific JSON | 核心经营、库存、订单、财务、促销和库存流水类报告已完成取样；其中主要报告已真实入库并通过幂等验证 | [`sp_api_reports_catalog.md`](sp_api_reports_catalog.md) |
-| SP-API Finances v2024-06-19 | `listTransactions` | JSON transactions / items / contexts / recursive breakdowns | v1.89 live reconciliation completed；v1.90 normalized SQL + Management P&L implemented；v1.90.1 zero-value Shipment COGS-unit correction pending Azure Gate 2 revalidation | [`../features/feature_finances_api_natural_month_sampling.md`](../features/feature_finances_api_natural_month_sampling.md) |
+| SP-API Finances v2024-06-19 | `listTransactions` | JSON transactions / items / contexts / recursive breakdowns | v1.89 live reconciliation completed；v1.90-v1.90.3 normalized natural-month ledger + Management P&L production verified；May/Jun/Jul Seller Central reconciliation、COGS/FNSKU identity、idempotency 均通过 | [`../features/feature_finances_api_natural_month_ledger.md`](../features/feature_finances_api_natural_month_ledger.md) |
 | Amazon Ads API | Profiles API + Reporting v3 create/status/download | JSON top-level array；profile response JSON | US Ads profile 已发现；4 类 Sponsored Products 日报已真实入库并验证幂等性；`spPurchasedProduct` 当前样例为空 | [`amazon_ads_reports_catalog.md`](amazon_ads_reports_catalog.md) |
 | Seller Central 手动导出 | 后台页面手工下载 CSV/TSV/XLSX | 取决于页面和报表 | 当前仅作为 fallback 和人工补充路径，不作为第一优先自动化路径 | [`seller_central_manual_exports.md`](seller_central_manual_exports.md) |
 

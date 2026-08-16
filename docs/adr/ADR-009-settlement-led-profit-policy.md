@@ -1,4 +1,5 @@
 # ADR-009: Settlement-led Profit Calculation Policy
+> 2026-08-10 status note: ADR-015 supersedes this ADR as the sole Management P&L policy. Settlement-led logic remains valid for Settlement Close / accounting / cash reconciliation.
 
 > 状态：Accepted  
 > 日期：2026-05-18；更新：2026-06-01  
