@@ -2,9 +2,9 @@
 
 > 文档状态：Implemented / in production observation  
 > 负责人：AI + Feng  
-> 更新时间：2026-08-09  
-> 功能状态：Implemented / v1.4 Settlement correctness query guard 已完成本地实现，待 v1.88 Azure 历史修复与月报复核  
-> 设计版本：v1.4-settlement-correctness  
+> 更新时间：2026-08-10  
+> 功能状态：Production verified / v1.5 Natural-Month Management P&L  
+> 设计版本：v1.5-natural-month-finances  
 > 相关数据接入文档：`docs/data_access/sp_api_reports_catalog.md`, `docs/data_access/amazon_ads_reports_catalog.md`, `docs/data_access/seller_central_manual_exports.md`  
 > 相关数据库 spec：`docs/database/database_current_schema_spec.md`  
 > 相关功能：`docs/features/feature_profit_calculation.md`, `docs/features/feature_sku_cost_management.md`, `docs/operations/manual_refresh_plan_workflow.md`, `docs/operations/historical_backfill_workflow.md`  
@@ -20,14 +20,20 @@ Monthly Financial Close Report（月度财务结算报表）是 SellerDataPipeli
 这个月在 Amazon 美国站，按 Amazon 实际 Settlement 财务结算口径赚了多少钱；如果把广告费按 Ads API 投放发生日期重列，这个月经营上到底赚了多少钱？
 ```
 
-本功能继续保留已冻结的 `Settlement-led Financial Profit v1.0` 作为财务/会计主口径，并从 v1.2 起新增管理经营口径，用于解决广告账单 posted-date 与广告实际投放 report-date 错位导致的利润误读问题：
+当前月报正式维护两个并列、不同用途的视图：
 
 ```text
-Amazon 财务金额以 Settlement / Payments / Flat File V2 入库后的 amazon_settlement_transaction 为主。
-内部商品成本以 amazon_sku_cost 为主。
-Orders / Sales & Traffic / Ads / Promotion / Coupon / FBA Reimbursements 用于运营解释、交叉校验和辅助指标，不反向覆盖财务主口径。
-月报必须同时展示 Settlement-led estimated profit 与 Management estimated profit with report-date ads；后者只用于经营复盘，不替代会计结算口径。
+Management Operating P&L
+  = Finances API marketplace-local natural month
+  + Ads API report-date spend replacement
+  + natural-month landed COGS
+
+Settlement Close
+  = Settlement / Payments posted-release timing
+  = 会计、Amazon close、现金/银行对账参考
 ```
+
+Settlement 不再作为 Management P&L 的月份主源；Orders / Sales & Traffic / Promotion / Coupon / Reimbursements 继续用于运营解释和 reconciliation。详细架构决策见 `ADR-015-natural-month-management-pnl.md`。
 
 v1 不新增数据库结果表，不自动发送邮件，不生成正式 PDF；先输出文件型月结结果，供人工复核、会计沟通、股东/管理层月度回顾使用。
 
@@ -46,9 +52,9 @@ v1.4 / v1.88 不修改 P&L 业务公式，专门收紧 Settlement 输入口径�
 | 项目 | 状态 |
 |---|---|
 | 需求确认 | 已确认：先做 Monthly Financial Close Report，再做 Weekly Business Review 和 Weekly Ads Optimization Report。 |
-| 口径依赖 | 财务/会计主口径仍冻结为 Settlement-led Financial Profit v1.0；v1.2 新增 report-date Ads 管理经营口径，不替代会计结算口径。 |
-| 数据源可用性 | 足够支持 v1：Settlement、SKU Cost、Sales & Traffic、Orders、Ads、Promotion/Coupon、Reimbursements 均已入库并验证过。 |
-| 设计状态 | v1 已实现；v1.1 会计做账辅助包已实现；v1.2 双利润口径与广告跨期对账已完成代码对齐。 |
+| 口径依赖 | Management P&L 已冻结为 Finances natural month + Ads report-date + landed COGS；Settlement Close 独立作为会计/结算视图。 |
+| 数据源可用性 | Production verified：Finances natural-month ledger、Settlement、SKU Cost、Sales & Traffic、Orders、Ads、Promotion/Coupon、Reimbursements 均可用。 |
+| 设计状态 | v1-v1.4 历史演进已实现；v1.5 Natural-Month Management P&L 已完成 May/Jun/Jul Azure 生产级验证。 |
 | 数据库变更 | v1 不新增数据库表，不新增 migration。 |
 | 代码实现 | 已实现 v1/v1.1/v1.2：service / repo / CLI / unit tests 已支持双利润口径、`02_Management_PnL`、`03_Ads_Timing_Recon` 和会计辅助包；待真实 Azure SQL 周期重新生成并人工复核。 |
 | 默认输出形式 | `monthly_financial_close_{YYYY-MM}.json` + `monthly_financial_close_{YYYY-MM}.xlsx`。当前代码生成 `01_Summary`、`02_Management_PnL`、`03_Ads_Timing_Recon`、核心明细 sheet 与会计辅助 sheet；`01_Summary` 已包含双利润指标。 |
@@ -1896,3 +1902,16 @@ Default presentation artifacts must be bilingual:
 ## 2.3 v1.5 / v1.90 Natural-Month Management P&L
 
 Management P&L 已从 Settlement posted-date operating rows 切换为 `amazon_finance_transaction` 的 marketplace-local natural-month ledger。Amazon US 使用 `America/Los_Angeles`。Ads 仍使用 Ads API report-date spend；Finances `ProductAdsPayment` 只作 posted-charge reconciliation reference。Settlement Close Profit 保留为独立 accounting/close reference。详细 lifecycle policy、migration 016 与三个月 live reconciliation 证据见 `feature_finances_api_natural_month_ledger.md`。
+
+
+## 24. 2026-08-10 v1.5 production verification
+
+Management P&L 已切换为 Finances API marketplace-local natural month；May/Jun/Jul preview 全部 `status=ok`、`source_status=ok`、`missing_cost_skus=[]`、`needs_review=[]`。
+
+| Month | Product Sales | Landed COGS | Ads API Spend | Management Profit | Margin | Settlement Close Profit |
+|---|---:|---:|---:|---:|---:|---:|
+| 2026-05 | 2316.38 | 467.25 | 544.66 | 548.35 | 23.67% | 39.02 |
+| 2026-06 | 2870.06 | 573.05 | 539.25 | 612.70 | 21.35% | 1130.93 |
+| 2026-07 | 1464.14 | 291.23 | 555.63 | -114.89 | -7.85% | 444.55 |
+
+May / July liquidation FNSKU 已通过唯一历史 inventory identity 解析 canonical Seller SKU 成本。v1.90.3 July production smoke 最终 `Succeeded`。详见 `feature_finances_api_natural_month_ledger.md`、`ADR-015-natural-month-management-pnl.md` 和 `operations/v190_natural_month_finances_rollout.md`。

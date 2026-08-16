@@ -125,9 +125,9 @@ docs/
 18. 已实现功能：[`features/feature_fba_reimbursements_ingestion.md`](features/feature_fba_reimbursements_ingestion.md)，`008` 已执行，dry-run / execute / 幂等性验证已完成
 19. 已实现功能：[`features/feature_fba_fee_preview_ingestion.md`](features/feature_fba_fee_preview_ingestion.md)，009 已执行，专用 dry-run 已完成，已完成 execute/幂等验证
 20. 已实现功能：[`features/feature_ingestion_job_config.md`](features/feature_ingestion_job_config.md)，012 和 seed 已执行，当前 `pipeline_job_config` 13 行
-21. 已实现/规划功能：[`features/feature_profit_calculation.md`](features/feature_profit_calculation.md)，利润口径已冻结为 Settlement-led Financial Profit v1.0，当前已实现利润 preview
+21. 历史利润设计：[`features/feature_profit_calculation.md`](features/feature_profit_calculation.md)；当前 Management P&L 已由 ADR-015 / Finances natural-month ledger 接管，Settlement-led 逻辑保留为 Settlement Close
 22. 已实现功能：[`features/feature_sku_cost_management.md`](features/feature_sku_cost_management.md)，通过 xlsx 模板导出/导入维护 `amazon_sku_cost`
-23. 已冻结设计：[`features/feature_monthly_financial_close_report.md`](features/feature_monthly_financial_close_report.md)，基于 Settlement-led Financial Profit 生成月度 CEO/CFO 财务结算报表
+23. Production verified：[`features/feature_monthly_financial_close_report.md`](features/feature_monthly_financial_close_report.md)，Management Natural-Month P&L + Settlement Close 双视图月报
 24. 已冻结设计：[`features/feature_weekly_business_review.md`](features/feature_weekly_business_review.md)，基于 Sales & Traffic / Orders / Ads / SKU Cost / Inventory 生成每周经营复盘
 25. 已冻结设计：[`features/feature_weekly_ads_optimization_report.md`](features/feature_weekly_ads_optimization_report.md)，基于 Sponsored Products Ads 数据生成每周广告优化动作清单
 26. 已冻结设计：[`features/feature_automation_jobs_workflow.md`](features/feature_automation_jobs_workflow.md)，基于 Azure Container Apps Jobs 的三阶段自动化工作流；2026-05-24 修订为 free-first profile，跨 job 文件通过 Azure SQL artifact store 持久化
@@ -189,3 +189,9 @@ sql/migrations/011_add_inventory_ledger_business_keys.sql
 ```
 
 Promotion/Coupon 用于优惠券、折扣、会员日/Prime Day 等活动效果分析，已完成入库验收；Inventory Ledger 用于库存 movement 与库存审计，已完成 execute/幂等验证。周报中的当前库存余额仍优先来自 `amazon_inventory_daily`，Ledger 用于解释库存变化。
+
+## 2026-08-10 Natural-Month Finances closeout
+
+- [`adr/ADR-015-natural-month-management-pnl.md`](adr/ADR-015-natural-month-management-pnl.md)
+- [`operations/v190_natural_month_finances_rollout.md`](operations/v190_natural_month_finances_rollout.md)
+- [`operations/monthly_financial_troubleshooting.md`](operations/monthly_financial_troubleshooting.md)

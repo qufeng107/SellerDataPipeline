@@ -1,7 +1,7 @@
 # SellerDataPipeline 当前真实数据库 Schema Spec
 
-> 文档版本：v1.16  
-> 更新日期：2026-05-29  
+> 文档版本：v1.17  
+> 更新日期：2026-08-10  
 > 文档定位：**当前真实实现记录**。本文件只记录已经在 Azure SQL `amazon_ops` 执行成功的表、字段、索引与数据来源；不写未来设计。设计变更请先更新对应的 `docs/features/feature_*.md` 或 `docs/data_access/*.md`；如涉及库结构变化，先对比本文件，再新增 migration；migration 执行成功后优先运行 `scripts/export_database_schema_spec.py` 导出 live schema snapshot，再更新本文件。
 
 ## 1. 当前数据库状态
@@ -10,23 +10,29 @@
 |---|---|
 | Azure SQL database | `amazon_ops` |
 | Server | `amazon-ops-sql` |
-| 已执行 migration | `001_create_core_tables.sql` 29/29 batches；`002_create_indexes.sql` 54/54 batches；`003_add_listing_snapshot_business_key_hash.sql` 3/3 batches；`004_add_inventory_daily_business_key_hash.sql` 3/3 batches；`005_add_sales_traffic_business_key_hashes.sql` 5/5 batches；`006_add_settlement_transaction_business_key.sql` 4/4 batches；`007_add_order_item_business_key.sql` 4/4 batches；`008_add_fba_reimbursement_business_key.sql` 4/4 batches；`009_add_fba_fee_preview_business_key.sql` 4/4 batches；`010_add_promotion_coupon_business_keys.sql` 8/8 batches；`011_add_inventory_ledger_business_keys.sql` 4/4 batches；`012_create_ingestion_job_config.sql` 4/4 batches；`001_seed_ingestion_job_config_core_jobs.sql` 1/1 batch；`013_create_report_email_recipient_config.sql` 3/3 batches；`003_seed_report_email_recipient_config_initial.sql` 2/2 batches；`014_create_pipeline_artifact_store.sql` 5/5 batches；`015_create_pipeline_job_run_audit_tables.sql` 17/17 batches |
-| 用户表数量 | 35 |
-| 已真实入库验证 | Amazon Ads 4 张 SP 日表，首次 inserted=200、重复执行 inserted=0/updated=200；Listing 快照表首次 inserted=6、重复执行 inserted=0/updated=6；Inventory 快照表首次 inserted=5、重复执行 inserted=0/updated=5；Sales & Traffic 首次 inserted=7、重复执行 inserted=0/updated=7；Settlement 首次 inserted=4911、重复执行 inserted=0/updated=4911；Orders 首次 inserted=112、重复执行 inserted=0/updated=112；FBA Reimbursements 首次 inserted=19、重复执行 inserted=0/updated=19；FBA Fee Preview 首次 inserted=8、重复执行 inserted=0/updated=8；Promotion/Coupon 首次 inserted=10、重复执行 inserted=0/updated=10；Inventory Ledger 首次 inserted=357、重复执行 inserted=0/updated=357 |
-| 当前限制 | `amazon_sync_run_log` 尚无 rows_inserted / rows_updated 字段；normalized 表当前 `source_raw_file_id` 仍可能为 NULL；`pipeline_job_config` 已创建并 seed 13 条任务配置，其中利润、周报、邮件任务仍可能按 automation rollout 需要保持 disabled placeholder，报表/邮件功能代码已实现，启用由后续 job rollout 控制；`report_email_recipient_config` 已创建并 seed 3 条全局收件人路由；`pipeline_job_run` / `pipeline_job_command_run` / `pipeline_job_artifact_link` / `pipeline_job_table_write_summary` 已创建，等待新镜像 job 首次写入审计记录 |
+| 已执行 migration | `001_create_core_tables.sql` 29/29 batches；`002_create_indexes.sql` 54/54 batches；`003_add_listing_snapshot_business_key_hash.sql` 3/3 batches；`004_add_inventory_daily_business_key_hash.sql` 3/3 batches；`005_add_sales_traffic_business_key_hashes.sql` 5/5 batches；`006_add_settlement_transaction_business_key.sql` 4/4 batches；`007_add_order_item_business_key.sql` 4/4 batches；`008_add_fba_reimbursement_business_key.sql` 4/4 batches；`009_add_fba_fee_preview_business_key.sql` 4/4 batches；`010_add_promotion_coupon_business_keys.sql` 8/8 batches；`011_add_inventory_ledger_business_keys.sql` 4/4 batches；`012_create_ingestion_job_config.sql` 4/4 batches；`001_seed_ingestion_job_config_core_jobs.sql` 1/1 batch；`013_create_report_email_recipient_config.sql` 3/3 batches；`003_seed_report_email_recipient_config_initial.sql` 2/2 batches；`014_create_pipeline_artifact_store.sql` 5/5 batches；`015_create_pipeline_job_run_audit_tables.sql` 17/17 batches；`016_create_finances_natural_month_ledger.sql` 3/3 batches |
+| 用户表数量 | 36 |
+| 已真实入库验证 | Amazon Ads 4 张 SP 日表，首次 inserted=200、重复执行 inserted=0/updated=200；Listing 快照表首次 inserted=6、重复执行 inserted=0/updated=6；Inventory 快照表首次 inserted=5、重复执行 inserted=0/updated=5；Sales & Traffic 首次 inserted=7、重复执行 inserted=0/updated=7；Settlement 首次 inserted=4911、重复执行 inserted=0/updated=4911；Orders 首次 inserted=112、重复执行 inserted=0/updated=112；FBA Reimbursements 首次 inserted=19、重复执行 inserted=0/updated=19；FBA Fee Preview 首次 inserted=8、重复执行 inserted=0/updated=8；Promotion/Coupon 首次 inserted=10、重复执行 inserted=0/updated=10；Inventory Ledger 首次 inserted=357、重复执行 inserted=0/updated=357；Finances natural-month ledger May/Jun/Jul 首次 backfill 227/264/161（共 652），第二次 execute inserted=0/updated=227/264/161，transaction IDs 全唯一、review_required=0 |
+| 当前限制 | `amazon_sync_run_log` 尚无 rows_inserted / rows_updated 字段；normalized 表当前 `source_raw_file_id` 仍可能为 NULL；`pipeline_job_config` 已创建并 seed 13 条任务配置，其中利润、周报、邮件任务仍可能按 automation rollout 需要保持 disabled placeholder，报表/邮件功能代码已实现，启用由后续 job rollout 控制；`report_email_recipient_config` 已创建并 seed 3 条全局收件人路由；`pipeline_job_run` / `pipeline_job_command_run` / `pipeline_job_artifact_link` / `pipeline_job_table_write_summary` 已创建；automation audit path 已在 v1.90.3 production smoke 验证，本文未重新导出其最新 row counts |
 
 ## 1.1 最新执行记录
 
-`015_create_pipeline_job_run_audit_tables.sql` 已在 Azure SQL `amazon_ops` 执行成功，执行结果为 17/17 batches。随后已运行 `scripts/export_database_schema_spec.py --output-prefix after_015_pipeline_job_run_audit --include-row-counts` 导出 live schema snapshot。
+`015_create_pipeline_job_run_audit_tables.sql` 已执行 17/17 batches，并曾导出 `after_015_pipeline_job_run_audit` live schema snapshot。2026-08-10 又执行 `016_create_finances_natural_month_ledger.sql` 3/3 batches；Azure postcheck 已确认 `dbo.amazon_finance_transaction`、unique business-key index 和 marketplace/local-date index 存在。
 
-最新 live schema 已导出到：
+当前仓库中最近一次自动导出的 schema snapshot 仍是：
 
 ```text
 runtime/schema_exports/after_015_pipeline_job_run_audit.json
 runtime/schema_exports/after_015_pipeline_job_run_audit.md
 ```
 
-导出结果显示当前用户表数量为 35，`pipeline_job_run`、`pipeline_job_command_run`、`pipeline_job_artifact_link`、`pipeline_job_table_write_summary` 已存在。该审计表组用于保存 weekly/monthly automation job 的结构化运行审计、子命令状态、artifact lineage 和 normalized table write summary；不保存 secrets，不替代 Log Analytics 的完整 stdout/stderr，也不替代 `pipeline_artifact_store` 的 raw/report 文件证据。
+因此该 snapshot 本身仍显示 35 张表；本文已根据 migration 016 + Azure postcheck 手工同步到当前 36 张表。后续方便时应再运行：
+
+```bash
+python scripts/export_database_schema_spec.py --output-prefix after_016_finances_natural_month --include-row-counts
+```
+
+Finances ledger 的生产验证为 May/Jun/Jul 共 652 rows，第二次 execute `inserted=0`、全部更新原交易；July v1.90.3 production smoke 再次幂等更新 161 rows 并最终 `Succeeded`。
 
 ## 1.2 Schema 更新辅助工具
 
@@ -68,6 +74,7 @@ python scripts/export_database_schema_spec.py --output-prefix after_NNN_xxx --in
 | `amazon_sales_traffic_daily` | 销售流量-日期 | GET_SALES_AND_TRAFFIC_REPORT.salesAndTrafficByDate | 日期维度销售额、订单、退款、sessions、page views、转化率。 |
 | `amazon_schema_validation_event` | schema 守门 | 下载后/入库前 schema validation | 字段漂移、缺字段、新字段、requires_review 和通知状态。 |
 | `amazon_settlement_transaction` | 结算明细 | GET_V2_SETTLEMENT_REPORT_DATA_FLAT_FILE_V2 | 实际入账财务明细、费用、退款、广告扣费、Coupon/Deal 费用、分类字段。 |
+| `amazon_finance_transaction` | Finances natural-month ledger | SP-API Finances v2024-06-19 `listTransactions` | marketplace-local transaction ledger；保存 lifecycle role、local posted date、breakdown amounts、unit events、raw transaction，用于 Management P&L。 |
 | `amazon_sku_cost` | 成本配置 | 手工维护/会计成本输入 | SKU 采购、头程、包装等单位成本。 |
 | `amazon_sync_run_log` | 审计控制 | 所有采集/解析/入库任务 | 任务运行状态、行数、耗时、错误信息。 |
 | `pipeline_job_config` | 任务配置 | 手动 seed / 未来自动化配置 | 数据下载、入库、加工、报表和邮件任务的周期、脚本路径、默认参数和执行阶段。 |
@@ -146,6 +153,8 @@ python scripts/export_database_schema_spec.py --output-prefix after_NNN_xxx --in
 | `amazon_settlement_transaction` | `IX_amazon_settlement_transaction_settlement` | 否 | `marketplace_id, settlement_id, is_settlement_summary, transaction_type` | `` |
 | `amazon_settlement_transaction` | `IX_amazon_settlement_transaction_source` | 否 | `source_report_id, source_row_hash` | `` |
 | `amazon_settlement_transaction` | `UX_amazon_settlement_transaction_business_key_hash` | 是 | `business_key_hash` | `([business_key_hash] IS NOT NULL)` |
+| `amazon_finance_transaction` | `UX_amazon_finance_transaction_business_key_hash` | 是 | `business_key_hash` | `` |
+| `amazon_finance_transaction` | `IX_amazon_finance_transaction_marketplace_local_date` | 否 | `marketplace_id, posted_date_local` INCLUDE `transaction_type, transaction_status, amount, currency, management_include, review_required` | `` |
 | `amazon_sku_cost` | `IX_amazon_sku_cost_effective` | 否 | `marketplace_id, seller_sku, effective_from, effective_to` | `` |
 | `amazon_sync_run_log` | `IX_amazon_sync_run_log_job_started` | 否 | `job_name, started_at DESC` | `` |
 | `amazon_sync_run_log` | `IX_amazon_sync_run_log_status_started` | 否 | `status, started_at DESC` | `` |
@@ -1556,6 +1565,60 @@ python scripts/export_database_schema_spec.py --output-prefix after_NNN_xxx --in
 | `summary_json` | `NVARCHAR(MAX)` | NULL | `` | 表写入摘要 JSON，受 `ISJSON` check constraint 约束。 |
 | `created_at` | `DATETIME2(7)` | NOT NULL | `(sysutcdatetime())` | 数据库记录创建时间 UTC。 |
 
+### 4.36 `amazon_finance_transaction`
+
+- 数据来源：SP-API Finances v2024-06-19 `listTransactions`
+- 表用途：保存 marketplace-local natural-month financial transaction ledger，供 Management Operating P&L 使用；Settlement Close 仍读取 `amazon_settlement_transaction`。
+- 幂等键：`marketplace_id + transaction_id -> business_key_hash`
+- 当前索引：`UX_amazon_finance_transaction_business_key_hash`（unique）；`IX_amazon_finance_transaction_marketplace_local_date`。
+- 当前验证：2026-05/06/07 共 652 rows；第二次 execute inserted=0、全部更新原行；`transaction_id_count=652`、`review_required=0`。
+
+| 字段 | 类型 | 可空 | 默认值 | 字段说明 |
+|---|---|---|---|---|
+| `id` | `BIGINT IDENTITY` | NOT NULL | `` | 主键。 |
+| `marketplace_id` | `NVARCHAR(50)` | NOT NULL | `` | marketplace。 |
+| `transaction_id` | `NVARCHAR(200)` | NOT NULL | `` | Finances API transaction id。 |
+| `transaction_status` | `NVARCHAR(50)` | NOT NULL | `` | `DEFERRED` / `RELEASED` / `DEFERRED_RELEASED` 等。 |
+| `transaction_type` | `NVARCHAR(100)` | NOT NULL | `` | Shipment / Refund / ServiceFee / Transfer 等。 |
+| `description` | `NVARCHAR(1000)` | NULL | `` | Amazon transaction description。 |
+| `posted_at_utc` | `DATETIME2` | NOT NULL | `` | API posted UTC datetime。 |
+| `posted_at_local` | `DATETIME2` | NOT NULL | `` | marketplace local datetime。 |
+| `posted_date_local` | `DATE` | NOT NULL | `` | Management P&L natural-month date key。 |
+| `marketplace_timezone` | `NVARCHAR(100)` | NOT NULL | `` | US 已验证 `America/Los_Angeles`。 |
+| `amount` | `DECIMAL(18,4)` | NOT NULL | `` | transaction total amount。 |
+| `currency` | `NVARCHAR(10)` | NULL | `` | US 正常为 USD。 |
+| `settlement_id` | `NVARCHAR(200)` | NULL | `` | related `SETTLEMENT_ID`。 |
+| `order_id` | `NVARCHAR(200)` | NULL | `` | related `ORDER_ID`。 |
+| `deferred_transaction_id` | `NVARCHAR(200)` | NULL | `` | deferred lifecycle identifier。 |
+| `release_transaction_id` | `NVARCHAR(200)` | NULL | `` | release lifecycle identifier。 |
+| `management_role` | `NVARCHAR(100)` | NOT NULL | `` | operating / cash reference / ads reference / zero-value unit COGS reference 等角色。 |
+| `management_include` | `BIT` | NOT NULL | `` | transaction amount 是否进入 natural-month operating amount。 |
+| `management_replace_with_ads_api` | `BIT` | NOT NULL | `` | Amazon posted Ads charge 是否由 Ads API report-date spend 替换。 |
+| `review_required` | `BIT` | NOT NULL | `` | unknown/correctness guard；为 1 时阻断正式 close。 |
+| `product_sales_amount` | `DECIMAL(18,4)` | NOT NULL | `0` | ProductCharges sales breakdown。 |
+| `shipping_amount` | `DECIMAL(18,4)` | NOT NULL | `0` | Shipping breakdown。 |
+| `promotion_amount` | `DECIMAL(18,4)` | NOT NULL | `0` | Promo rebates/discount。 |
+| `fba_fulfillment_fee` | `DECIMAL(18,4)` | NOT NULL | `0` | FBA per-unit fulfillment fee。 |
+| `shipping_chargeback` | `DECIMAL(18,4)` | NOT NULL | `0` | Shipping chargeback。 |
+| `refund_product_amount` | `DECIMAL(18,4)` | NOT NULL | `0` | Refunded product amount。 |
+| `refund_shipping_amount` | `DECIMAL(18,4)` | NOT NULL | `0` | Refunded shipping。 |
+| `refund_promotion_amount` | `DECIMAL(18,4)` | NOT NULL | `0` | Refunded promotion adjustment。 |
+| `liquidation_revenue` | `DECIMAL(18,4)` | NOT NULL | `0` | Recommerce liquidation revenue。 |
+| `liquidation_fee` | `DECIMAL(18,4)` | NOT NULL | `0` | Liquidation processing/referral fee。 |
+| `subscription_fee` | `DECIMAL(18,4)` | NOT NULL | `0` | Subscription Fee。 |
+| `coupon_fee` | `DECIMAL(18,4)` | NOT NULL | `0` | Coupon participation/performance fees。 |
+| `deal_fee` | `DECIMAL(18,4)` | NOT NULL | `0` | Deal participation/performance fees。 |
+| `storage_fee` | `DECIMAL(18,4)` | NOT NULL | `0` | FBA storage fee。 |
+| `customer_return_fee` | `DECIMAL(18,4)` | NOT NULL | `0` | customer return HRR unit fee。 |
+| `other_service_fee` | `DECIMAL(18,4)` | NOT NULL | `0` | 其他 ServiceFee。 |
+| `unit_events_json` | `NVARCHAR(MAX)` | NOT NULL | `` | SKU/FNSKU/ASIN/quantity unit events，用于 COGS。 |
+| `related_identifiers_json` | `NVARCHAR(MAX)` | NOT NULL | `` | Finances related identifiers raw/normalized JSON。 |
+| `raw_transaction_json` | `NVARCHAR(MAX)` | NOT NULL | `` | 完整 Finances transaction JSON。 |
+| `raw_transaction_hash` | `NVARCHAR(100)` | NOT NULL | `` | raw transaction hash。 |
+| `business_key_hash` | `NVARCHAR(100)` | NOT NULL | `` | immutable business key hash；unique index。 |
+| `created_at` | `DATETIME2` | NOT NULL | `SYSUTCDATETIME()` | 创建时间。 |
+| `updated_at` | `DATETIME2` | NOT NULL | `SYSUTCDATETIME()` | 更新时间。 |
+
 ## 6. 当前已准备但尚未执行的 migration
 
-当前无已准备但未执行的 migration。后续新增结构变更从 `016_xxx.sql` 开始。
+当前无已准备但未执行的 migration。后续新增结构变更从 `017_xxx.sql` 开始。

@@ -145,13 +145,13 @@ class MonthlyFinancialCloseEmailTemplate:
         intro = (
             f"Monthly Financial Close for {month} ({marketplace_id}) is ready. "
             "Management operating profit uses Finances API marketplace-local natural-month "
-            "transactions, report-date Ads spend and landed COGS; Settlement remains the "
-            "accounting/close source of truth."
+            "transactions, report-date Ads spend and landed COGS; Settlement remains a "
+            "close/cash reconciliation reference."
         )
         intro_zh = (
             f"{month} 月度财务结算报表已生成，市场为 {marketplace_id}。"
             "经营利润采用 Finances API 美国站本地自然月交易、Ads API 月度广告发生口径并扣除到岸COGS；"
-            "Settlement 继续作为会计月结与对账主口径。"
+            "Settlement 继续作为结算、现金与回款对账参考。"
         )
         key_points_zh = [
             f"报表状态：{status}。",
@@ -176,10 +176,12 @@ class MonthlyFinancialCloseEmailTemplate:
             key_points=key_points,
             key_points_zh=key_points_zh,
             action_note=(
-                "Please review the attached XLSX workbook, especially Summary, SKU Profit "
-                "and Reconciliation Checks."
+                "Please review both XLSX attachments: Monthly Operating Report for management "
+                "performance and Accountant Monthly Workbook for bookkeeping support."
             ),
-            action_note_zh="请查看附件 XLSX，重点复核 Summary、SKU Profit 和对账检查。",
+            action_note_zh=(
+                "请查看两份 XLSX 附件：月度经营报告用于经营分析，会计月度底稿用于做账辅助与追溯。"
+            ),
         )
 
 

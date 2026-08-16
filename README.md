@@ -16,21 +16,21 @@ Amazon SP-API / Amazon Ads API / Seller Central raw exports
 
 ## 当前真实进展
 
-截至 2026-05-19：
+截至 2026-08-10：
 
-- Azure SQL `amazon_ops` 已完成核心建表、索引和 001-012 migration，当前真实数据库有 29 张用户表。
+- Azure SQL `amazon_ops` 已完成 001-016 核心 migration（含后续 audit/artifact/Finances additions），当前真实数据库有 36 张用户表。
 - 核心 normalized ingestion 已完成真实 Azure SQL execute 和第二次 execute 幂等性验证：Ads、Listing、Inventory、Sales & Traffic、Settlement、Orders、FBA Reimbursements、FBA Fee Preview、Promotion/Coupon、Inventory Ledger。
 - Azure SQL 连接层已支持 retry + `SELECT 1` warm-up，并能区分 idle/resume、firewall/IP allowlist 和登录错误。
 - 已新增 `scripts/check_database_status.py` 与 `scripts/export_database_schema_spec.py`，用于检查运行状态和从 live schema 更新数据库 spec。
 - 当前主线从“继续扩 ingestion”转为“手动运营流程 + 利润核算 + 周报/月报”。
 - 已新增 manual-first operations 文档，并执行 `012_create_ingestion_job_config.sql` 与 `001_seed_ingestion_job_config_core_jobs.sql`，当前 `pipeline_job_config` 有 13 条任务配置；新增 seed 002 用于同步重叠窗口刷新策略。
-- 利润核算口径已冻结为 Settlement-led Financial Profit v1.0：财务利润以 Settlement 为主，Orders / Ads / Promotion-Coupon 只做运营解释，SKU 成本来自 `amazon_sku_cost`。
+- 月度利润已升级为双视图：Management Operating P&L 使用 Finances API `America/Los_Angeles` 自然月 + Ads API report-date spend + landed COGS；Settlement Close 保留 Amazon posted/release 结算与现金对账口径。
 - 已实现 SKU 成本 xlsx 模板导出/导入：先导出模板人工填写，再 dry-run/execute 写入 `amazon_sku_cost`。
 - 已冻结数据刷新策略：核心源可每 1-2 天重叠窗口刷新并 upsert，销售/广告/利润等正式分析产物最短周期为一周。
 
 详细进展见：[`docs/project/progress_next_steps.md`](docs/project/progress_next_steps.md)。
 
-> 2026-08-10：v1.90.3 修复 automation audit 对 Finances list-root ingestion JSON 的兼容性；业务 ingestion 成功后，审计 telemetry 不再因合法 JSON array 触发 `.get()` 异常。
+> 2026-08-10：v1.90-v1.90.3 Natural-Month Finances 已完成 Azure 生产验收。May/Jun/Jul Management P&L 已与 Seller Central 自然月口径回归，migration 016 / 652-row ledger / 幂等 / COGS / FNSKU identity / automation audit 均通过；最终 July production smoke execution 为 `Succeeded`。
 
 ## 文档入口
 
@@ -48,6 +48,8 @@ Amazon SP-API / Amazon Ads API / Seller Central raw exports
 | [`docs/operations/data_refresh_policy.md`](docs/operations/data_refresh_policy.md) | 数据源重叠窗口刷新、stable cutoff 和周度分析产物规则。 |
 | [`docs/operations/ingestion_job_cadence_catalog.md`](docs/operations/ingestion_job_cadence_catalog.md) | 每类数据源的建议下载/入库周期，未来自动化 Jobs 的调度依据。 |
 | [`docs/operations/data_coverage_audit_workflow.md`](docs/operations/data_coverage_audit_workflow.md) | 利润/周报前检查 normalized 数据覆盖范围和 stable cutoff。 |
+| [`docs/operations/v190_natural_month_finances_rollout.md`](docs/operations/v190_natural_month_finances_rollout.md) | v1.90-v1.90.3 Natural-Month Finances Azure rollout、Gate 和生产验收记录。 |
+| [`docs/operations/monthly_financial_troubleshooting.md`](docs/operations/monthly_financial_troubleshooting.md) | 月度 Finances / Settlement / COGS / artifact / send_guard 分层排错 runbook。 |
 | [`docs/operations/manual_refresh_plan_workflow.md`](docs/operations/manual_refresh_plan_workflow.md) | 标准定期刷新入口，用少数固定命令完成 submit / collect / ingest / audit。 |
 | [`docs/project/core_ingestion_completion_review.md`](docs/project/core_ingestion_completion_review.md) | 核心入库阶段收尾检查。 |
 | [`docs/project/requirements_deprecation_plan.md`](docs/project/requirements_deprecation_plan.md) | 旧 requirements 目录保留/删除规则。 |
@@ -68,7 +70,7 @@ Amazon SP-API / Amazon Ads API / Seller Central raw exports
 | [`docs/features/feature_promotion_coupon_ingestion.md`](docs/features/feature_promotion_coupon_ingestion.md) | Promotion/Coupon 入库功能文档；010、dry-run、execute 与幂等验证已完成。 |
 | [`docs/features/feature_inventory_ledger_ingestion.md`](docs/features/feature_inventory_ledger_ingestion.md) | Inventory Ledger 入库功能文档；011 已执行，专用 dry-run 已完成，已完成 execute/幂等验证。 |
 | [`docs/features/feature_ingestion_job_config.md`](docs/features/feature_ingestion_job_config.md) | 数据下载/入库/加工/报表任务周期配置表设计；012 migration 和 seed 001 已执行，seed 002 用于更新刷新策略。 |
-| [`docs/features/feature_profit_calculation.md`](docs/features/feature_profit_calculation.md) | 利润核算功能设计；口径已冻结为 Settlement-led Financial Profit v1.0，第一版利润 preview 已实现。 |
+| [`docs/features/feature_profit_calculation.md`](docs/features/feature_profit_calculation.md) | 历史 Settlement-led 利润设计；当前 Settlement Close 仍沿用其会计/结算思想，Management P&L 已由 ADR-015 / v1.90 Natural-Month Finances 取代。 |
 | [`docs/features/feature_sku_cost_management.md`](docs/features/feature_sku_cost_management.md) | SKU 成本 xlsx 模板导出/导入功能；用于维护 `amazon_sku_cost`。 |
 | [`docs/features/feature_monthly_financial_close_report.md`](docs/features/feature_monthly_financial_close_report.md) | 月度财务结算报表设计；CEO/CFO 财务结算和 SKU 利润分析。 |
 | [`docs/features/feature_monthly_ingestion_recovery.md`](docs/features/feature_monthly_ingestion_recovery.md) | v1.81 monthly 恢复：Settlement 幂等/事务加固 + Promotion/Coupon schema drift 回归。 |
@@ -76,7 +78,7 @@ Amazon SP-API / Amazon Ads API / Seller Central raw exports
 | [`docs/features/feature_settlement_repair_scalability.md`](docs/features/feature_settlement_repair_scalability.md) | v1.82 Settlement repair 性能加固：single-scan planning、bounded batch DML、日志有界输出。 |
 | [`docs/features/feature_settlement_ingestion_batch_upsert.md`](docs/features/feature_settlement_ingestion_batch_upsert.md) | v1.84 Settlement temp staging 方案；Azure 性能验收未通过，已由 v1.85 替代。 |
 | [`docs/features/feature_settlement_ingestion_json_upsert.md`](docs/features/feature_settlement_ingestion_json_upsert.md) | v1.85 Settlement typed OPENJSON set-based MERGE；2026-06/07 Azure 生产验收通过。 |
-| [`docs/features/feature_finances_api_natural_month_sampling.md`](docs/features/feature_finances_api_natural_month_sampling.md) | v1.89 Finances API sampling（已完成 live reconciliation）；正式 natural-month ledger / Management P&L 见 v1.90.2 feature 文档。 |
+| [`docs/features/feature_finances_api_natural_month_sampling.md`](docs/features/feature_finances_api_natural_month_sampling.md) | v1.89 Finances API sampling（已完成 live reconciliation）；正式 production ledger / Management P&L 见 v1.90.3 feature 文档。 |
 | [`docs/features/feature_settlement_fba_fee_classification.md`](docs/features/feature_settlement_fba_fee_classification.md) | v1.86 补齐真实 FBA Inventory Storage Fee / Customer Returns Fee 分类，等待 2026-07 月报生产验收。 |
 | [`docs/features/feature_weekly_business_review.md`](docs/features/feature_weekly_business_review.md) | 每周经营周报设计；销售、流量、广告、SKU、库存和风险行动建议。 |
 | [`docs/features/feature_weekly_ads_optimization_report.md`](docs/features/feature_weekly_ads_optimization_report.md) | 每周广告优化报表设计；输出 campaign/keyword/search term/SKU 广告动作清单。 |
@@ -84,6 +86,7 @@ Amazon SP-API / Amazon Ads API / Seller Central raw exports
 | [`docs/database/database_migration_policy.md`](docs/database/database_migration_policy.md) | 数据库变更和 migration 规则。 |
 | [`docs/database/database_schema_export_tool.md`](docs/database/database_schema_export_tool.md) | 从真实 Azure SQL 导出 schema snapshot 的工具说明。 |
 | [`docs/database/azure_sql_connection_runbook.md`](docs/database/azure_sql_connection_runbook.md) | Azure SQL idle/resume、firewall/IP、账号密码等连接问题排查。 |
+| [`docs/adr/ADR-015-natural-month-management-pnl.md`](docs/adr/ADR-015-natural-month-management-pnl.md) | Management Natural-Month P&L 与 Settlement Close 分离的正式架构决策。 |
 | [`docs/adr/`](docs/adr/) | 架构决策记录。 |
 
 ## 目录结构

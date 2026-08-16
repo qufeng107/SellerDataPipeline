@@ -1,7 +1,7 @@
 # Feature: Finances API Natural-Month Ledger + Management P&L
 
-> 状态：v1.90.1 ledger Azure Gate 2/3A/3B verified；v1.90.2 FNSKU cost identity resolution implemented locally / Gate 4 revalidation pending  
-> 版本：v1.90.2  
+> 状态：Production verified；v1.90-v1.90.3 rollout complete  
+> 版本：v1.90.3  
 > 更新时间：2026-08-10  
 > 数据库影响：新增 migration `016_create_finances_natural_month_ledger.sql`。  
 > 报表影响：Monthly Financial Close 升级到 `v1.5-natural-month-finances`；Settlement Close 保留独立口径。
@@ -194,37 +194,62 @@ finances_natural_month_coverage
 - natural-month SKU COGS 未全覆盖；
 - extracted unit count 与 costed unit count 不一致。
 
-## 7. Azure Gate 状态与部署顺序
+## 7. Azure Gate 与生产验收
 
-截至 2026-08-10 已完成：
+截至 2026-08-10 全部完成：
 
 ```text
 Gate 1  migration 016 + schema postcheck                         PASS
 Gate 2  May/Jun/Jul natural-month amount + unit dry-run          PASS
 Gate 3A first execute backfill: 227 + 264 + 161 = 652 rows       PASS
-Gate 3B second execute: inserted=0, all 652 rows updated          PASS
-Gate 4  June report preview                                      PASS
-Gate 4  May/July report preview                                  BLOCKED only by FNSKU cost identity
+Gate 3B second execute: inserted=0; total rows still 652          PASS
+Gate 4  May/Jun/Jul report preview + full COGS coverage           PASS
+Gate 5  v1.90.2 business smoke; audit tail bug isolated           PASS business / audit bug found
+Gate 6  v1.90.3 final production smoke                            PASS
 ```
 
-Gate 4 实测缺口：
+v1.90.2 Gate 4 最终 cost identity：
 
 ```text
-May  X004Q3AKFX -> inventory canonical SKU HU-4XAJ-PYLD
-     ASIN B0FD9W53FQ / Trading Card Binder
-     existing cost = USD 6.94 all-in
-
-July X004WU7DSH -> inventory canonical SKU SC-9HC3-5TFL
-     ASIN B0G1YF2ZBB / Grey Neck Wallet
-     existing cost = product 4.17 + first-mile 0.5271 USD
+May  X004Q3AKFX -> HU-4XAJ-PYLD -> USD 6.94 all-in
+July X004WU7DSH -> SC-9HC3-5TFL -> USD 4.17 + first-mile 0.5271
 ```
 
-因此 v1.90.2 不补假成本、不人工复制 FNSKU 成本行，而是在报表计算时安全解析已有 canonical cost。下一步顺序：CI green -> 构建 v1.90.2 image -> 仅重跑 Gate 4 May/Jun/Jul preview -> 三个月 `status=ok`、`missing_cost_skus=[]`、costed units 99/122/62 后，再决定更新正式 monthly jobs。历史邮件继续不 force-resend。
+最终 Monthly Financial Close：
+
+| Month | Product Sales | Landed COGS | Management Operating Profit | Margin | Settlement Close Profit |
+|---|---:|---:|---:|---:|---:|
+| 2026-05 | 2316.38 | 467.25 | 548.35 | 23.67% | 39.02 |
+| 2026-06 | 2870.06 | 573.05 | 612.70 | 21.35% | 1130.93 |
+| 2026-07 | 1464.14 | 291.23 | -114.89 | -7.85% | 444.55 |
+
+v1.90.3 production image：
+
+```text
+ghcr.io/qufeng107/seller-data-pipeline:2fa19ad316720742d1871765fa0c1149c6b9fb9a
+```
+
+July production smoke：
+
+```text
+execution=sdp-monthly-collect-ingest-cbacfwp
+status=Succeeded
+Finances local_rows=161 review_required=0
+Finances attempted=161 inserted=0 updated=161
+Settlement attempted=1628 inserted=0 updated=1628
+Automation commands=11 failed=0
+artifact_save scanned=169 saved=169 skipped=0
+```
+
+v1.90.3 同时修复 automation audit 对 Finances list-root JSON artifact 的兼容性；业务命令成功后不再因为合法 JSON array 的 `.get()` 解析假设导致 execution 尾部失败。
+
+正式 monthly `collect_ingest` 已移除 `--continue-on-error`，恢复 fail-closed。历史 2026-05/06/07 邮件不 `force-resend`。
 
 ## 8. 本地验收
 
 ```text
-PYTHONPATH=src pytest -q -> 370 passed
-python -m compileall -q src scripts tests -> passed
+v1.90.2: `PYTHONPATH=src pytest -q -> 370 passed`
+v1.90.3: `PYTHONPATH=src pytest -q -> 371 passed`
+`python -m compileall -q src scripts tests -> passed`
 ruff -> 本地环境未安装；CI Safety lint 不绕过
 ```

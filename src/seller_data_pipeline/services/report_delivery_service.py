@@ -117,6 +117,11 @@ class ReportDeliveryPackService:
         template_adapter = get_template(report_type)
         email = template_adapter.render(report, audience=audience)
         source_xlsx = _resolve_xlsx_path(report, report_json=report_json, override=xlsx_path)
+        supplemental_xlsx = (
+            []
+            if xlsx_path is not None
+            else _resolve_supplemental_xlsx_paths(report, report_json=report_json)
+        )
         status = str(report.get("status") or "unknown")
         send_guard = _build_send_guard(
             status=status,
@@ -143,6 +148,16 @@ class ReportDeliveryPackService:
                 copy_attachments=copy_attachments,
             )
         )
+        for kind, supplemental_path in supplemental_xlsx:
+            attachments.append(
+                _prepare_attachment(
+                    source_path=supplemental_path,
+                    output_dir=target_dir,
+                    attachments_dir=attachments_dir,
+                    kind=kind,
+                    copy_attachments=copy_attachments,
+                )
+            )
         if include_json_attachment:
             attachments.append(
                 _prepare_attachment(
@@ -227,15 +242,55 @@ def _resolve_xlsx_path(
         candidates.append(Path(override))
     else:
         output_files = report.get("output_files") or {}
-        if not isinstance(output_files, dict) or not output_files.get("xlsx"):
-            raise ReportDeliveryError("Report JSON is missing output_files.xlsx; pass --xlsx-path.")
-        raw_xlsx = str(output_files["xlsx"])
+        if not isinstance(output_files, dict):
+            raise ReportDeliveryError("Report JSON output_files must be an object.")
+        report_type = str(report.get("report_type") or "")
+        preferred_key = (
+            "operating_xlsx"
+            if report_type == "monthly_financial_close" and output_files.get("operating_xlsx")
+            else "xlsx"
+        )
+        if not output_files.get(preferred_key):
+            raise ReportDeliveryError(
+                f"Report JSON is missing output_files.{preferred_key}; pass --xlsx-path."
+            )
+        raw_xlsx = str(output_files[preferred_key])
         candidates.extend(_path_candidates(raw_xlsx, report_json=report_json))
     for candidate in candidates:
         if candidate.exists() and candidate.is_file():
             return candidate
     candidate_text = ", ".join(str(path) for path in candidates) or "<none>"
     raise ReportDeliveryError(f"XLSX attachment not found. Checked: {candidate_text}")
+
+
+def _resolve_supplemental_xlsx_paths(
+    report: dict[str, Any],
+    *,
+    report_json: Path,
+) -> list[tuple[str, Path]]:
+    if str(report.get("report_type") or "") != "monthly_financial_close":
+        return []
+    output_files = report.get("output_files") or {}
+    if not isinstance(output_files, dict):
+        return []
+
+    resolved: list[tuple[str, Path]] = []
+    for key, kind in (("accounting_xlsx", "accounting_xlsx"),):
+        raw_path = output_files.get(key)
+        if not raw_path:
+            continue
+        candidates = _path_candidates(str(raw_path), report_json=report_json)
+        path = next(
+            (candidate for candidate in candidates if candidate.exists() and candidate.is_file()),
+            None,
+        )
+        if path is None:
+            candidate_text = ", ".join(str(candidate) for candidate in candidates)
+            raise ReportDeliveryError(
+                f"Monthly supplemental XLSX {key} not found. Checked: {candidate_text}"
+            )
+        resolved.append((kind, path))
+    return resolved
 
 
 def _path_candidates(raw_path: str, *, report_json: Path) -> list[Path]:

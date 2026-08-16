@@ -1,14 +1,18 @@
 # Feature: Automated Workflow Jobs
 
-> 文档状态：Design + v1 local wrapper implemented  
+> 文档状态：Implemented / production running  
 > 负责人：AI + Feng  
-> 更新时间：2026-05-25  
-> 功能状态：pipeline_artifact_store + local wrapper implemented; GHCR image and Azure manual dev submit job verified  
+> 更新时间：2026-08-10  
+> 功能状态：weekly/monthly Azure Container Apps Jobs running; monthly v1.90.3 final production smoke verified  
 > 相关 operations：`docs/operations/manual_refresh_plan_workflow.md`, `docs/operations/azure_container_apps_jobs_workflow.md`, `docs/operations/data_refresh_policy.md`  
 > 相关功能：`feature_pipeline_artifact_store.md`, `feature_report_delivery_email.md`, `feature_weekly_business_review.md`, `feature_weekly_ads_optimization_report.md`, `feature_monthly_financial_close_report.md`  
 > 相关 ADR：`docs/adr/ADR-007-manual-first-before-automation.md`, `docs/adr/ADR-011-azure-container-apps-jobs-automation.md`, `docs/adr/ADR-012-zero-paid-automation-storage-profile.md`
 
 ---
+
+## 0.1 2026-08-10 production note
+
+Monthly official jobs now run the same v1.90.3 image SHA `2fa19ad316720742d1871765fa0c1149c6b9fb9a`. `sdp-monthly-collect-ingest` is fail-closed and no longer uses `--continue-on-error`. July final smoke execution `sdp-monthly-collect-ingest-cbacfwp` ended `Succeeded`, `commands=11 failed=0`, and artifact save completed 169/169. See `docs/operations/v190_natural_month_finances_rollout.md`.
 
 ## 1. 功能摘要
 

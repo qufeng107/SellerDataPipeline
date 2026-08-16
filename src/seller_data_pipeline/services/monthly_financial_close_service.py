@@ -12,6 +12,12 @@ from typing import Any, Protocol
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 
+from seller_data_pipeline.reports.accountant_monthly_workbook_writer import (
+    build_accountant_monthly_workbook,
+)
+from seller_data_pipeline.reports.monthly_operating_report_writer import (
+    build_monthly_operating_report_workbook,
+)
 from seller_data_pipeline.services.calculate_profit_service import (
     PRODUCT_SALES_CATEGORIES,
     SettlementProfitLine,
@@ -633,19 +639,74 @@ class MonthlyFinancialCloseService:
     ) -> MonthlyFinancialCloseResult:
         if self.repo is None:
             raise ValueError("MonthlyFinancialCloseService.run requires a repo")
-        start_date, end_date = month_to_date_range(month)
+
+        current_inputs = self._fetch_month_inputs(
+            marketplace_id=marketplace_id,
+            profile_id=profile_id,
+            month=month,
+        )
         result = self.calculate_from_rows(
             marketplace_id=marketplace_id,
             profile_id=profile_id,
             month=month,
-            start_date=start_date,
-            end_date=end_date,
-            settlement_rows=self.repo.fetch_settlement_profit_rows(
+            generated_at_utc=generated_at_utc,
+            **current_inputs,
+        )
+        if output_root is None:
+            return result
+
+        recent_results: list[MonthlyFinancialCloseResult] = [result]
+        finance_rows_by_month: dict[str, Sequence[Mapping[str, Any]]] = {
+            month: current_inputs["finances_natural_month_rows"] or ()
+        }
+        # Three-month trend is a presentation concern. Only load it when the
+        # normalized Finances ledger is available; legacy/fake repos keep the
+        # historical single-month execution path unchanged.
+        if hasattr(self.repo, "fetch_finances_natural_month_rows"):
+            for previous_month in _previous_month_keys(month, count=2):
+                previous_inputs = self._fetch_month_inputs(
+                    marketplace_id=marketplace_id,
+                    profile_id=profile_id,
+                    month=previous_month,
+                )
+                previous_result = self.calculate_from_rows(
+                    marketplace_id=marketplace_id,
+                    profile_id=profile_id,
+                    month=previous_month,
+                    generated_at_utc=generated_at_utc,
+                    **previous_inputs,
+                )
+                recent_results.append(previous_result)
+                finance_rows_by_month[previous_month] = (
+                    previous_inputs["finances_natural_month_rows"] or ()
+                )
+
+        return self.write_report_files(
+            result=result,
+            output_root=output_root,
+            recent_results=recent_results,
+            finance_rows_by_month=finance_rows_by_month,
+        )
+
+    def _fetch_month_inputs(
+        self,
+        *,
+        marketplace_id: str,
+        profile_id: str | None,
+        month: str,
+    ) -> dict[str, Any]:
+        if self.repo is None:
+            raise ValueError("MonthlyFinancialCloseService requires a repo")
+        start_date, end_date = month_to_date_range(month)
+        return {
+            "start_date": start_date,
+            "end_date": end_date,
+            "settlement_rows": self.repo.fetch_settlement_profit_rows(
                 marketplace_id=marketplace_id,
                 start_date=start_date,
                 end_date=end_date,
             ),
-            finances_natural_month_rows=(
+            "finances_natural_month_rows": (
                 self.repo.fetch_finances_natural_month_rows(
                     marketplace_id=marketplace_id,
                     start_date=start_date,
@@ -654,12 +715,12 @@ class MonthlyFinancialCloseService:
                 if hasattr(self.repo, "fetch_finances_natural_month_rows")
                 else None
             ),
-            sku_cost_rows=self.repo.fetch_sku_cost_rows(
+            "sku_cost_rows": self.repo.fetch_sku_cost_rows(
                 marketplace_id=marketplace_id,
                 start_date=start_date,
                 end_date=end_date,
             ),
-            inventory_cost_identity_rows=(
+            "inventory_cost_identity_rows": (
                 self.repo.fetch_inventory_cost_identity_rows(
                     marketplace_id=marketplace_id,
                     as_of_date=end_date,
@@ -667,42 +728,38 @@ class MonthlyFinancialCloseService:
                 if hasattr(self.repo, "fetch_inventory_cost_identity_rows")
                 else ()
             ),
-            orders_summary=self.repo.fetch_orders_period_summary(
+            "orders_summary": self.repo.fetch_orders_period_summary(
                 marketplace_id=marketplace_id,
                 start_date=start_date,
                 end_date=end_date,
             ),
-            ads_summary=self.repo.fetch_ads_period_summary(
+            "ads_summary": self.repo.fetch_ads_period_summary(
                 marketplace_id=marketplace_id,
                 profile_id=profile_id,
                 start_date=start_date,
                 end_date=end_date,
             ),
-            sales_traffic_summary=self.repo.fetch_sales_traffic_period_summary(
+            "sales_traffic_summary": self.repo.fetch_sales_traffic_period_summary(
                 marketplace_id=marketplace_id,
                 start_date=start_date,
                 end_date=end_date,
             ),
-            coupon_summary=self.repo.fetch_coupon_period_summary(
+            "coupon_summary": self.repo.fetch_coupon_period_summary(
                 marketplace_id=marketplace_id,
                 start_date=start_date,
                 end_date=end_date,
             ),
-            promotion_summary=self.repo.fetch_promotion_period_summary(
+            "promotion_summary": self.repo.fetch_promotion_period_summary(
                 marketplace_id=marketplace_id,
                 start_date=start_date,
                 end_date=end_date,
             ),
-            fba_reimbursement_summary=self.repo.fetch_fba_reimbursement_period_summary(
+            "fba_reimbursement_summary": self.repo.fetch_fba_reimbursement_period_summary(
                 marketplace_id=marketplace_id,
                 start_date=start_date,
                 end_date=end_date,
             ),
-            generated_at_utc=generated_at_utc,
-        )
-        if output_root is None:
-            return result
-        return self.write_report_files(result=result, output_root=output_root)
+        }
 
     def calculate_from_rows(
         self,
@@ -1015,13 +1072,22 @@ class MonthlyFinancialCloseService:
         *,
         result: MonthlyFinancialCloseResult,
         output_root: str | Path,
+        recent_results: Sequence[MonthlyFinancialCloseResult] | None = None,
+        finance_rows_by_month: Mapping[str, Sequence[Mapping[str, Any]]] | None = None,
     ) -> MonthlyFinancialCloseResult:
         output_dir = Path(output_root) / result.marketplace_id / result.month
         output_dir.mkdir(parents=True, exist_ok=True)
         filename_base = f"monthly_financial_close_{result.month}"
         json_path = output_dir / f"{filename_base}.json"
-        xlsx_path = output_dir / f"{filename_base}.xlsx"
-        output_files = {"json": str(json_path), "xlsx": str(xlsx_path)}
+        legacy_xlsx_path = output_dir / f"{filename_base}.xlsx"
+        operating_xlsx_path = output_dir / f"monthly_operating_report_{result.month}.xlsx"
+        accounting_xlsx_path = output_dir / f"accountant_monthly_workbook_{result.month}.xlsx"
+        output_files = {
+            "json": str(json_path),
+            "xlsx": str(legacy_xlsx_path),
+            "operating_xlsx": str(operating_xlsx_path),
+            "accounting_xlsx": str(accounting_xlsx_path),
+        }
         result_with_paths = result.with_output_files(output_files)
         json_path.write_text(
             json.dumps(
@@ -1033,8 +1099,25 @@ class MonthlyFinancialCloseService:
             + "\n",
             encoding="utf-8",
         )
-        workbook = build_monthly_financial_close_workbook(result_with_paths)
-        workbook.save(xlsx_path)
+
+        legacy_workbook = build_monthly_financial_close_workbook(result_with_paths)
+        legacy_workbook.save(legacy_xlsx_path)
+
+        operating_workbook = build_monthly_operating_report_workbook(
+            result_with_paths,
+            recent_results=recent_results,
+            finance_rows_by_month=finance_rows_by_month,
+        )
+        operating_workbook.save(operating_xlsx_path)
+
+        current_finance_rows: Sequence[Mapping[str, Any]] = ()
+        if finance_rows_by_month:
+            current_finance_rows = finance_rows_by_month.get(result.month, ())
+        accounting_workbook = build_accountant_monthly_workbook(
+            result_with_paths,
+            current_finance_rows,
+        )
+        accounting_workbook.save(accounting_xlsx_path)
         return result_with_paths
 
 
@@ -1051,6 +1134,18 @@ def month_to_date_range(month: str) -> tuple[date, date]:
     else:
         next_month = date(year, month_number + 1, 1)
     return start, next_month - timedelta(days=1)
+
+
+def _previous_month_keys(month: str, *, count: int) -> list[str]:
+    start, _ = month_to_date_range(month)
+    cursor = start
+    keys: list[str] = []
+    for _ in range(count):
+        previous_day = cursor - timedelta(days=1)
+        previous_start = date(previous_day.year, previous_day.month, 1)
+        keys.append(f"{previous_start.year:04d}-{previous_start.month:02d}")
+        cursor = previous_start
+    return keys
 
 
 def build_monthly_financial_close_workbook(result: MonthlyFinancialCloseResult) -> Workbook:
