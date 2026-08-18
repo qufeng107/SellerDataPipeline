@@ -473,5 +473,69 @@ class MonthlyFinancialCloseRepo:
         finally:
             cursor.close()
 
+    def fetch_fba_reimbursement_period_rows(
+        self,
+        *,
+        marketplace_id: str,
+        start_date: date,
+        end_date: date,
+    ) -> list[dict[str, Any]]:
+        """Return reimbursement detail needed for inventory-loss accounting controls.
+
+        The Finances natural-month ledger remains the monetary source of truth. These
+        FBA Reimbursements rows are used only to identify a warehouse-loss SKU/quantity
+        when the Finances ledger contains a warehouse-lost reimbursement in the same
+        natural month.
+        """
+
+        cursor = self.connection.cursor()
+        try:
+            cursor.execute(
+                """
+                WITH normalized AS (
+                    SELECT
+                        [reimbursement_id],
+                        [case_id],
+                        [amazon_order_id],
+                        [reason],
+                        [seller_sku],
+                        [fnsku],
+                        [asin],
+                        [currency],
+                        [amount_total],
+                        [quantity_reimbursed_cash],
+                        [quantity_reimbursed_inventory],
+                        [quantity_reimbursed_total],
+                        COALESCE(
+                            TRY_CONVERT(date, NULLIF([approval_date_raw], ''), 127),
+                            TRY_CONVERT(date, NULLIF([approval_date_raw], ''))
+                        ) AS [approval_date]
+                    FROM dbo.[amazon_fba_reimbursement]
+                    WHERE [marketplace_id] = ?
+                )
+                SELECT
+                    [reimbursement_id],
+                    [case_id],
+                    [amazon_order_id],
+                    [reason],
+                    [seller_sku],
+                    [fnsku],
+                    [asin],
+                    [currency],
+                    [amount_total],
+                    [quantity_reimbursed_cash],
+                    [quantity_reimbursed_inventory],
+                    [quantity_reimbursed_total],
+                    [approval_date]
+                FROM normalized
+                WHERE [approval_date] >= ? AND [approval_date] <= ?
+                ORDER BY [approval_date], [reimbursement_id], [seller_sku], [fnsku];
+                """,
+                (marketplace_id, start_date, end_date),
+            )
+            return rows_to_dicts(cursor)
+        finally:
+            cursor.close()
+
 
 __all__ = ["MonthlyFinancialCloseRepo"]

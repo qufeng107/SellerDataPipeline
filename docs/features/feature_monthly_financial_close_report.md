@@ -1,13 +1,13 @@
 # Feature: Monthly Financial Close Report
 
-> 文档状态：Implemented / in production observation  
-> 负责人：AI + Feng  
-> 更新时间：2026-08-10  
-> 功能状态：Production verified / v1.5 Natural-Month Management P&L  
-> 设计版本：v1.5-natural-month-finances  
-> 相关数据接入文档：`docs/data_access/sp_api_reports_catalog.md`, `docs/data_access/amazon_ads_reports_catalog.md`, `docs/data_access/seller_central_manual_exports.md`  
-> 相关数据库 spec：`docs/database/database_current_schema_spec.md`  
-> 相关功能：`docs/features/feature_profit_calculation.md`, `docs/features/feature_sku_cost_management.md`, `docs/operations/manual_refresh_plan_workflow.md`, `docs/operations/historical_backfill_workflow.md`  
+> 文档状态：Implemented / in production observation
+> 负责人：AI + Feng
+> 更新时间：2026-08-10
+> 功能状态：Production verified v1.5 core / v1.6 accountant hardening implemented locally
+> 设计版本：v1.6-natural-month-accounting
+> 相关数据接入文档：`docs/data_access/sp_api_reports_catalog.md`, `docs/data_access/amazon_ads_reports_catalog.md`, `docs/data_access/seller_central_manual_exports.md`
+> 相关数据库 spec：`docs/database/database_current_schema_spec.md`
+> 相关功能：`docs/features/feature_profit_calculation.md`, `docs/features/feature_sku_cost_management.md`, `docs/operations/manual_refresh_plan_workflow.md`, `docs/operations/historical_backfill_workflow.md`
 > 相关 ADR：`docs/adr/ADR-009-settlement-led-profit-policy.md`, `docs/adr/ADR-010-overlapping-refresh-weekly-analysis.md`
 
 ---
@@ -1805,7 +1805,7 @@ v1 稳定后再考虑：
 
 ## 18. v1 / v1.1 / v1.2 代码实现记录
 
-> 更新时间：2026-08-08  
+> 更新时间：2026-08-08
 > 实现状态：v1 JSON/XLSX + v1.1 Accountant Bookkeeping Pack + v1.2 双利润口径/Ads Timing Reconciliation 已实现；本地 unit tests / compileall 通过；待真实 Azure SQL 周期按新口径重新生成并人工复核。
 
 ### 18.1 新增代码路径
@@ -1884,7 +1884,7 @@ Default presentation artifacts must be bilingual:
 
 ## 23. v1.87 Landed COGS / Executive P&L 实现记录
 
-> 日期：2026-08-09  
+> 日期：2026-08-09
 > 状态：本地实现完成，待 Azure 成本补录与 2026-05/06/07 preview 验收。
 
 本轮不新增 migration，复用 `amazon_sku_cost.first_mile_cost`。代码已：
@@ -1915,3 +1915,30 @@ Management P&L 已切换为 Finances API marketplace-local natural month；May/J
 | 2026-07 | 1464.14 | 291.23 | 555.63 | -114.89 | -7.85% | 444.55 |
 
 May / July liquidation FNSKU 已通过唯一历史 inventory identity 解析 canonical Seller SKU 成本。v1.90.3 July production smoke 最终 `Succeeded`。详见 `feature_finances_api_natural_month_ledger.md`、`ADR-015-natural-month-management-pnl.md` 和 `operations/v190_natural_month_finances_rollout.md`。
+
+
+## 25. 2026-08-18 v1.6 Accountant Hardening / Warehouse-Lost Inventory Write-off
+
+基于 2026-07 Seller Central Monthly Transaction、旧会计利润核算表、新 `accountant_monthly_workbook` 和 `monthly_operating_report` 的四方 reconciliation，Amazon 交易分类与不含 Transfer 净额已闭合；进一步识别到普通赔偿与 `WAREHOUSE_LOST` 的库存成本含义不同。
+
+v1.6 保持自然月 Finances / Ads / Settlement 架构不变，但按 `ADR-018` 增加独立 inventory-loss control：
+
+```text
+Management Operating Profit
+= natural-month operating net
+- Ads API report-date spend
+- sales/liquidation landed COGS
+- verified warehouse-lost inventory write-off
+```
+
+其中 warehouse-loss 只有在 Finances 金额、FBA Reimbursements 明细金额/币种、cash quantity、SKU/FNSKU identity 和 effective-date cost 全部核验通过时才自动计入；否则 `needs_review`，候选成本不自动影响利润。普通 `REVERSAL_REIMBURSEMENT` 不自动重复扣 COGS。
+
+Product Gross Margin 仍保持：
+
+```text
+(Product Sales - sales/liquidation Landed COGS) / Product Sales
+```
+
+会计底稿同步改为详细中文优先双语，并明确 lifecycle row count、销售件数/成本件数/仓库丢失件数、posted-date Ads、Ads API spend、Transfer、Settlement 和数据校验状态。
+
+本地验证：`382 passed` + compileall passed。下一步重新跑 May/Jun/Jul Azure golden validation；历史 v1.5 profit 数字作为 pre-warehouse-loss baseline，不再假定在存在 warehouse-loss 的月份必须保持不变。

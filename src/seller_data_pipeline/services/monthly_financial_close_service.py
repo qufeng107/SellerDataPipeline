@@ -38,7 +38,7 @@ RATIO_QUANT = Decimal("0.0001")
 ZERO = Decimal("0")
 ZERO_VALUE_UNIT_COGS_ROLE = "zero_value_unit_cogs_reference"
 REPORT_TYPE = "monthly_financial_close"
-REPORT_VERSION = "v1.5-natural-month-finances"
+REPORT_VERSION = "v1.6-natural-month-accounting"
 DEFAULT_OUTPUT_ROOT = "runtime/analysis_reports/monthly_financial_close"
 REVIEW_BUCKETS = {"unknown", "unclassified"}
 REVIEW_CATEGORIES = {"unknown", "unclassified"}
@@ -53,7 +53,8 @@ SETTLEMENT_LED_POLICY_NOTE = (
 MANAGEMENT_PNL_POLICY_NOTE = (
     "Management P&L uses the Finances API marketplace-local natural-month ledger for operating "
     "transactions, excludes cash Transfer rows, replaces Finances/Amazon posted advertising "
-    "charges with Ads API report-date spend, and deducts natural-month landed COGS."
+    "charges with Ads API report-date spend, deducts natural-month landed COGS, and separately "
+    "writes off verified warehouse-lost inventory at effective-date landed cost."
 )
 
 
@@ -208,6 +209,24 @@ class SkuCogsCalculation:
 
 
 @dataclass(frozen=True)
+class InventoryLossCalculation:
+    status: str
+    finance_reimbursement_amount: Decimal
+    reimbursement_report_amount: Decimal
+    inventory_loss_units: int
+    costed_units: int
+    missing_cost_skus: tuple[str, ...]
+    cost_identity_resolutions: tuple[str, ...]
+    product_cost: Decimal
+    first_mile_cost: Decimal
+    packaging_cost: Decimal
+    other_unit_cost: Decimal
+    landed_cost: Decimal
+    details: tuple[dict[str, Any], ...] = ()
+    notes: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
 class OperationalMetric:
     metric_group: str
     metric_name: str
@@ -332,6 +351,8 @@ class NaturalMonthFinancialSummary:
     customer_return_fee: Decimal
     other_service_fee: Decimal
     reimbursement_total: Decimal
+    warehouse_lost_reimbursement_amount: Decimal
+    warehouse_lost_reimbursement_report_amount: Decimal
     adjustment_total: Decimal
     finances_ads_charge_reference: Decimal
     transfer_reference: Decimal
@@ -346,6 +367,18 @@ class NaturalMonthFinancialSummary:
     packaging_cogs: Decimal
     other_unit_cogs: Decimal
     landed_cogs: Decimal
+    inventory_loss_status: str
+    inventory_loss_units: int
+    inventory_loss_costed_units: int
+    inventory_loss_missing_cost_skus: tuple[str, ...]
+    inventory_loss_cost_identity_resolutions: tuple[str, ...]
+    inventory_loss_product_cost: Decimal
+    inventory_loss_first_mile_cost: Decimal
+    inventory_loss_packaging_cost: Decimal
+    inventory_loss_other_unit_cost: Decimal
+    inventory_loss_landed_cost: Decimal
+    inventory_loss_details: tuple[dict[str, Any], ...]
+    inventory_loss_notes: tuple[str, ...]
     ads_api_report_date_spend: Decimal
     management_operating_profit: Decimal
     management_operating_margin: Decimal | None
@@ -369,6 +402,12 @@ class NaturalMonthFinancialSummary:
             "customer_return_fee": _decimal_to_string(self.customer_return_fee),
             "other_service_fee": _decimal_to_string(self.other_service_fee),
             "reimbursement_total": _decimal_to_string(self.reimbursement_total),
+            "warehouse_lost_reimbursement_amount": _decimal_to_string(
+                self.warehouse_lost_reimbursement_amount
+            ),
+            "warehouse_lost_reimbursement_report_amount": _decimal_to_string(
+                self.warehouse_lost_reimbursement_report_amount
+            ),
             "adjustment_total": _decimal_to_string(self.adjustment_total),
             "finances_ads_charge_reference": _decimal_to_string(self.finances_ads_charge_reference),
             "transfer_reference": _decimal_to_string(self.transfer_reference),
@@ -383,6 +422,32 @@ class NaturalMonthFinancialSummary:
             "packaging_cogs": _decimal_to_string(self.packaging_cogs),
             "other_unit_cogs": _decimal_to_string(self.other_unit_cogs),
             "landed_cogs": _decimal_to_string(self.landed_cogs),
+            "inventory_loss_status": self.inventory_loss_status,
+            "inventory_loss_units": self.inventory_loss_units,
+            "inventory_loss_costed_units": self.inventory_loss_costed_units,
+            "inventory_loss_missing_cost_skus": list(self.inventory_loss_missing_cost_skus),
+            "inventory_loss_cost_identity_resolutions": list(
+                self.inventory_loss_cost_identity_resolutions
+            ),
+            "inventory_loss_product_cost": _decimal_to_string(
+                self.inventory_loss_product_cost
+            ),
+            "inventory_loss_first_mile_cost": _decimal_to_string(
+                self.inventory_loss_first_mile_cost
+            ),
+            "inventory_loss_packaging_cost": _decimal_to_string(
+                self.inventory_loss_packaging_cost
+            ),
+            "inventory_loss_other_unit_cost": _decimal_to_string(
+                self.inventory_loss_other_unit_cost
+            ),
+            "inventory_loss_landed_cost": _decimal_to_string(
+                self.inventory_loss_landed_cost
+            ),
+            "inventory_loss_details": [
+                _json_safe_mapping(detail) for detail in self.inventory_loss_details
+            ],
+            "inventory_loss_notes": list(self.inventory_loss_notes),
             "ads_api_report_date_spend": _decimal_to_string(self.ads_api_report_date_spend),
             "management_operating_profit": _decimal_to_string(self.management_operating_profit),
             "management_operating_margin": _optional_ratio_to_string(self.management_operating_margin),
@@ -481,8 +546,19 @@ class MonthlyFinancialCloseResult:
         settlement_profit = fs.settlement_led_estimated_profit
         management_profit = fs.management_estimated_profit_report_date_ads
         margin = fs.management_profit_margin_report_date_ads
+        inventory_loss_cost = (
+            self.natural_month_finance.inventory_loss_landed_cost
+            if self.natural_month_finance
+            else ZERO
+        )
+        inventory_loss_phrase = (
+            " and verified warehouse-lost inventory write-offs"
+            if inventory_loss_cost != ZERO
+            else ""
+        )
         headline = (
-            f"{self.month} management operating profit after report-date ads and landed COGS was "
+            f"{self.month} management operating profit after report-date ads, landed COGS"
+            f"{inventory_loss_phrase} was "
             f"{_format_money(management_profit, self.currency)}; settlement close profit was "
             f"{_format_money(settlement_profit, self.currency)}."
         )
@@ -522,6 +598,15 @@ class MonthlyFinancialCloseResult:
             ),
             f"Report status is {self.status}.",
         ]
+        if self.natural_month_finance and inventory_loss_cost != ZERO:
+            key_points.insert(
+                2,
+                (
+                    "Verified warehouse-lost inventory write-off was "
+                    f"{_format_money(inventory_loss_cost, self.currency)} for "
+                    f"{self.natural_month_finance.inventory_loss_units} unit(s)."
+                ),
+            )
         if margin is not None:
             key_points.insert(1, f"Management profit margin was {_format_ratio(margin)}.")
         reconciliation_warning_count = sum(
@@ -622,6 +707,14 @@ class MonthlyFinancialCloseDataRepo(Protocol):
         start_date: date,
         end_date: date,
     ) -> dict[str, Any]: ...
+
+    def fetch_fba_reimbursement_period_rows(
+        self,
+        *,
+        marketplace_id: str,
+        start_date: date,
+        end_date: date,
+    ) -> list[dict[str, Any]]: ...
 
 
 class MonthlyFinancialCloseService:
@@ -759,6 +852,15 @@ class MonthlyFinancialCloseService:
                 start_date=start_date,
                 end_date=end_date,
             ),
+            "fba_reimbursement_rows": (
+                self.repo.fetch_fba_reimbursement_period_rows(
+                    marketplace_id=marketplace_id,
+                    start_date=start_date,
+                    end_date=end_date,
+                )
+                if hasattr(self.repo, "fetch_fba_reimbursement_period_rows")
+                else ()
+            ),
         }
 
     def calculate_from_rows(
@@ -779,6 +881,7 @@ class MonthlyFinancialCloseService:
         coupon_summary: Mapping[str, Any] | None = None,
         promotion_summary: Mapping[str, Any] | None = None,
         fba_reimbursement_summary: Mapping[str, Any] | None = None,
+        fba_reimbursement_rows: Iterable[Mapping[str, Any]] = (),
         generated_at_utc: datetime | None = None,
     ) -> MonthlyFinancialCloseResult:
         _validate_period(start_date=start_date, end_date=end_date)
@@ -788,6 +891,7 @@ class MonthlyFinancialCloseService:
         settlement_row_mappings = list(settlement_rows)
         finance_natural_input_provided = finances_natural_month_rows is not None
         finance_natural_rows = list(finances_natural_month_rows or [])
+        reimbursement_detail_rows = list(fba_reimbursement_rows or [])
         settlement_lines = [
             SettlementProfitLine.from_mapping(row) for row in settlement_row_mappings
         ]
@@ -888,6 +992,7 @@ class MonthlyFinancialCloseService:
         ads_timing_difference = _money(ads_api_report_date_spend - settlement_advertising_fee_abs)
         natural_month_finance = _build_natural_month_financial_summary(
             finance_rows=finance_natural_rows,
+            reimbursement_rows=reimbursement_detail_rows,
             cost_index=cost_index,
             cost_identity_index=cost_identity_index,
             marketplace_id=marketplace_id,
@@ -998,7 +1103,11 @@ class MonthlyFinancialCloseService:
                         f"review_amount={natural_month_finance.review_required_amount}; "
                         f"costed_units={natural_month_finance.costed_units}; "
                         f"expected_units={natural_month_finance.product_sales_units + natural_month_finance.liquidation_units}; "
-                        f"missing_cost_skus={list(natural_month_finance.missing_cost_skus)}"
+                        f"missing_cost_skus={list(natural_month_finance.missing_cost_skus)}; "
+                        f"inventory_loss_status={natural_month_finance.inventory_loss_status}; "
+                        f"inventory_loss_units={natural_month_finance.inventory_loss_units}; "
+                        f"inventory_loss_costed_units={natural_month_finance.inventory_loss_costed_units}; "
+                        f"inventory_loss_missing_cost_skus={list(natural_month_finance.inventory_loss_missing_cost_skus)}"
                     ),
                 )
             )
@@ -1016,6 +1125,41 @@ class MonthlyFinancialCloseService:
                     ),
                 )
             )
+        if natural_month_finance is not None:
+            inventory_loss_status = natural_month_finance.inventory_loss_status
+            if inventory_loss_status == "needs_review":
+                reconciliation_checks.append(
+                    ReconciliationCheck(
+                        check_name="warehouse_lost_inventory_writeoff",
+                        status="needs_review",
+                        severity="error",
+                        expected="warehouse-lost reimbursement detail and effective landed cost fully reconciled",
+                        actual=inventory_loss_status,
+                        message=(
+                            f"finances_reimbursement={natural_month_finance.warehouse_lost_reimbursement_amount}; "
+                            f"reimbursement_report={natural_month_finance.warehouse_lost_reimbursement_report_amount}; "
+                            f"loss_units={natural_month_finance.inventory_loss_units}; "
+                            f"costed_units={natural_month_finance.inventory_loss_costed_units}; "
+                            f"missing_cost_skus={list(natural_month_finance.inventory_loss_missing_cost_skus)}"
+                        ),
+                    )
+                )
+            elif inventory_loss_status == "ok":
+                reconciliation_checks.append(
+                    ReconciliationCheck(
+                        check_name="warehouse_lost_inventory_writeoff",
+                        status="ok",
+                        severity="info",
+                        expected="verified warehouse-lost inventory write-off",
+                        actual=_decimal_to_string(natural_month_finance.inventory_loss_landed_cost),
+                        message=(
+                            f"warehouse_lost_reimbursement={natural_month_finance.warehouse_lost_reimbursement_amount}; "
+                            f"reimbursement_report={natural_month_finance.warehouse_lost_reimbursement_report_amount}; "
+                            f"loss_units={natural_month_finance.inventory_loss_units}; "
+                            f"landed_cost_writeoff={natural_month_finance.inventory_loss_landed_cost}"
+                        ),
+                    )
+                )
         warnings = _build_warnings(
             settlement_row_count=len(settlement_lines),
             missing_cost_skus=missing_cost_skus,
@@ -1041,6 +1185,7 @@ class MonthlyFinancialCloseService:
             fba_reimbursement_summary=fba_reimbursement_summary or {},
         )
         raw_metadata["finances_natural_month_row_count"] = len(finance_natural_rows)
+        raw_metadata["fba_reimbursement_detail_row_count"] = len(reimbursement_detail_rows)
         raw_metadata["management_pnl_source"] = (
             "finances_api_natural_month"
             if natural_month_finance is not None
@@ -1750,6 +1895,7 @@ def _format_sheet(sheet: Any) -> None:
 def _build_natural_month_financial_summary(
     *,
     finance_rows: Sequence[Mapping[str, Any]],
+    reimbursement_rows: Sequence[Mapping[str, Any]],
     cost_index: Mapping[tuple[str, str], Sequence[SkuCostRecord]],
     cost_identity_index: Mapping[tuple[str, str], Sequence[str]],
     marketplace_id: str,
@@ -1771,6 +1917,7 @@ def _build_natural_month_financial_summary(
     customer_return_fee = ZERO
     other_service_fee = ZERO
     reimbursement_total = ZERO
+    warehouse_lost_reimbursement_amount = ZERO
     adjustment_total = ZERO
     finances_ads_reference = ZERO
     transfer_reference = ZERO
@@ -1818,6 +1965,8 @@ def _build_natural_month_financial_summary(
             other_service_fee += _to_decimal(row.get("other_service_fee"))
         elif management_include and transaction_type == "FBAInventoryReimbursement":
             reimbursement_total += amount
+            if _is_warehouse_lost_reason(row.get("description")):
+                warehouse_lost_reimbursement_amount += amount
         elif management_include and transaction_type == "MiscellaneousLedgerAdjustment":
             adjustment_total += amount
 
@@ -1895,12 +2044,29 @@ def _build_natural_month_financial_summary(
     other_unit_cogs = _money(other_unit_cogs)
     landed_cogs = _money(landed_cogs)
     operating_net = _money(operating_net)
+
+    inventory_loss = _calculate_warehouse_lost_inventory_writeoff(
+        finance_reimbursement_amount=_money(warehouse_lost_reimbursement_amount),
+        reimbursement_rows=reimbursement_rows,
+        cost_index=cost_index,
+        cost_identity_index=cost_identity_index,
+        marketplace_id=marketplace_id,
+        settlement_currency=currency,
+    )
     management_profit = _money(
-        operating_net - ads_api_report_date_spend - landed_cogs
+        operating_net
+        - ads_api_report_date_spend
+        - landed_cogs
+        - inventory_loss.landed_cost
     )
     expected_cost_units = product_sales_units + liquidation_units
     source_status = "ok"
-    if review_required_count or missing_cost_skus or costed_units != expected_cost_units:
+    if (
+        review_required_count
+        or missing_cost_skus
+        or costed_units != expected_cost_units
+        or inventory_loss.status == "needs_review"
+    ):
         source_status = "needs_review"
 
     return NaturalMonthFinancialSummary(
@@ -1921,6 +2087,8 @@ def _build_natural_month_financial_summary(
         customer_return_fee=_money(customer_return_fee),
         other_service_fee=_money(other_service_fee),
         reimbursement_total=_money(reimbursement_total),
+        warehouse_lost_reimbursement_amount=_money(warehouse_lost_reimbursement_amount),
+        warehouse_lost_reimbursement_report_amount=inventory_loss.reimbursement_report_amount,
         adjustment_total=_money(adjustment_total),
         finances_ads_charge_reference=_money(finances_ads_reference),
         transfer_reference=_money(transfer_reference),
@@ -1935,10 +2103,269 @@ def _build_natural_month_financial_summary(
         packaging_cogs=packaging_cogs,
         other_unit_cogs=other_unit_cogs,
         landed_cogs=landed_cogs,
+        inventory_loss_status=inventory_loss.status,
+        inventory_loss_units=inventory_loss.inventory_loss_units,
+        inventory_loss_costed_units=inventory_loss.costed_units,
+        inventory_loss_missing_cost_skus=inventory_loss.missing_cost_skus,
+        inventory_loss_cost_identity_resolutions=inventory_loss.cost_identity_resolutions,
+        inventory_loss_product_cost=inventory_loss.product_cost,
+        inventory_loss_first_mile_cost=inventory_loss.first_mile_cost,
+        inventory_loss_packaging_cost=inventory_loss.packaging_cost,
+        inventory_loss_other_unit_cost=inventory_loss.other_unit_cost,
+        inventory_loss_landed_cost=inventory_loss.landed_cost,
+        inventory_loss_details=inventory_loss.details,
+        inventory_loss_notes=inventory_loss.notes,
         ads_api_report_date_spend=ads_api_report_date_spend,
         management_operating_profit=management_profit,
         management_operating_margin=_safe_ratio(management_profit, _money(product_sales_amount)),
     )
+
+
+def _calculate_warehouse_lost_inventory_writeoff(
+    *,
+    finance_reimbursement_amount: Decimal,
+    reimbursement_rows: Sequence[Mapping[str, Any]],
+    cost_index: Mapping[tuple[str, str], Sequence[SkuCostRecord]],
+    cost_identity_index: Mapping[tuple[str, str], Sequence[str]],
+    marketplace_id: str,
+    settlement_currency: str | None,
+) -> InventoryLossCalculation:
+    """Cost verified warehouse-lost inventory without guessing from quantity fields.
+
+    Monetary recognition remains anchored to the Finances natural-month ledger. The
+    FBA Reimbursements report is used only as a supporting identity/quantity source.
+    Auto write-off is allowed when:
+
+    - the Finances month contains a positive warehouse-lost reimbursement;
+    - same-month FBA reimbursement detail contains warehouse-lost rows;
+    - detail cash reimbursement amount reconciles to Finances within one cent;
+    - each cash-reimbursed unit has an identifiable SKU/FNSKU and effective landed cost.
+
+    Any ambiguity fails closed as ``needs_review`` and does not silently invent COGS.
+    """
+
+    finance_amount = _money(finance_reimbursement_amount)
+    if finance_amount == ZERO:
+        return InventoryLossCalculation(
+            status="not_applicable",
+            finance_reimbursement_amount=ZERO,
+            reimbursement_report_amount=ZERO,
+            inventory_loss_units=0,
+            costed_units=0,
+            missing_cost_skus=(),
+            cost_identity_resolutions=(),
+            product_cost=ZERO,
+            first_mile_cost=ZERO,
+            packaging_cost=ZERO,
+            other_unit_cost=ZERO,
+            landed_cost=ZERO,
+            notes=(),
+        )
+
+    notes: list[str] = []
+    if finance_amount < ZERO:
+        return InventoryLossCalculation(
+            status="needs_review",
+            finance_reimbursement_amount=finance_amount,
+            reimbursement_report_amount=ZERO,
+            inventory_loss_units=0,
+            costed_units=0,
+            missing_cost_skus=(),
+            cost_identity_resolutions=(),
+            product_cost=ZERO,
+            first_mile_cost=ZERO,
+            packaging_cost=ZERO,
+            other_unit_cost=ZERO,
+            landed_cost=ZERO,
+            notes=("warehouse-lost Finances reimbursement is negative; manual review required",),
+        )
+
+    loss_rows = [row for row in reimbursement_rows if _is_warehouse_lost_reason(row.get("reason"))]
+    if not loss_rows:
+        return InventoryLossCalculation(
+            status="needs_review",
+            finance_reimbursement_amount=finance_amount,
+            reimbursement_report_amount=ZERO,
+            inventory_loss_units=0,
+            costed_units=0,
+            missing_cost_skus=(),
+            cost_identity_resolutions=(),
+            product_cost=ZERO,
+            first_mile_cost=ZERO,
+            packaging_cost=ZERO,
+            other_unit_cost=ZERO,
+            landed_cost=ZERO,
+            notes=(
+                "Finances contains warehouse-lost reimbursement but FBA Reimbursements detail "
+                "has no same-month warehouse-lost row",
+            ),
+        )
+
+    detail_currencies = {
+        str(row.get("currency") or "").strip().upper()
+        for row in loss_rows
+        if str(row.get("currency") or "").strip()
+    }
+    expected_currency = str(settlement_currency or "").strip().upper()
+    if len(detail_currencies) > 1 or (
+        expected_currency and detail_currencies and detail_currencies != {expected_currency}
+    ):
+        notes.append(
+            "warehouse-lost reimbursement currency mismatch: "
+            f"expected={expected_currency or 'unknown'} report={sorted(detail_currencies)}"
+        )
+
+    report_amount = _money(sum((_to_decimal(row.get("amount_total")) for row in loss_rows), ZERO))
+    if abs(report_amount - finance_amount) > MONEY_QUANT:
+        notes.append(
+            "warehouse-lost reimbursement amount mismatch: "
+            f"finances={finance_amount} report={report_amount}"
+        )
+
+    inventory_loss_units = 0
+    invalid_detail = False
+    details: list[dict[str, Any]] = []
+    product_cost = ZERO
+    first_mile_cost = ZERO
+    packaging_cost = ZERO
+    other_unit_cost = ZERO
+    landed_cost = ZERO
+    costed_units = 0
+    missing_cost_skus: set[str] = set()
+    resolutions: set[str] = set()
+
+    for row in loss_rows:
+        amount_total = _to_decimal(row.get("amount_total"))
+        cash_units = _optional_int(row.get("quantity_reimbursed_cash")) or 0
+        inventory_units = _optional_int(row.get("quantity_reimbursed_inventory")) or 0
+        total_units = _optional_int(row.get("quantity_reimbursed_total")) or 0
+
+        # Cash reimbursement removes a lost inventory asset. Inventory replacement
+        # does not create the same P&L write-off because Amazon has replaced the unit.
+        units = cash_units
+        if units <= 0 and amount_total != ZERO and inventory_units <= 0:
+            units = total_units
+        if units <= 0:
+            continue
+
+        source_sku = str(row.get("seller_sku") or row.get("fnsku") or "").strip()
+        detail: dict[str, Any] = {
+            "reimbursement_id": row.get("reimbursement_id"),
+            "reason": row.get("reason"),
+            "approval_date": str(row.get("approval_date") or ""),
+            "seller_sku": row.get("seller_sku"),
+            "fnsku": row.get("fnsku"),
+            "asin": row.get("asin"),
+            "quantity": units,
+            "reimbursement_amount": _money(amount_total),
+            "resolved_cost_sku": None,
+            "landed_cost_writeoff": ZERO,
+            "status": "needs_review",
+        }
+        if not source_sku:
+            invalid_detail = True
+            notes.append(
+                f"warehouse-lost reimbursement_id={row.get('reimbursement_id')} missing SKU/FNSKU"
+            )
+            details.append(detail)
+            continue
+
+        event_date = _coerce_date(row.get("approval_date"))
+        if event_date is None:
+            invalid_detail = True
+            notes.append(
+                f"warehouse-lost reimbursement_id={row.get('reimbursement_id')} missing approval date"
+            )
+            details.append(detail)
+            continue
+        inventory_loss_units += units
+        resolved_sku, resolution_note = _resolve_cost_identity(
+            cost_index=cost_index,
+            cost_identity_index=cost_identity_index,
+            marketplace_id=marketplace_id,
+            source_sku=source_sku,
+        )
+        cogs = _calculate_sku_cogs(
+            cost_index=cost_index,
+            marketplace_id=marketplace_id,
+            seller_sku=resolved_sku or source_sku,
+            unit_events=({"posted_date": event_date, "quantity": units},),
+            settlement_currency=settlement_currency,
+        )
+        detail["resolved_cost_sku"] = resolved_sku or source_sku
+        detail["landed_cost_writeoff"] = cogs.total_cogs
+        detail["status"] = cogs.status
+        details.append(detail)
+        if cogs.status != "ok":
+            missing_cost_skus.add(source_sku)
+        elif resolution_note:
+            resolutions.add(resolution_note)
+        product_cost += cogs.product_cost_cogs
+        first_mile_cost += cogs.first_mile_cogs
+        packaging_cost += cogs.packaging_cogs
+        other_unit_cost += cogs.other_unit_cogs
+        landed_cost += cogs.total_cogs
+        costed_units += cogs.costed_units
+
+    status = "ok"
+    if (
+        notes
+        or invalid_detail
+        or inventory_loss_units <= 0
+        or missing_cost_skus
+        or costed_units != inventory_loss_units
+        or abs(report_amount - finance_amount) > MONEY_QUANT
+    ):
+        status = "needs_review"
+
+    # Fail closed: candidate per-row costs remain visible in ``details`` for diagnosis,
+    # but no inventory-loss cost is applied to Management P&L / accountant reference
+    # profit until the complete warehouse-loss set reconciles.
+    applied_product_cost = _money(product_cost) if status == "ok" else ZERO
+    applied_first_mile_cost = _money(first_mile_cost) if status == "ok" else ZERO
+    applied_packaging_cost = _money(packaging_cost) if status == "ok" else ZERO
+    applied_other_unit_cost = _money(other_unit_cost) if status == "ok" else ZERO
+    applied_landed_cost = _money(landed_cost) if status == "ok" else ZERO
+
+    return InventoryLossCalculation(
+        status=status,
+        finance_reimbursement_amount=finance_amount,
+        reimbursement_report_amount=report_amount,
+        inventory_loss_units=inventory_loss_units,
+        costed_units=costed_units,
+        missing_cost_skus=tuple(sorted(missing_cost_skus)),
+        cost_identity_resolutions=tuple(sorted(resolutions)),
+        product_cost=applied_product_cost,
+        first_mile_cost=applied_first_mile_cost,
+        packaging_cost=applied_packaging_cost,
+        other_unit_cost=applied_other_unit_cost,
+        landed_cost=applied_landed_cost,
+        details=tuple(details),
+        notes=tuple(notes),
+    )
+
+
+def _is_warehouse_lost_reason(value: Any) -> bool:
+    text = str(value or "").strip().upper()
+    if not text:
+        return False
+    normalized = "".join(character if character.isalnum() else "_" for character in text)
+    tokens = {token for token in normalized.split("_") if token}
+    return "WAREHOUSE" in tokens and "LOST" in tokens
+
+
+def _coerce_date(value: Any) -> date | None:
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    if value in (None, ""):
+        return None
+    text = str(value).strip()
+    try:
+        return date.fromisoformat(text[:10])
+    except ValueError:
+        return None
 
 
 def _truthy(value: Any) -> bool:

@@ -157,3 +157,27 @@ def test_fetch_inventory_cost_identity_rows_is_historical_and_preserves_ambiguit
     assert "[seller_sku]" in sql
     assert params == ("ATVPDKIKX0DER", date(2026, 7, 31))
     assert cursor.closed is True
+
+
+def test_fetch_fba_reimbursement_period_rows_returns_accounting_detail() -> None:
+    cursor = FakeCursor(rows=[])
+    repo = MonthlyFinancialCloseRepo(FakeConnection(cursor))
+
+    repo.fetch_fba_reimbursement_period_rows(
+        marketplace_id="ATVPDKIKX0DER",
+        start_date=date(2026, 7, 1),
+        end_date=date(2026, 7, 31),
+    )
+
+    sql, params = cursor.executed[0]
+    assert "amazon_fba_reimbursement" in sql
+    assert "reimbursement_id" in sql
+    assert "reason" in sql
+    assert "seller_sku" in sql
+    assert "fnsku" in sql
+    assert "quantity_reimbursed_cash" in sql
+    assert "quantity_reimbursed_inventory" in sql
+    assert "amount_total" in sql
+    assert "approval_date" in sql
+    assert params == ("ATVPDKIKX0DER", date(2026, 7, 1), date(2026, 7, 31))
+    assert cursor.closed is True

@@ -776,6 +776,32 @@ artifact_save scanned=169 saved=169 skipped=0
 - `docs/operations/v190_natural_month_finances_rollout.md`
 - `docs/operations/monthly_financial_troubleshooting.md`
 
+
+## 2026-08-18 Monthly Reporting v2.1 Accounting Hardening
+
+Monthly v2.0 已完成 May/Jun/Jul golden validation、production image rollout、July 双附件真实发送，并与 Seller Central July Monthly Transaction 及旧会计工作流逐项 reconciliation。核心 Amazon posted-date 会计净额闭合。
+
+最终会计核验发现 July reimbursement 同时包含普通 `REVERSAL_REIMBURSEMENT` 和真实 `WAREHOUSE_LOST`。因此在进入 Weekly v2 前先完成 monthly v2.1 hardening：
+
+- Finances warehouse-lost reimbursement 作为金额触发；
+- FBA Reimbursements detail 提供 reason/SKU/FNSKU/cash qty/amount supporting evidence；
+- effective-date `amazon_sku_cost` 计算 inventory write-off；
+- 全部条件通过才自动扣一次 warehouse-lost landed cost；任何歧义 fail closed、apply 0 automatic loss cost；
+- normal reimbursement 不重复扣 COGS；
+- Product Gross Margin 不含 warehouse loss；Management Profit / Accountant Reference Profit 单独扣 verified loss；
+- 会计 Workbook/邮件详细中文优先双语，解释 lifecycle rows、units、Ads timing、Transfer、Settlement 与 data-validation status；
+- 无 migration。
+
+本地：`382 passed`，compileall passed。
+
+下一步顺序：
+
+1. CI/build 新 image；
+2. Azure May/Jun/Jul golden preview；
+3. 与 July official Monthly Transaction 再验 warehouse-loss detail / cost；
+4. 通过后更新 monthly production image，并 force-resend July 最终修订版（仅本次）；
+5. Monthly 正式关单后继续 Weekly Reporting v2（ADR-017）。
+
 ## 2026-08-16 Weekly Reporting v2 Next Step
 
 Monthly reporting v2 has completed May/June/July golden validation and production report-delivery image rollout. The next reporting iteration is Weekly Reporting v2.

@@ -1,6 +1,6 @@
 # ADR-016: Separate Monthly Operating Report and Accountant Workbook
 
-- Status: Accepted / implementation pending
+- Status: Accepted / implemented; amended by ADR-018
 - Date: 2026-08-12
 - Decision scope: monthly report presentation, accounting support workbook, Seller Central reconciliation, report delivery artifacts
 - Depends on: ADR-015 Natural-Month Management P&L
@@ -168,7 +168,7 @@ product_cost
 
 If a CNY bookkeeping conversion is required, the monthly FX rate must be explicitly provided/configured and displayed. The pipeline must not silently hard-code `6.9` as a permanent accounting rate.
 
-### 8. Adjustment quantity no longer automatically creates another COGS charge
+### 8. Adjustment/reimbursement quantity does not automatically create another COGS charge
 
 The historical manual SOP treated Adjustment quantity as inventory loss by default and could therefore subtract product/first-mile cost again.
 
@@ -180,7 +180,9 @@ verified liquidation/removal units -> costed
 Adjustment / reimbursement quantity -> no automatic extra COGS
 ```
 
-An Adjustment may only create additional inventory cost when there is explicit evidence that the event represents a distinct inventory loss not already captured by the normalized cost lifecycle.
+An Adjustment/reimbursement may only create additional inventory cost when there is explicit evidence that the event represents a distinct inventory loss not already captured by the normalized cost lifecycle.
+
+**Amendment 2026-08-18:** `WAREHOUSE_LOST` is the explicit supported exception. Under ADR-018 it is written off only after Finances reimbursement amount, FBA Reimbursements reason/SKU/quantity/currency and effective-date landed cost all reconcile. Ordinary return/reversal reimbursements still do not create duplicate COGS. Any ambiguity fails closed and applies no automatic inventory-loss cost.
 
 ### 9. Default presentation uses explicit minus signs
 
@@ -228,18 +230,16 @@ Trade-offs:
 - a CNY accountant view requires an explicit monthly FX input/configuration if CNY conversion is requested;
 - manual Seller Central reconciliation remains an operational validation step when a source export is provided.
 
-## Implementation boundary
+## Implementation boundary / current state
 
-This ADR freezes design only. At the time of acceptance:
+The v2.0 presentation redesign is implemented and production-validated. No database migration was required. The legacy all-in-one XLSX remains generated for compatibility, while default monthly delivery attaches the separate Operating Report and Accountant Workbook.
 
-- no database migration is required;
-- no financial formula in ADR-015 is changed;
-- no production code has yet been changed for this presentation redesign;
-- the next iteration is code implementation + tests + local artifact comparison before Azure rollout.
+ADR-018 adds the only current accounting-hardening formula extension: a **verified warehouse-lost inventory write-off** is deducted separately from Management Operating Profit and the accountant posted-month reference profit. This does not change the natural-month Finances source, Ads report-date source, Settlement Close positioning, or Product Gross Margin definition.
 
 ## Related documents
 
 - `docs/adr/ADR-015-natural-month-management-pnl.md`
+- `docs/adr/ADR-018-warehouse-lost-inventory-writeoff.md`
 - `docs/features/feature_monthly_reporting_pack_redesign.md`
 - `docs/features/feature_monthly_financial_close_report.md`
 - `docs/features/feature_monthly_executive_pnl_landed_cogs.md`

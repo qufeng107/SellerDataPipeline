@@ -22,6 +22,9 @@ METRIC_LABEL_ZH = {
     "Settlement net amount": "Settlement净额",
     "Product sales amount": "商品销售额",
     "Product sales units": "商品销售件数",
+    "Costed units": "成本计量件数（销售+清算）",
+    "Warehouse-lost inventory units": "仓库丢失库存件数",
+    "Warehouse-lost inventory write-off": "仓库丢失库存成本核销",
     "Internal COGS": "内部COGS",
     "Product cost COGS": "商品货款COGS",
     "First-mile freight COGS": "头程海运COGS",
@@ -115,13 +118,19 @@ class MonthlyFinancialCloseEmailTemplate:
         )
         product_sales_value = natural.get("product_sales_amount") or summary.get("product_sales_amount")
         product_sales_units_value = natural.get("product_sales_units") or summary.get("product_sales_units")
+        costed_units_value = natural.get("costed_units")
+        inventory_loss_units_value = natural.get("inventory_loss_units")
+        inventory_loss_cost_value = natural.get("inventory_loss_landed_cost")
         product_cost_cogs_value = natural.get("product_cost_cogs") or summary.get("product_cost_cogs")
         first_mile_cogs_value = natural.get("first_mile_cogs") or summary.get("first_mile_cogs")
         profit = _money(operating_profit_value, currency)
-        subject = f"[月结 Monthly Close] Amazon US {month} | Operating Profit {profit} | Status {status}"
+        subject = f"[月结 Monthly Close] Amazon US {month} | 经营利润 Operating Profit {profit} | 数据状态 Data Status {status}"
         rows = [
             ("Product sales amount", _money(product_sales_value, currency)),
             ("Product sales units", _text(product_sales_units_value, "0")),
+            ("Costed units", _text(costed_units_value, "0")),
+            ("Warehouse-lost inventory units", _text(inventory_loss_units_value, "0")),
+            ("Warehouse-lost inventory write-off", _money(inventory_loss_cost_value, currency)),
             ("Ads spend", _money(summary.get("ads_api_report_date_spend"), currency)),
             ("Product cost COGS", _money(product_cost_cogs_value, currency)),
             ("First-mile freight COGS", _money(first_mile_cogs_value, currency)),
@@ -145,18 +154,26 @@ class MonthlyFinancialCloseEmailTemplate:
         intro = (
             f"Monthly Financial Close for {month} ({marketplace_id}) is ready. "
             "Management operating profit uses Finances API marketplace-local natural-month "
-            "transactions, report-date Ads spend and landed COGS; Settlement remains a "
+            "transactions, report-date Ads spend, landed COGS and verified warehouse-lost "
+            "inventory write-offs; Settlement remains a "
             "close/cash reconciliation reference."
         )
         intro_zh = (
             f"{month} 月度财务结算报表已生成，市场为 {marketplace_id}。"
-            "经营利润采用 Finances API 美国站本地自然月交易、Ads API 月度广告发生口径并扣除到岸COGS；"
+            "经营利润采用 Finances API 美国站本地自然月交易、Ads API 月度广告发生口径，"
+            "扣除销售/清算到岸COGS，并对已核验的 WAREHOUSE_LOST 仓库丢失库存单独核销成本；"
             "Settlement 继续作为结算、现金与回款对账参考。"
         )
         key_points_zh = [
-            f"报表状态：{status}。",
+            f"数据校验状态：{status}（仅表示自动数据与核验规则通过，不代表会计师已完成正式审核）。",
             f"商品销售额：{_money(product_sales_value, currency)}。",
+            (
+                f"商品销售件数：{_text(product_sales_units_value, '0')}；"
+                f"成本计量件数（销售+清算）：{_text(costed_units_value, '0')}；"
+                f"仓库丢失库存件数：{_text(inventory_loss_units_value, '0')}。"
+            ),
             f"到岸COGS：{_money(landed_cogs_value, currency)}。",
+            f"仓库丢失库存成本核销：{_money(inventory_loss_cost_value, currency)}。",
             f"经营利润：{profit}。",
             f"Settlement净额：{_money(summary.get('settlement_net_amount'), currency)}。",
             f"非信息类警告：{_non_info_warning_count(report)}。",
@@ -180,7 +197,9 @@ class MonthlyFinancialCloseEmailTemplate:
                 "performance and Accountant Monthly Workbook for bookkeeping support."
             ),
             action_note_zh=(
-                "请查看两份 XLSX 附件：月度经营报告用于经营分析，会计月度底稿用于做账辅助与追溯。"
+                "请查看两份 XLSX 附件：月度经营报告用于经营分析；会计月度底稿用于做账辅助与交易追溯。"
+                "会计应以会计月度底稿的 posted-date Amazon 交易分类为主，并按需填写 USD/CNY 记账汇率；"
+                "经营月报中的 Ads API 当月消耗和 Management Operating Profit 仅作经营分析，不直接替代会计账单。"
             ),
         )
 

@@ -1,19 +1,19 @@
 # Feature: Monthly Reporting Pack Redesign
 
-> 文档状态：Design frozen / implementation pending  
-> 负责人：AI + Feng  
-> 更新时间：2026-08-16  
-> 功能状态：Implemented locally / pending Azure validation  
-> 相关数据接入文档：`docs/data_access/seller_central_manual_exports.md`, `docs/data_access/amazon_ads_reports_catalog.md`  
-> 相关数据库 spec：`docs/database/database_current_schema_spec.md`  
-> 相关功能：`feature_monthly_financial_close_report.md`, `feature_finances_api_natural_month_ledger.md`, `feature_monthly_executive_pnl_landed_cogs.md`, `feature_sku_cost_management.md`  
-> 相关 ADR：`ADR-015-natural-month-management-pnl.md`, `ADR-016-separate-monthly-operating-report-and-accounting-workbook.md`
+> 文档状态：Implemented / accounting hardening pending Azure validation
+> 负责人：AI + Feng
+> 更新时间：2026-08-18
+> 功能状态：v2.0 production rollout completed; v2.1 warehouse-loss accounting hardening implemented locally
+> 相关数据接入文档：`docs/data_access/seller_central_manual_exports.md`, `docs/data_access/amazon_ads_reports_catalog.md`
+> 相关数据库 spec：`docs/database/database_current_schema_spec.md`
+> 相关功能：`feature_monthly_financial_close_report.md`, `feature_finances_api_natural_month_ledger.md`, `feature_monthly_executive_pnl_landed_cogs.md`, `feature_sku_cost_management.md`
+> 相关 ADR：`ADR-015-natural-month-management-pnl.md`, `ADR-016-separate-monthly-operating-report-and-accounting-workbook.md`, `ADR-018-warehouse-lost-inventory-writeoff.md`
 
 ---
 
 ## 1. 功能摘要
 
-本功能重构 Monthly Financial Close 的**展示与交付层**，不修改 v1.90.3 已生产验证的自然月 Management P&L 财务公式。
+本功能首先在 v2.0 重构 Monthly Financial Close 的**展示与交付层**；2026-08-18 的 v2.1 accounting hardening 进一步加入一个经过严格核验的例外：`WAREHOUSE_LOST` 仓库丢失赔偿在 FBA Reimbursements 明细、金额、币种、SKU/数量和 effective-date landed cost 全部闭合时，单独核销库存成本。普通 reimbursement 仍不自动重复扣 COGS。
 
 新版月度交付拆成两个面向不同用户的 XLSX：
 
@@ -35,9 +35,9 @@
 | Report writer 代码 | 已实现：新增3-Sheet经营月报 writer |
 | Accounting workbook generator | 已实现：新增4-Sheet会计底稿 writer |
 | Delivery 两附件支持 | 已实现：月报优先发送经营月报 + 会计底稿 |
-| 单元测试 | 已通过：完整 unit suite 372 passed |
-| 本地 artifact 验收 | 已完成代码级生成/结构验证；待真实Azure数据preview |
-| Azure monthly rollout | 待执行 |
+| 单元测试 | v2.1 本地完整 unit suite：382 passed |
+| 本地 artifact 验收 | v2.0 已完成；v2.1 warehouse-loss 规则已完成代码级与单元验证 |
+| Azure monthly rollout | v2.0 已上线；v2.1 待 May/Jun/Jul golden validation 后升级 |
 | 文档同步 | 已同步本地实现状态 |
 
 ## 3. 业务目标
@@ -84,7 +84,7 @@
 
 ### 4.2 本功能不包含
 
-- 不修改 ADR-015 的 Management P&L 公式。
+- 不重新定义 ADR-015 的自然月主源、Ads report-date 主源或 Settlement Close 定位；v2.1 仅按 ADR-018 在经营利润中新增“已核验仓库丢失库存成本核销”这一独立成本项。
 - 不重新定义 Finances lifecycle inclusion。
 - 不修改 Settlement ingestion。
 - 不修改 Ads API ingestion。
@@ -102,6 +102,7 @@
 | Ads daily normalized tables | 当月实际广告消耗与广告效率 | cost, sales7d, clicks, impressions, purchases7d |
 | Promotion/Coupon normalized data | 促销背景解释 | Coupon/Promotion metrics |
 | Settlement normalized data | close/cash reconciliation reference | Settlement Close only |
+| `amazon_fba_reimbursement` | 仓库丢失身份/数量核验 | reason, SKU/FNSKU, cash/inventory qty, amount, approval date |
 | Seller Central Monthly Transaction | 可选人工官方核验源 | posted-date transaction rows, Released/Deferred, total |
 
 ### 5.1 Seller Central 手工导出的定位
@@ -595,25 +596,25 @@ v2 首期保留现有 JSON compatibility fields，避免下游 delivery/tests �
 
 不建议直接在第一步删除兼容代码。
 
-## 13. 建议代码边界（实现阶段）
+## 13. 当前代码边界
 
-当前设计建议，不代表本轮已经修改代码：
+当前已实现边界：
 
 ```text
 services/monthly_financial_close_service.py
-  -> 继续负责统一计算结果
+  -> 统一计算结果；同时继续生成 legacy monthly_financial_close XLSX 以兼容旧流程
 
-reporting/monthly_operating_report_writer.py
-  -> 新增 / 提取管理月报 writer
+reports/monthly_operating_report_writer.py
+  -> 月度经营报告 writer
 
-reporting/accountant_monthly_workbook_writer.py
-  -> 新增会计底稿 writer
+reports/accountant_monthly_workbook_writer.py
+  -> 会计月度底稿 writer
 
-reporting/monthly_financial_close_writer.py
-  -> legacy compatibility / shared helpers 待实现时评估
+reports/monthly_reporting_common.py
+  -> 两份新版 XLSX 的共享格式与工具
 
-report_delivery
-  -> 同一 monthly delivery pack 附带两份 XLSX
+services/report_delivery_service.py / report_delivery_templates.py
+  -> 同一 monthly delivery pack 默认附带两份新版 XLSX
 ```
 
 应优先复用 calculation DTO / result dict，不允许两个 writer 各自重新计算利润公式。
@@ -622,20 +623,30 @@ report_delivery
 
 ### 14.1 May/Jun/Jul golden numbers
 
-必须保持：
+下表是 **ADR-018 之前的 v2.0 baseline**。Product Sales、销售/清算 Landed COGS、Ads API Spend 与 Product Gross Margin 必须继续闭合；若某月存在核验通过的 `WAREHOUSE_LOST`，Management Profit 应在 baseline 的基础上**恰好再扣一次**该月 warehouse-lost landed-cost write-off，因此该月最终 Profit / Margin 允许且应当发生相应变化。
 
-| Month | Product Sales | Landed COGS | Ads API Spend | Management Profit | Operating Margin |
+| Month | Product Sales | Sales/Liquidation Landed COGS | Ads API Spend | Pre-ADR-018 Management Profit | Pre-ADR-018 Margin |
 |---|---:|---:|---:|---:|---:|
 | 2026-05 | 2316.38 | 467.25 | 544.66 | 548.35 | 23.67% |
 | 2026-06 | 2870.06 | 573.05 | 539.25 | 612.70 | 21.35% |
 | 2026-07 | 1464.14 | 291.23 | 555.63 | -114.89 | -7.85% |
 
-Product Gross Margin should be approximately:
+Product Gross Margin 不包含 warehouse-loss write-off，因此仍应约为：
 
 ```text
 May 79.83%
 Jun 80.03%
 Jul 80.11%
+```
+
+Azure v2.1 验收必须额外记录每月：
+
+```text
+warehouse_lost_reimbursement_amount
+inventory_loss_status
+inventory_loss_units
+inventory_loss_landed_cost
+revised Management Operating Profit / Margin
 ```
 
 ### 14.2 Seller Central reconciliation anchors
@@ -650,6 +661,9 @@ May/Jun/Jul manual export validation has established the following key mapping e
 - liquidation revenue/fees match;
 - account-level Coupon/Deal/storage/return fees match;
 - Adjustment/reimbursement net can be explained;
+- normal reimbursement quantity does not automatically create another COGS charge;
+- verified `WAREHOUSE_LOST` reimbursement is matched to FBA Reimbursements detail and effective SKU cost, then written off separately exactly once;
+- any warehouse-loss ambiguity fails closed (`needs_review`) and applies no automatic loss cost;
 - Transfer remains excluded from P&L;
 - Released + Deferred must both be retained in posted-date reconciliation.
 
@@ -674,7 +688,10 @@ Implementation must add tests for:
 - Transfer exclusion;
 - unknown accounting category `needs_review`;
 - explicit negative number formats where writer API allows deterministic inspection;
-- May/Jun/Jul golden report totals.
+- May/Jun/Jul golden report totals;
+- verified WAREHOUSE_LOST write-off;
+- normal reimbursement no-duplicate-COGS;
+- warehouse-loss missing detail / amount / currency / SKU cost fail-closed behavior.
 
 ## 15. Migration 需求
 
@@ -684,20 +701,18 @@ No migration required.
 
 Current Azure SQL schema already supports this presentation redesign.
 
-## 16. 实现顺序（下一步代码迭代）
+## 16. 当前 rollout 顺序
+
+v2.0 的 writer / 双附件 delivery / production rollout 已完成。v2.1 accounting hardening 仅按以下顺序上线：
 
 ```text
-1. inventory current monthly calculation DTO / writer / delivery code
-2. add shared monthly presentation helpers
-3. implement Monthly Operating Report writer
-4. implement Accountant Workbook writer
-5. keep legacy XLSX behind compatibility path during first iteration
-6. add tests + May/Jun/Jul local golden artifact generation
-7. compare with approved sample layouts
-8. update report delivery to attach both XLSX
-9. local send/dry-run
-10. Azure preview only
-11. production rollout after manual review
+1. CI/build v2.1 image
+2. May/Jun/Jul Azure preview
+3. 验证 WAREHOUSE_LOST reimbursement detail / currency / SKU / cost / write-off
+4. 与 Seller Central Monthly Transaction 再做 July external reconciliation
+5. 更新 monthly production image
+6. force-resend July 最终修订版一次
+7. 之后从 August 起走正常自动月报，不再依赖手工 CSV
 ```
 
 ## 17. 设计冻结项
@@ -710,12 +725,14 @@ Current Azure SQL schema already supports this presentation redesign.
 4. Management P&L 继续使用 ADR-015 自然月口径。
 5. Seller Central Monthly Transaction 是 reconciliation/accounting reference，不是自动化硬依赖。
 6. 商品成本使用 effective-date SKU cost，不回退到永久固定 30/2.5/6.9。
-7. Adjustment quantity 不自动重复扣 COGS。
-8. Transfer 不进利润。
-9. Ads billing timing 与 Ads API spend 分开。
-10. 所有负数显式 `-`。
+7. 普通 Adjustment/Reimbursement quantity 不自动重复扣 COGS；`WAREHOUSE_LOST` 按 ADR-018 严格核验后单独核销库存成本。
+8. Product Gross Margin 仍只扣销售+清算 Landed COGS，warehouse loss 单列。
+9. Transfer 不进利润.
+10. Ads billing timing 与 Ads API spend 分开。
+11. 所有负数显式 `-`。
+12. 会计底稿详细中文优先 + 英文参考；`OK` 仅代表数据校验通过，不代表会计审核。
 
-## 17. 2026-08-16 本地实现记录
+## 18. 2026-08-16 本地实现记录
 
 本轮实现遵循“计算主链不改、展示/交付层新增”的兼容策略。
 
@@ -748,11 +765,26 @@ legacy workbook       = generated but not attached by default
 
 会计底稿的分类明细和源交易明细直接读取 `amazon_finance_transaction` normalized rows；repository 查询补充 raw hash / business key / lifecycle identifiers，用于追溯和 Commission Base/Promo 净额识别。
 
+v2.0 production 验收已完成：May/Jun/Jul golden validation 通过，production report-delivery 已切换到新版双附件，2026-07 已真实发送并与 Seller Central Monthly Transaction / 旧会计工作流逐项核对。
+
+## 19. 2026-08-18 Accountant Hardening / Warehouse-Lost v2.1
+
+7 月外部核验发现 reimbursement 中存在 `WAREHOUSE_LOST` 与普通 `REVERSAL_REIMBURSEMENT` 两种不同经济含义。v2.1 按 `ADR-018` 实现：
+
+- Finances 仍是赔偿金额主源；
+- FBA Reimbursements detail 只负责 warehouse-loss reason、SKU/FNSKU、数量和金额交叉核验；
+- 只有 cash-reimbursed warehouse-lost units、金额/币种闭合、SKU身份唯一且 effective-date cost 完整时才自动核销；
+- 任一条件失败 -> `needs_review`，候选成本只留在核验明细，不自动影响利润；
+- 普通退货/追回赔偿继续不自动重复扣 COGS；
+- Product Gross Margin 保持只扣销售+清算到岸成本；warehouse-loss cost 在经营损益中单列；
+- Accountant Workbook 改为更详细的中文优先双语：解释 lifecycle rows、58 sales units vs costed units、warehouse-loss units、Ads 两种时点、Transfer、Settlement 和数据状态；
+- 会计 `Posted-Month Reference Profit` 与 Management Operating Profit 均只在 warehouse-loss verification=ok 时扣该损失一次。
+
 本地验收：
 
 ```text
-pytest -q tests/unit
-372 passed
+python -m compileall -q src tests -> passed
+PYTHONPATH=src pytest -q tests/unit -> 382 passed
 ```
 
-下一步仍需在 Azure preview 对 2026-05 / 2026-06 / 2026-07 运行 golden-number 验收，并检查 delivery pack 实际包含两份 XLSX 后，再进入生产 rollout。
+下一步：CI/build -> Azure May/Jun/Jul preview，确认 warehouse-loss detail 在真实 DB 闭合；若 July 存在已核验 write-off，则 revised July Management Profit/Accounting Reference Profit 以新值为准，再 force-resend 最终修订版。
