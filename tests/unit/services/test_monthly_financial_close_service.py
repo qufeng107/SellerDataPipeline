@@ -73,7 +73,7 @@ def test_calculate_monthly_financial_close_core_metrics() -> None:
     )
 
     payload = result.to_dict()
-    assert payload["version"] == "v1.5-natural-month-finances"
+    assert payload["version"] == "v1.6-natural-month-accounting"
     assert payload["financial_summary"]["management_operating_profit"] == "10.00"
     assert payload["financial_summary"]["landed_cogs"] == "50.00"
     assert "accountant_pack" in payload
@@ -288,6 +288,7 @@ def test_run_uses_repo_and_writes_report(tmp_path: Path) -> None:
         "coupon",
         "promotion",
         "reimbursement",
+        "reimbursement_details",
     ]
     assert result.output_files["xlsx"].endswith("monthly_financial_close_2026-03.xlsx")
 
@@ -428,6 +429,16 @@ class FakeMonthlyRepo:
     ) -> dict[str, object]:
         self.calls.append("reimbursement")
         return {"reimbursement_count": 0}
+
+    def fetch_fba_reimbursement_period_rows(
+        self,
+        *,
+        marketplace_id: str,
+        start_date: date,
+        end_date: date,
+    ) -> list[dict[str, object]]:
+        self.calls.append("reimbursement_details")
+        return []
 
 
 def test_large_ads_timing_difference_is_warning_not_delivery_blocker() -> None:
@@ -788,3 +799,275 @@ def test_natural_month_direct_cost_wins_over_fnsku_alias() -> None:
     assert result.natural_month_finance is not None
     assert result.natural_month_finance.product_cost_cogs == Decimal("8.00")
     assert result.natural_month_finance.cost_identity_resolutions == ()
+
+
+def _finance_reimbursement_row(
+    *,
+    transaction_id: str,
+    description: str,
+    amount: Decimal,
+    posted_date: date,
+) -> dict[str, object]:
+    return {
+        "marketplace_id": "ATVPDKIKX0DER",
+        "transaction_id": transaction_id,
+        "transaction_status": "RELEASED",
+        "transaction_type": "FBAInventoryReimbursement",
+        "posted_date_local": posted_date,
+        "marketplace_timezone": "America/Los_Angeles",
+        "amount": amount,
+        "currency": "USD",
+        "management_role": "operating",
+        "management_include": True,
+        "management_replace_with_ads_api": False,
+        "review_required": False,
+        "product_sales_amount": Decimal("0.00"),
+        "unit_events_json": "[]",
+        "description": description,
+    }
+
+
+def _warehouse_lost_reimbursement_detail(
+    *,
+    seller_sku: str = "SKU-LOST",
+    amount: Decimal = Decimal("5.62"),
+    cash_units: int = 1,
+) -> dict[str, object]:
+    return {
+        "reimbursement_id": "R-LOST-1",
+        "case_id": "CASE-1",
+        "amazon_order_id": None,
+        "reason": "Lost:Warehouse",
+        "seller_sku": seller_sku,
+        "fnsku": "FNSKU-LOST",
+        "asin": "B0LOSTTEST",
+        "currency": "USD",
+        "amount_total": amount,
+        "quantity_reimbursed_cash": cash_units,
+        "quantity_reimbursed_inventory": 0,
+        "quantity_reimbursed_total": cash_units,
+        "approval_date": date(2026, 7, 21),
+    }
+
+
+def test_warehouse_lost_reimbursement_writes_off_verified_inventory_cost() -> None:
+    finance_rows = [
+        {
+            "marketplace_id": "ATVPDKIKX0DER",
+            "transaction_id": "shipment-1",
+            "transaction_status": "RELEASED",
+            "transaction_type": "Shipment",
+            "posted_date_local": date(2026, 7, 5),
+            "marketplace_timezone": "America/Los_Angeles",
+            "amount": Decimal("20.00"),
+            "currency": "USD",
+            "management_role": "operating",
+            "management_include": True,
+            "management_replace_with_ads_api": False,
+            "review_required": False,
+            "product_sales_amount": Decimal("25.00"),
+            "unit_events_json": '[{"seller_sku":"SKU-SALE","quantity":1,"posted_date":"2026-07-05"}]',
+        },
+        _finance_reimbursement_row(
+            transaction_id="reimbursement-lost",
+            description="WAREHOUSE_LOST",
+            amount=Decimal("5.62"),
+            posted_date=date(2026, 7, 21),
+        ),
+    ]
+
+    result = MonthlyFinancialCloseService().calculate_from_rows(
+        marketplace_id="ATVPDKIKX0DER",
+        profile_id="3917953989967300",
+        month="2026-07",
+        start_date=date(2026, 7, 1),
+        end_date=date(2026, 7, 31),
+        settlement_rows=[
+            _settlement_row(1, "SKU-SALE", Decimal("20.00"), "product_sales", "revenue", 1),
+        ],
+        finances_natural_month_rows=finance_rows,
+        fba_reimbursement_rows=[_warehouse_lost_reimbursement_detail()],
+        sku_cost_rows=[
+            _cost_row("SKU-SALE", Decimal("4.00"), Decimal("1.00"), date(2026, 1, 1)),
+            _cost_row("SKU-LOST", Decimal("4.17"), Decimal("0.53"), date(2026, 1, 1)),
+        ],
+        ads_summary={"ads_cost": Decimal("0.00"), "ads_row_count": 1},
+    )
+
+    nm = result.natural_month_finance
+    assert nm is not None
+    assert result.status == "ok"
+    assert nm.reimbursement_total == Decimal("5.62")
+    assert nm.warehouse_lost_reimbursement_amount == Decimal("5.62")
+    assert nm.warehouse_lost_reimbursement_report_amount == Decimal("5.62")
+    assert nm.inventory_loss_status == "ok"
+    assert nm.inventory_loss_units == 1
+    assert nm.inventory_loss_costed_units == 1
+    assert nm.inventory_loss_product_cost == Decimal("4.17")
+    assert nm.inventory_loss_first_mile_cost == Decimal("0.53")
+    assert nm.inventory_loss_landed_cost == Decimal("4.70")
+    # Product gross COGS remains sales/liquidation economics only.
+    assert nm.product_sales_units == 1
+    assert nm.costed_units == 1
+    assert nm.landed_cogs == Decimal("5.00")
+    # Operating net 25.62 - sales COGS 5.00 - verified warehouse loss 4.70.
+    assert nm.management_operating_profit == Decimal("15.92")
+    check = next(
+        item
+        for item in result.reconciliation_checks
+        if item.check_name == "warehouse_lost_inventory_writeoff"
+    )
+    assert check.status == "ok"
+
+
+def test_warehouse_lost_without_reimbursement_detail_fails_closed() -> None:
+    result = MonthlyFinancialCloseService().calculate_from_rows(
+        marketplace_id="ATVPDKIKX0DER",
+        profile_id=None,
+        month="2026-07",
+        start_date=date(2026, 7, 1),
+        end_date=date(2026, 7, 31),
+        settlement_rows=[
+            _settlement_row(1, None, Decimal("5.62"), "reimbursement", "reimbursement", None),
+        ],
+        finances_natural_month_rows=[
+            _finance_reimbursement_row(
+                transaction_id="reimbursement-lost",
+                description="WAREHOUSE_LOST",
+                amount=Decimal("5.62"),
+                posted_date=date(2026, 7, 21),
+            )
+        ],
+        sku_cost_rows=[
+            _cost_row("SKU-LOST", Decimal("4.17"), Decimal("0.53"), date(2026, 1, 1))
+        ],
+        ads_summary={"ads_cost": Decimal("0.00"), "ads_row_count": 1},
+    )
+
+    nm = result.natural_month_finance
+    assert nm is not None
+    assert result.status == "needs_review"
+    assert nm.source_status == "needs_review"
+    assert nm.inventory_loss_status == "needs_review"
+    assert nm.inventory_loss_landed_cost == Decimal("0.00")
+    check = next(
+        item
+        for item in result.reconciliation_checks
+        if item.check_name == "warehouse_lost_inventory_writeoff"
+    )
+    assert check.status == "needs_review"
+
+
+def test_normal_reimbursement_does_not_create_inventory_writeoff() -> None:
+    result = MonthlyFinancialCloseService().calculate_from_rows(
+        marketplace_id="ATVPDKIKX0DER",
+        profile_id=None,
+        month="2026-07",
+        start_date=date(2026, 7, 1),
+        end_date=date(2026, 7, 31),
+        settlement_rows=[
+            _settlement_row(1, None, Decimal("20.95"), "reimbursement", "reimbursement", None),
+        ],
+        finances_natural_month_rows=[
+            _finance_reimbursement_row(
+                transaction_id="reimbursement-return",
+                description="REVERSAL_REIMBURSEMENT",
+                amount=Decimal("20.95"),
+                posted_date=date(2026, 7, 21),
+            )
+        ],
+        fba_reimbursement_rows=[
+            {
+                **_warehouse_lost_reimbursement_detail(amount=Decimal("20.95")),
+                "reason": "CustomerReturn",
+            }
+        ],
+        sku_cost_rows=[
+            _cost_row("SKU-LOST", Decimal("4.17"), Decimal("0.53"), date(2026, 1, 1))
+        ],
+        ads_summary={"ads_cost": Decimal("0.00"), "ads_row_count": 1},
+    )
+
+    nm = result.natural_month_finance
+    assert nm is not None
+    assert result.status == "ok"
+    assert nm.reimbursement_total == Decimal("20.95")
+    assert nm.warehouse_lost_reimbursement_amount == Decimal("0.00")
+    assert nm.inventory_loss_status == "not_applicable"
+    assert nm.inventory_loss_units == 0
+    assert nm.inventory_loss_landed_cost == Decimal("0.00")
+    assert nm.management_operating_profit == Decimal("20.95")
+
+
+def test_warehouse_lost_amount_mismatch_fails_closed_without_applying_candidate_cost() -> None:
+    result = MonthlyFinancialCloseService().calculate_from_rows(
+        marketplace_id="ATVPDKIKX0DER",
+        profile_id=None,
+        month="2026-07",
+        start_date=date(2026, 7, 1),
+        end_date=date(2026, 7, 31),
+        settlement_rows=[
+            _settlement_row(1, None, Decimal("5.62"), "reimbursement", "reimbursement", None),
+        ],
+        finances_natural_month_rows=[
+            _finance_reimbursement_row(
+                transaction_id="reimbursement-lost",
+                description="WAREHOUSE_LOST",
+                amount=Decimal("5.62"),
+                posted_date=date(2026, 7, 21),
+            )
+        ],
+        fba_reimbursement_rows=[
+            _warehouse_lost_reimbursement_detail(amount=Decimal("6.62"))
+        ],
+        sku_cost_rows=[
+            _cost_row("SKU-LOST", Decimal("4.17"), Decimal("0.53"), date(2026, 1, 1))
+        ],
+        ads_summary={"ads_cost": Decimal("0.00"), "ads_row_count": 1},
+    )
+
+    nm = result.natural_month_finance
+    assert nm is not None
+    assert result.status == "needs_review"
+    assert nm.inventory_loss_status == "needs_review"
+    assert nm.inventory_loss_units == 1
+    assert nm.inventory_loss_costed_units == 1
+    # Candidate detail is retained, but no unverified cost is applied to profit.
+    assert nm.inventory_loss_details[0]["landed_cost_writeoff"] == Decimal("4.70")
+    assert nm.inventory_loss_landed_cost == Decimal("0.00")
+    assert nm.management_operating_profit == Decimal("5.62")
+
+
+def test_warehouse_lost_currency_mismatch_fails_closed() -> None:
+    detail = _warehouse_lost_reimbursement_detail()
+    detail["currency"] = "CAD"
+    result = MonthlyFinancialCloseService().calculate_from_rows(
+        marketplace_id="ATVPDKIKX0DER",
+        profile_id=None,
+        month="2026-07",
+        start_date=date(2026, 7, 1),
+        end_date=date(2026, 7, 31),
+        settlement_rows=[
+            _settlement_row(1, None, Decimal("5.62"), "reimbursement", "reimbursement", None),
+        ],
+        finances_natural_month_rows=[
+            _finance_reimbursement_row(
+                transaction_id="reimbursement-lost",
+                description="WAREHOUSE_LOST",
+                amount=Decimal("5.62"),
+                posted_date=date(2026, 7, 21),
+            )
+        ],
+        fba_reimbursement_rows=[detail],
+        sku_cost_rows=[
+            _cost_row("SKU-LOST", Decimal("4.17"), Decimal("0.53"), date(2026, 1, 1))
+        ],
+        ads_summary={"ads_cost": Decimal("0.00"), "ads_row_count": 1},
+    )
+
+    nm = result.natural_month_finance
+    assert nm is not None
+    assert result.status == "needs_review"
+    assert nm.inventory_loss_status == "needs_review"
+    assert nm.inventory_loss_landed_cost == Decimal("0.00")
+    assert any("currency mismatch" in note for note in nm.inventory_loss_notes)

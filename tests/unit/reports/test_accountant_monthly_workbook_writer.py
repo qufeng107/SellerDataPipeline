@@ -34,6 +34,13 @@ def _natural_month() -> SimpleNamespace:
         liquidation_units=5,
         costed_units=99,
         missing_cost_skus=(),
+        warehouse_lost_reimbursement_amount=Decimal("0.00"),
+        inventory_loss_status="not_applicable",
+        inventory_loss_units=0,
+        inventory_loss_costed_units=0,
+        inventory_loss_missing_cost_skus=(),
+        inventory_loss_landed_cost=Decimal("0.00"),
+        inventory_loss_details=(),
     )
 
 
@@ -77,7 +84,7 @@ def test_transfer_is_negative_in_accounting_views_but_source_amount_is_preserved
     transfer_summary = next(
         values
         for values in summary.iter_rows(values_only=True)
-        if values[0] == "Transfer（备查，不计损益）"
+        if str(values[0] or "").startswith("Transfer（备查，不计损益）")
     )
     assert transfer_summary[1] == -1848.64
 
@@ -86,5 +93,103 @@ def test_transfer_is_negative_in_accounting_views_but_source_amount_is_preserved
 
     source = workbook["03_源交易明细"]
     # Source trace keeps the normalized Finances ledger amount unchanged.
-    amount_header = next(cell.column for cell in source[1] if cell.value == "amount")
+    amount_header = next(
+        cell.column for cell in source[1] if str(cell.value or "").endswith("/ amount")
+    )
     assert source.cell(2, amount_header).value == 1848.64
+
+
+def test_warehouse_lost_reimbursement_is_classified_separately() -> None:
+    row = {
+        "transaction_type": "FBAInventoryReimbursement",
+        "description": "WAREHOUSE_LOST",
+        "amount": Decimal("5.62"),
+        "management_include": True,
+        "management_replace_with_ads_api": False,
+        "management_role": "operating",
+    }
+
+    classified = _classify_row(row)
+
+    assert classified["财务分类"].startswith("仓库丢失赔偿")
+    assert classified["计入损益"] == "是"
+    assert classified["amount"] == Decimal("5.62")
+    assert "单独核销" in classified["处理说明"]
+
+
+def test_normal_reimbursement_does_not_claim_inventory_writeoff() -> None:
+    row = {
+        "transaction_type": "FBAInventoryReimbursement",
+        "description": "REVERSAL_REIMBURSEMENT",
+        "amount": Decimal("20.95"),
+        "management_include": True,
+        "management_replace_with_ads_api": False,
+        "management_role": "operating",
+    }
+
+    classified = _classify_row(row)
+
+    assert classified["财务分类"].startswith("普通FBA赔偿")
+    assert "不因 quantity 字段自动重复扣 COGS" in classified["处理说明"]
+
+
+def test_accounting_summary_deducts_verified_warehouse_loss_once() -> None:
+    nm = _natural_month()
+    nm.inventory_loss_status = "ok"
+    nm.inventory_loss_units = 1
+    nm.inventory_loss_costed_units = 1
+    nm.inventory_loss_landed_cost = Decimal("4.70")
+    nm.inventory_loss_details = (
+        {
+            "reimbursement_id": "R-1",
+            "approval_date": "2026-05-20",
+            "seller_sku": "SKU-LOST",
+            "fnsku": "FNSKU-LOST",
+            "quantity": 1,
+            "reimbursement_amount": Decimal("5.62"),
+            "resolved_cost_sku": "SKU-LOST",
+            "landed_cost_writeoff": Decimal("4.70"),
+            "status": "ok",
+        },
+    )
+    nm.warehouse_lost_reimbursement_amount = Decimal("5.62")
+    result = _result()
+    result.natural_month_finance = nm
+
+    finance_rows = [
+        {
+            "transaction_type": "ProductAdsPayment",
+            "amount": Decimal("-984.21"),
+            "management_include": False,
+            "management_replace_with_ads_api": True,
+            "management_role": "ads_charge_reference",
+            "currency": "USD",
+        }
+    ]
+    workbook = build_accountant_monthly_workbook(result, finance_rows)
+    summary = workbook["01_会计汇总"]
+    rows = {
+        str(values[0] or ""): values
+        for values in summary.iter_rows(values_only=True)
+        if values and values[0]
+    }
+
+    writeoff = next(
+        values for label, values in rows.items() if label.startswith("仓库丢失库存成本核销")
+    )
+    reference_profit = next(
+        values for label, values in rows.items() if label.startswith("账单月参考利润")
+    )
+
+    assert writeoff[1] == -4.70
+    # Fixture Amazon net is 576.05; 576.05 - 467.25 - 4.70 = 104.10.
+    assert reference_profit[1] == 104.10
+
+    checks = workbook["04_核验与说明"]
+    detail_rows = list(checks.iter_rows(values_only=True))
+    detail_header_index = next(
+        index for index, values in enumerate(detail_rows)
+        if values and values[0] == "赔偿ID / Reimbursement ID"
+    )
+    assert detail_rows[detail_header_index][6] == "状态 / Status"
+    assert detail_rows[detail_header_index + 1][6] == "已应用 / Applied"

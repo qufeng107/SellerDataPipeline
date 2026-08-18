@@ -72,7 +72,7 @@ def _write_overview(
     sheet.merge_cells("A2:H2")
     sheet["A2"] = (
         "经营主口径：marketplace-local 自然月 Finances + Ads API report_date + 到岸商品成本；"
-        "Settlement / Transfer 仅用于结算与回款核验。"
+        "已核验 WAREHOUSE_LOST 库存损失单独核销；Settlement / Transfer 仅用于结算与回款核验。"
     )
     _fill_range(sheet, "A2:H2", LIGHT_BLUE)
     sheet["A2"].alignment = Alignment(wrap_text=True, vertical="center")
@@ -108,7 +108,7 @@ def _write_overview(
 
     metrics = (
         ("商品销售额", "sales", MONEY_FORMAT, "本月业务规模"),
-        ("管理口径销量", "units", INTEGER_FORMAT, "销售+清算的成本计量件数"),
+        ("管理口径销量", "units", INTEGER_FORMAT, "销售+清算的成本计量件数；库存丢失件数另列，不计入销量"),
         ("商品毛利率", "gross_margin", PERCENT_FORMAT, "只扣到岸商品成本，观察产品本身毛利空间"),
         ("经营利润", "profit", MONEY_FORMAT, "所有经营收入/费用和商品成本后的最终结果"),
         ("经营利润率", "margin", PERCENT_FORMAT, "最终经营利润占商品销售额比例"),
@@ -257,12 +257,13 @@ def _write_pnl(
         ("仓储费", "storage", "FBA storage"),
         ("客户退货处理费", "customer_return", "Customer return / HRR fee"),
         ("其他服务费", "other_service", "其他ServiceFee"),
-        ("【广告与商品成本】", None, ""),
+        ("【广告、商品成本与库存损失】", None, ""),
         ("广告费", "ads", "Ads API report_date当月实际消耗"),
         ("商品采购成本", "product_cost", "SKU effective-date product cost"),
         ("头程成本", "first_mile", "SKU effective-date first-mile cost"),
         ("包装成本", "packaging", "SKU effective-date packaging cost"),
         ("其他单位成本", "other_unit", "SKU effective-date other unit cost"),
+        ("仓库丢失库存成本核销", "inventory_loss", "WAREHOUSE_LOST经FBA Reimbursements明细和有效成本核验后单独核销"),
         ("人工/工资成本", "payroll", "当前无工资成本，显式为0"),
         ("【最终结果】", None, ""),
         ("经营利润", "profit", "Natural-month Management Operating Profit"),
@@ -322,6 +323,7 @@ def _write_checks(sheet: Any, result: MonthlyFinancialCloseResult) -> None:
         ("自然月Finances完整性", "通过" if source_status == "ok" else "需复核", f"source_status={source_status}", "amazon_finance_transaction", "是", "经营财务主链"),
         ("Review-required", "通过" if nm and nm.review_required_count == 0 else "需复核", f"count={nm.review_required_count if nm else '-'}; amount={nm.review_required_amount if nm else '-'}", "amazon_finance_transaction", "是", "存在非零未识别生命周期/分类时必须阻塞"),
         ("成本覆盖", "通过" if nm and cost_actual == cost_expected and not nm.missing_cost_skus else "需复核", f"costed={cost_actual}; expected={cost_expected}; missing={missing_cost}", "amazon_sku_cost", "是", "销售+清算成本必须完整"),
+        ("仓库丢失库存核销", "通过" if nm and nm.inventory_loss_status in {"ok", "not_applicable"} and nm.inventory_loss_costed_units == nm.inventory_loss_units else "需复核", f"status={nm.inventory_loss_status if nm else '-'}; units={nm.inventory_loss_units if nm else 0}; costed={nm.inventory_loss_costed_units if nm else 0}; writeoff={nm.inventory_loss_landed_cost if nm else 0}", "amazon_fba_reimbursement + amazon_sku_cost", "是", "WAREHOUSE_LOST不能按赔偿quantity盲目扣成本，必须有明细、SKU和有效成本证据"),
         ("Marketplace timezone", "通过" if nm and nm.marketplace_timezone else "需复核", nm.marketplace_timezone if nm else "-", "marketplace metadata", "是", "自然月边界使用站点本地时区"),
         ("广告费", "通过", f"{nm.ads_api_report_date_spend if nm else 0} {result.currency or ''}", "Ads API report_date", "是", "经营口径使用当月实际广告发生额"),
         ("Seller Central核验", "可选外部核验", str(result.raw_metadata.get("seller_central_monthly_transaction_reconciliation_status") or "not_provided"), "Monthly Transaction", "否", "手工CSV缺失不阻塞已通过Finances gate的自动月报"),
@@ -340,7 +342,7 @@ def _write_checks(sheet: Any, result: MonthlyFinancialCloseResult) -> None:
     sheet.merge_cells(start_row=note_row, start_column=1, end_row=note_row + 2, end_column=6)
     sheet.cell(note_row, 1, (
         "经营月报是管理视角，不是法定财务报表。商品毛利率只扣到岸商品成本；"
-        "经营利润率包含Amazon费用、退款、促销、广告和商品成本。"
+        "经营利润率包含Amazon费用、退款、促销、广告、商品成本以及已核验的仓库丢失库存成本核销。"
         "Finances广告账单扣款与Ads API广告发生月份可能不同，两者不得强行相等。"
     ))
     sheet.cell(note_row, 1).alignment = Alignment(wrap_text=True, vertical="top")
@@ -399,6 +401,7 @@ def _pnl_values(nm: Any, components: Mapping[str, Decimal]) -> dict[str, Decimal
         "first_mile": -nm.first_mile_cogs,
         "packaging": -nm.packaging_cogs,
         "other_unit": -nm.other_unit_cogs,
+        "inventory_loss": -nm.inventory_loss_landed_cost,
         "payroll": ZERO,
         "profit": nm.management_operating_profit,
         "margin": nm.management_operating_margin,
@@ -409,14 +412,23 @@ def _expense_rows(result: MonthlyFinancialCloseResult, components: Mapping[str, 
     nm = result.natural_month_finance
     if nm is None:
         return ()
-    return (
+    rows: list[tuple[str, Decimal, str]] = [
         ("广告费", abs(nm.ads_api_report_date_spend), "销售下降但广告未同步下降时，应优先复盘广告效率"),
         ("到岸商品成本", abs(nm.landed_cogs), "采购+头程+包装+其他单位成本；观察产品本身成本结构"),
         ("FBA履约费", abs(components.get("fba_fulfillment", ZERO)), "随销量变化的核心Amazon履约费用"),
         ("退款净额", abs(nm.refund_total), "销售退回对利润的直接冲减"),
         ("订单促销折扣", abs(components.get("order_promotion", ZERO)), "订单侧促销让利"),
         ("账户级费用", abs(nm.service_fee_total), "订阅+Coupon+Deal+仓储+退货处理+其他ServiceFee"),
-    )
+    ]
+    if nm.inventory_loss_landed_cost != ZERO:
+        rows.append(
+            (
+                "仓库丢失库存成本核销",
+                abs(nm.inventory_loss_landed_cost),
+                f"WAREHOUSE_LOST {nm.inventory_loss_units} 件；赔偿收入与库存成本核销分开记录",
+            )
+        )
+    return tuple(rows)
 
 
 def _build_observations(
@@ -462,6 +474,14 @@ def _build_observations(
         ads_prev = safe_ratio(previous_nm.ads_api_report_date_spend, previous_nm.product_sales_amount)
         if ads_now is not None and ads_prev is not None and ads_now - ads_prev >= Decimal("0.05"):
             observations.append(("广告负担明显上升", f"广告费率从 {_pct_text(ads_prev)} 升至 {_pct_text(ads_now)}，增加 {_signed_pp_text(ads_now - ads_prev)}。"))
+
+    if nm.inventory_loss_landed_cost != ZERO:
+        observations.append(
+            (
+                "存在仓库丢失库存核销",
+                f"本月已核验 WAREHOUSE_LOST {nm.inventory_loss_units} 件，对应到岸库存成本核销 {_money_text(nm.inventory_loss_landed_cost)}；赔偿收入与库存损失分开计量。",
+            )
+        )
 
     if abs(nm.deal_fee) >= Decimal("50"):
         observations.append(("Deal费用需要单独关注", f"本月Deal费用 {_money_text(abs(nm.deal_fee))}，属于一次性/活动型费用，应与活动增量销售一起评估。"))
